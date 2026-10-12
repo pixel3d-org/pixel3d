@@ -2,7 +2,7 @@
 
 Progress checklist for the roadmap. Tick a box in the commit that completes it; acceptance items record their evidence (test names, numbers, report links). Each completed phase gets a local tag `phase-N`.
 
-**Current phase: 1 (Kernel)**
+**Current phase: 1 (Kernel): deliverables and acceptance met locally; the `phase-0` and `phase-1` tags wait for CI on all three OSes (no remote yet).**
 
 ## Phase 0: Bootstrap
 
@@ -50,7 +50,7 @@ Acceptance:
 
 Acceptance:
 
-- [ ] Property tests green
+- [x] Property tests green (`crates/mesh/tests/props.rs`: validity, compaction, triangle buffers, normals, flip, mirror transform, split and append on random meshes with random deletions; `crates/geo/tests/props.rs`: closed outward primitives over their parameter ranges; `cargo xtask ci`: 191 tests, 21 kernels within the n^1.25 scaling limit)
 - [x] 1M-triangle grid builds in < 200 ms (37 ms, `cargo bench -p p3d-geo --bench prim -- prim/plane/1000000`, M-series laptop)
 - [x] Save then load gives identical blob hashes (and identical archive bytes: `save_load_save_gives_identical_bytes_and_blob_hashes` in `crates/io/tests/p3d.rs`)
 - [x] Undo and redo < 5 ms (0.44 us per undo + redo pair on a 1M-triangle, 201-object scene; `cargo bench -p p3d-engine --bench session`; tiny op transaction 0.95 us)
