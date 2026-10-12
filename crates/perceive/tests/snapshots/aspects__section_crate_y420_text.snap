@@ -1,0 +1,8 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+section y=420 of scene (horizontal slice, mm, (x, z))
+crate outer: 600 x 600 mm, area 0.36 m2: (300,-292) (300,292) (298,298) (292,300) (-292,300) (-298,298) (-300,292) (-300,-292) (-298,-298) (-292,-300) (292,-300) (298,-298)
+handle_r outer: 30 x 160 mm, area 48 cm2: (330,-80) (330,80) (300,80) (300,-80)
+handle_l outer: 30 x 160 mm, area 48 cm2: (-300,-80) (-300,80) (-330,80) (-330,-80)

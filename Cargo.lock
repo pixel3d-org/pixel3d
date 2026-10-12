@@ -865,6 +865,7 @@ dependencies = [
  "p3d-mesh",
  "p3d-scene",
  "p3d-testdata",
+ "rustc-hash",
  "serde",
  "serde_json",
 ]

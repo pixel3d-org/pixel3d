@@ -14,6 +14,7 @@ pub mod error;
 pub mod fmt;
 pub mod relations;
 pub mod sample;
+pub mod section;
 pub mod shape;
 pub mod silhouette;
 pub mod structure;

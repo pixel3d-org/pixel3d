@@ -1,0 +1,7 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+section y=100 of scene (horizontal slice, mm, (x, z))
+bin outer: 400 x 400 mm, area 0.16 m2: (4700,-200) (4700,200) (4300,200) (4300,-200)
+post outer: 200 x 200 mm, area 0.0306 m2: (71,71) (38,92) (0,100) (-38,92) (-71,71) (-92,38) (-100,0) (-92,-38) (-71,-71) (-38,-92) (0,-100) (38,-92) (71,-71) (92,-38) (100,0) (92,38)

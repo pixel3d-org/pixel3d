@@ -1,0 +1,7 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+section y=250 of scene (horizontal slice, mm, (x, z))
+tank outer: 500 x 500 mm, area 0.25 m2: (250,-250) (250,250) (-250,250) (-250,-250)
+tank hole: 460 x 460 mm, area 0.212 m2, wall 20 mm: (230,230) (230,-230) (-230,-230) (-230,230)

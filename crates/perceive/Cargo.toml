@@ -16,6 +16,7 @@ p3d-analyze = { workspace = true }
 p3d-geo = { workspace = true }
 p3d-mesh = { workspace = true }
 p3d-scene = { workspace = true }
+rustc-hash = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

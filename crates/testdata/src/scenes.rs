@@ -83,3 +83,14 @@ pub fn shapes_scene() -> Document {
     add(&mut doc, "bin", None, bin, [4.5, 0.0, 0.0]);
     doc
 }
+
+/// A closed box with walls `wall` thick: the outer shell plus an
+/// inward-facing inner shell (bottom-center origin).
+pub fn hollow_box_mesh(size: [f64; 3], wall: f64) -> Mesh {
+    let mut outer = box_mesh(size, 0.0);
+    let mut inner = box_mesh([size[0] - 2.0 * wall, size[1] - 2.0 * wall, size[2] - 2.0 * wall], 0.0);
+    inner.transform(glam::Affine3A::from_translation(Vec3::new(0.0, wall as f32, 0.0)));
+    inner.flip_all();
+    outer.append(&inner);
+    outer
+}

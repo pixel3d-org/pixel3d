@@ -74,3 +74,37 @@ fn silhouette_reports() {
     let e = report(&view, &SilhouetteOptions { points: 2, ..SilhouetteOptions::default() }).unwrap_err();
     assert_eq!((e.code, e.path.as_deref()), ("OUT_OF_RANGE", Some("/points")));
 }
+
+#[test]
+fn section_reports() {
+    use p3d_perceive::section::{SectionOptions, SliceAxis, report};
+    let doc = scenes::crate_scene();
+    let view = View::new(&doc, None).unwrap();
+    check("section_crate_y420", &report(&view, &SectionOptions { at: Some(0.42), ..SectionOptions::default() }).unwrap());
+    check("section_crate_x", &report(&view, &SectionOptions { axis: SliceAxis::X, ..SectionOptions::default() }).unwrap());
+    let doc = scenes::shapes_scene();
+    let view = View::new(&doc, None).unwrap();
+    let r = report(&view, &SectionOptions { at: Some(0.1), ..SectionOptions::default() }).unwrap();
+    check("section_shapes_y100", &r);
+    assert_eq!(r.data["loops"][1]["part"], "post");
+    assert_eq!(r.data["loops"][1]["kind"], "outer");
+    // A vertical slice through the open bin is an open U.
+    let r = report(&View::new(&doc, Some("bin")).unwrap(), &SectionOptions { axis: SliceAxis::X, ..SectionOptions::default() }).unwrap();
+    check("section_bin_x", &r);
+    assert_eq!(r.data["loops"][0]["kind"], "open");
+    let doc = scenes::head_scene();
+    check("section_head_z", &report(&View::new(&doc, None).unwrap(), &SectionOptions { axis: SliceAxis::Z, ..SectionOptions::default() }).unwrap());
+}
+
+#[test]
+fn section_holes_and_walls() {
+    use p3d_perceive::section::{SectionOptions, report};
+    let mut doc = p3d_scene::Document::new();
+    scenes::add(&mut doc, "tank", None, scenes::hollow_box_mesh([0.5, 0.5, 0.5], 0.02), [0.0; 3]);
+    let r = report(&View::new(&doc, None).unwrap(), &SectionOptions::default()).unwrap();
+    check("section_tank", &r);
+    assert_eq!(r.data["loops"][0]["kind"], "outer");
+    assert_eq!(r.data["loops"][1]["kind"], "hole");
+    let wall = r.data["loops"][1]["wall"].as_f64().unwrap();
+    assert!((wall - 0.02).abs() < 1e-4, "{wall}");
+}

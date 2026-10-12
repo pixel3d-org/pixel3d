@@ -1,0 +1,6 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+section x=4500 of bin (o:4) (vertical slice, mm, (z, y))
+bin open: 400 x 300 mm: (-200,300) (-200,0) (200,0) (200,300)
