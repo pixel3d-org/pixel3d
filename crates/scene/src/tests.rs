@@ -177,3 +177,29 @@ fn flat_delete_renames_colliding_children_without_duplicates() {
     names.sort();
     assert_eq!(names, vec!["a", "a_1", "a_1_1"]);
 }
+
+#[test]
+fn curve_objects_own_their_curves() {
+    use crate::{Curve, Spline};
+    let mut d = Document::new();
+    let c = Curve::single(Spline::polyline([glam::Vec3::ZERO, glam::Vec3::X], false));
+    let k = d.create_curve_object("path", None, c.clone()).unwrap();
+    assert_eq!(d.object_curve(k), Some(&c));
+    assert_eq!(d.object(k).unwrap().kind().as_str(), "curve");
+    d.check().unwrap();
+    // A curve cannot belong to two objects.
+    let ck = d.object(k).unwrap().curve_key().unwrap();
+    assert!(matches!(d.create_object("again", None, ObjectKind::Curve { curve: ck }), Err(SceneError::StaleCurve)));
+    // Undo snapshots keep the old curve.
+    let snap = d.clone();
+    d.curve_mut(ck).unwrap().splines[0].closed = true;
+    assert!(!snap.curve(ck).unwrap().splines[0].closed);
+    // Turning it into an empty or deleting it drops the curve.
+    d.set_kind(k, ObjectKind::Empty).unwrap();
+    assert!(d.curve(ck).is_none());
+    d.check().unwrap();
+    let k2 = d.create_curve_object("path2", None, c).unwrap();
+    d.delete(k2, false).unwrap();
+    assert_eq!(d.curve_entries().count(), 0);
+    d.check().unwrap();
+}

@@ -217,3 +217,26 @@ fn json_dump_inlines_meshes_as_polygons() {
     assert!(lid["groups"].as_array().unwrap().iter().any(|g| g["name"] == "top" && g["kind"] == "faces"));
     assert_eq!(v["expectations"][0]["name"], "E1");
 }
+
+#[test]
+fn curve_objects_round_trip() {
+    use p3d_scene::{Curve, Spline};
+    let mut d = Document::new();
+    let bez = Spline {
+        points: vec![[0.0, 0.0, 0.0], [1.0, 1.0, 0.0]],
+        handles: Some(vec![[[0.0, 0.0, 0.0], [0.3, 0.0, 0.0]], [[1.0, 0.7, 0.0], [1.0, 1.0, 0.0]]]),
+        closed: false,
+    };
+    let curve = Curve { splines: vec![bez, Spline::polyline([Vec3::ZERO, Vec3::X, Vec3::Y], true)] };
+    let k = d.create_curve_object("path", None, curve.clone()).unwrap();
+    let dir = std::env::temp_dir().join(format!("p3d-io-curve-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("curve.p3d");
+    p3d::save(&d, &path).unwrap();
+    let back = p3d::load(&path).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    back.check().unwrap();
+    let bk = back.resolve("path").unwrap();
+    assert_eq!(back.object_curve(bk), Some(&curve));
+    assert_eq!(back.object(bk).unwrap().id(), d.object(k).unwrap().id());
+}

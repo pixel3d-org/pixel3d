@@ -13,6 +13,8 @@ new_key_type! {
     pub struct MeshKey;
     /// Key of an object's history graph.
     pub struct GraphKey;
+    /// Key of a curve; each curve belongs to exactly one object.
+    pub struct CurveKey;
 }
 
 /// What an object is.
@@ -22,6 +24,8 @@ pub enum ObjectKind {
     Empty,
     /// A polygon mesh.
     Mesh { mesh: MeshKey },
+    /// Polylines and Bezier splines (profiles and paths for generators).
+    Curve { curve: CurveKey },
 }
 
 impl ObjectKind {
@@ -29,6 +33,7 @@ impl ObjectKind {
         match self {
             ObjectKind::Empty => "empty",
             ObjectKind::Mesh { .. } => "mesh",
+            ObjectKind::Curve { .. } => "curve",
         }
     }
 }
@@ -85,7 +90,14 @@ impl Object {
     pub fn mesh_key(&self) -> Option<MeshKey> {
         match self.kind {
             ObjectKind::Mesh { mesh } => Some(mesh),
-            ObjectKind::Empty => None,
+            ObjectKind::Empty | ObjectKind::Curve { .. } => None,
+        }
+    }
+
+    pub fn curve_key(&self) -> Option<CurveKey> {
+        match self.kind {
+            ObjectKind::Curve { curve } => Some(curve),
+            _ => None,
         }
     }
 

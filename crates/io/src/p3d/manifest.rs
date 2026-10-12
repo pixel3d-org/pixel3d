@@ -59,10 +59,13 @@ pub struct ObjectEntry {
     pub name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<u32>,
-    /// `empty` or `mesh`.
+    /// `empty`, `mesh` or `curve`.
     pub kind: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mesh: Option<u32>,
+    /// The curve of a curve object, inline (curves are small).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve: Option<p3d_scene::Curve>,
     pub transform: TransformEntry,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,

@@ -2,6 +2,7 @@
 //!
 //! Layer L1 (document). See `docs/architecture.md`.
 
+pub mod curve;
 mod document;
 pub mod expect;
 mod history;
@@ -11,8 +12,9 @@ mod settings;
 #[cfg(test)]
 mod tests;
 
+pub use curve::{Curve, Spline};
 pub use document::{Document, SceneError};
 pub use expect::{Check, Expectation, ObjectRef, Range};
 pub use history::{OpGraph, OpNode};
-pub use object::{GraphKey, MeshKey, Object, ObjectKey, ObjectKind};
+pub use object::{CurveKey, GraphKey, MeshKey, Object, ObjectKey, ObjectKind};
 pub use settings::{AssetClass, DisplayUnits, DocSettings};
