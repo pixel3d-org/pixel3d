@@ -57,6 +57,15 @@ fn expect_fixture() -> Tx {
 /// triangulated 4 x 4 grid, and duct (o:7), two open tubes one above the
 /// other, and panels (o:9), two touching 1 m planes joined but not welded,
 /// for `edit.*` examples.
+/// A box, an open polyline `path` (o:2) and a closed rectangle `outline` (o:3).
+fn curve_fixture() -> Tx {
+    let mut tx = Tx::new(Document::new());
+    ok(&mut tx, "prim.box", json!({ "name": "crate", "width": 0.6, "height": 0.6, "depth": 0.6 }));
+    ok(&mut tx, "curve.polyline", json!({ "name": "path", "points": [[0, 0, 0], [1, 0, 0], [1, 0, -1]] }));
+    ok(&mut tx, "curve.rectangle", json!({ "name": "outline", "size": [0.8, 0.6] }));
+    tx
+}
+
 fn edit_fixture() -> Tx {
     let mut tx = fixture();
     ok(&mut tx, "prim.box", json!({ "name": "bin", "width": 0.4, "height": 0.3, "depth": 0.4, "position": [-2, 0, 0] }));
@@ -84,6 +93,8 @@ fn every_example_produces_its_documented_result() {
                 Category::Prim => Tx::new(Document::new()),
                 Category::Edit | Category::Shade | Category::Subd | Category::Deform => edit_fixture(),
                 Category::Expect => expect_fixture(),
+                Category::Curve => curve_fixture(),
+                Category::Gen => Tx::new(Document::new()),
                 _ => fixture(),
             };
             match op.run(&mut tx, &args, &OpCtx::default()) {
@@ -663,6 +674,86 @@ fn element_transforms_by_ids_with_proportional_editing() {
     ok(&mut tx, "edit.plane_cut", json!({ "target": "crate", "point": [0, "30cm", 0], "select": { "faces": { "group": "front" } } }));
     assert!(topo(&tx, "crate").is_watertight());
     ok(&mut tx, "edit.shrink_fatten", json!({ "target": "crate", "select": { "faces": { "group": "top" } }, "distance": "1cm" }));
+}
+
+#[test]
+fn curves_are_created_reshaped_and_copied() {
+    let mut tx = curve_fixture();
+    let s = ok(&mut tx, "curve.bezier", json!({ "name": "hose", "points": [[0, 0, 0], [1, 1, 0], [2, 0, 0], [3, 1, 0]] }));
+    assert!(s.contains("1 open bezier spline, 4 points"), "{s}");
+    let curve = |tx: &Tx, name: &str| tx.doc().object_curve(tx.doc().resolve(name).unwrap()).unwrap().clone();
+    assert!(curve(&tx, "hose").splines[0].is_bezier());
+    // Resampling samples the Bezier first and leaves a polyline.
+    ok(&mut tx, "curve.resample", json!({ "target": "hose", "count": 20 }));
+    let hose = curve(&tx, "hose");
+    assert_eq!((hose.splines[0].points.len(), hose.splines[0].is_bezier()), (20, false));
+    // A copy keeps the source and lands next to it with the same transform.
+    ok(&mut tx, "scene.set_transform", json!({ "target": "outline", "position": [0, 1, 0] }));
+    let s = ok(&mut tx, "curve.fillet", json!({ "target": "outline", "radius": "5cm", "output": "soft" }));
+    assert!(s.starts_with("created soft (o:"), "{s}");
+    assert!(s.ends_with("(filleted from outline (o:3))"), "{s}");
+    assert_eq!(curve(&tx, "outline").splines[0].points.len(), 4);
+    assert_eq!(curve(&tx, "soft").splines[0].points.len(), 20);
+    let soft = tx.doc().resolve("soft").unwrap();
+    assert_eq!(tx.doc().object(soft).unwrap().transform.translation, Vec3::Y);
+    // Offsets in place keep the closed spline closed and grow it outward.
+    let s = ok(&mut tx, "curve.offset", json!({ "target": "outline", "distance": "-10cm" }));
+    assert_eq!(s, "outline (o:3): offset by -0.1 m: 1 closed spline, 4 points, 2 m long, 0.6 x 0 x 0.4 m");
+
+    let e = err(&mut tx, "curve.offset", json!({ "target": "crate", "distance": 0.1 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/target")));
+    assert!(e.message.contains("not a curve"), "{}", e.message);
+    let e = err(&mut tx, "curve.polyline", json!({ "points": [[0, 0, 0], [1, 0, 0]], "closed": true }));
+    assert_eq!(e.path.as_deref(), Some("/points"));
+    let e = err(&mut tx, "curve.bezier", json!({ "points": [[0, 0, 0], [1, 0, 0]], "handles": [[[0, 0, 0], [0, 0, 0]]] }));
+    assert_eq!(e.path.as_deref(), Some("/handles"));
+    let e = err(&mut tx, "curve.resample", json!({ "target": "path", "count": 5, "spacing": 0.1 }));
+    assert_eq!(e.code, ErrorCode::InvalidParam);
+    let e = err(&mut tx, "curve.fillet", json!({ "target": "path", "radius": 0.1, "output": "outline" }));
+    assert_eq!(e.path.as_deref(), Some("/output"));
+    let e = err(&mut tx, "curve.rectangle", json!({ "size": [1, 0.2], "corner_radius": 0.2 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/corner_radius")));
+}
+
+#[test]
+fn lathe_presets_points_and_curves() {
+    let mut tx = Tx::new(Document::new());
+    for preset in ["barrel", "vase", "bottle", "bowl", "column"] {
+        ok(&mut tx, "gen.lathe", json!({ "name": preset, "profile": preset }));
+        let t = topo(&tx, preset);
+        assert!(t.is_watertight(), "{preset} is not closed");
+    }
+    let m = tx.doc().object_mesh(tx.doc().resolve("column").unwrap()).unwrap();
+    let (lo, hi) = m.bounds().unwrap();
+    assert!((hi.y - lo.y - 3.0).abs() < 1e-5 && (hi.x - 0.25).abs() < 1e-5, "column default size");
+    // The barrel workflow: loop cuts on the side, a recessed lid on the top cap.
+    ok(&mut tx, "gen.lathe", json!({ "name": "keg", "profile": "barrel", "height": "60cm", "segments": 16 }));
+    ok(
+        &mut tx,
+        "edit.loop_cut",
+        json!({ "target": "keg", "select": { "edges": { "in_box": { "min": [0.1, 0.01, 0.1], "max": [0.3, 0.04, 0.3] } } }, "cuts": 2 }),
+    );
+    ok(&mut tx, "edit.inset", json!({ "target": "keg", "select": { "faces": { "group": "cap_top" } }, "thickness": "2cm", "depth": "-1cm" }));
+    assert!(topo(&tx, "keg").is_watertight());
+    // A curve object as the profile, revolved around Z.
+    ok(&mut tx, "curve.bezier", json!({ "name": "vase_line", "points": [[0.1, 0, 0], [0.15, 0.2, 0], [0.06, 0.35, 0]] }));
+    let s = ok(&mut tx, "gen.lathe", json!({ "name": "urn", "profile": { "curve": "vase_line" }, "axis": "z", "segments": 12 }));
+    assert!(s.starts_with("created urn"), "{s}");
+    let urn = tx.doc().object_mesh(tx.doc().resolve("urn").unwrap()).unwrap();
+    let (lo, hi) = urn.bounds().unwrap();
+    assert!((hi.z - 0.35).abs() < 1e-5 && lo.z.abs() < 1e-5, "height along Z");
+
+    let e = err(&mut tx, "gen.lathe", json!({ "profile": [[0.1, 0], [0.1, 1]], "height": 2 }));
+    assert_eq!(e.path.as_deref(), Some("/height"));
+    let e = err(&mut tx, "gen.lathe", json!({ "profile": "teapot" }));
+    assert!(e.message.contains("presets are barrel"), "{}", e.message);
+    let e = err(&mut tx, "gen.lathe", json!({ "profile": [[0.1, 0], [0.0, 0.5], [0.1, 1]] }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/profile")));
+    let e = err(&mut tx, "gen.lathe", json!({ "profile": [[0.1, 0], [0.1, 1]], "segments": 10 }));
+    assert_eq!(e.path.as_deref(), Some("/segments"));
+    ok(&mut tx, "curve.circle", json!({ "name": "flat_ring", "radius": 0.2 }));
+    let e = err(&mut tx, "gen.lathe", json!({ "profile": { "curve": "flat_ring" } }));
+    assert!(e.message.contains("XY plane"), "{}", e.message);
 }
 
 #[test]

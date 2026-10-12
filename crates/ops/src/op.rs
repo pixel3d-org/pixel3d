@@ -34,6 +34,8 @@ pub trait Op: Send + Sync + 'static {
 pub enum Category {
     Scene,
     Prim,
+    Curve,
+    Gen,
     Select,
     Edit,
     Shade,
@@ -47,6 +49,8 @@ impl Category {
         match self {
             Category::Scene => "scene",
             Category::Prim => "prim",
+            Category::Curve => "curve",
+            Category::Gen => "gen",
             Category::Select => "select",
             Category::Edit => "edit",
             Category::Shade => "shade",

@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{deform, edit, element, expect, prim, scene, select, shade, subd};
+use crate::{curve, deform, edit, element, expect, generate, prim, scene, select, shade, subd};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -58,6 +58,14 @@ impl Registry {
             Arc::new(Typed::<prim::Tube>::new()),
             Arc::new(Typed::<prim::Capsule>::new()),
             Arc::new(Typed::<prim::Wedge>::new()),
+            Arc::new(Typed::<curve::PolylineOp>::new()),
+            Arc::new(Typed::<curve::BezierOp>::new()),
+            Arc::new(Typed::<curve::CircleOp>::new()),
+            Arc::new(Typed::<curve::RectangleOp>::new()),
+            Arc::new(Typed::<curve::ResampleOp>::new()),
+            Arc::new(Typed::<curve::OffsetOp>::new()),
+            Arc::new(Typed::<curve::FilletOp>::new()),
+            Arc::new(Typed::<generate::LatheOp>::new()),
             Arc::new(Typed::<prim::Plane>::new()),
             Arc::new(Typed::<select::Save>::new()),
             Arc::new(Typed::<select::Grow>::new()),

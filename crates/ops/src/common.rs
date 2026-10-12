@@ -34,18 +34,21 @@ pub fn degrees(a: crate::params::Angle) -> String {
 pub fn dims(mesh: &Mesh) -> String {
     match mesh.bounds() {
         None => "empty".into(),
-        Some((lo, hi)) => {
-            let d = hi - lo;
-            let parts: Vec<String> = [d.x, d.y, d.z].iter().map(|&x| format_length(f64::from(x))).collect();
-            // "1 m x 0.6 m x 0.8 m" reads worse than "1 x 0.6 x 0.8 m" when units agree.
-            let units: Vec<&str> = parts.iter().map(|p| p.rsplit(' ').next().unwrap_or("")).collect();
-            if units.iter().all(|u| *u == units[0]) {
-                let nums: Vec<&str> = parts.iter().map(|p| p.split(' ').next().unwrap_or("")).collect();
-                format!("{} {}", nums.join(" x "), units[0])
-            } else {
-                parts.join(" x ")
-            }
-        }
+        Some((lo, hi)) => extent(lo, hi),
+    }
+}
+
+/// `1 x 0.6 x 0.8 m` for the box between two corners.
+pub fn extent(lo: glam::Vec3, hi: glam::Vec3) -> String {
+    let d = hi - lo;
+    let parts: Vec<String> = [d.x, d.y, d.z].iter().map(|&x| format_length(f64::from(x))).collect();
+    // "1 m x 0.6 m x 0.8 m" reads worse than "1 x 0.6 x 0.8 m" when units agree.
+    let units: Vec<&str> = parts.iter().map(|p| p.rsplit(' ').next().unwrap_or("")).collect();
+    if units.iter().all(|u| *u == units[0]) {
+        let nums: Vec<&str> = parts.iter().map(|p| p.split(' ').next().unwrap_or("")).collect();
+        format!("{} {}", nums.join(" x "), units[0])
+    } else {
+        parts.join(" x ")
     }
 }
 

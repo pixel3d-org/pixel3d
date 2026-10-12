@@ -7,12 +7,14 @@
 
 pub mod catalog;
 mod common;
+pub mod curve;
 pub mod deform;
 mod dynop;
 pub mod edit;
 pub mod element;
 mod error;
 pub mod expect;
+pub mod generate;
 mod op;
 pub mod params;
 pub mod prim;
