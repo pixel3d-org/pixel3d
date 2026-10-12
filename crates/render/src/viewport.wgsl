@@ -28,8 +28,11 @@ struct View {
     // x: surface mode (0 shaded, 1 matcap, 2 flat paper); y: grid on;
     // z: 1 when the output target is not sRGB (encode in the shader); w: ids valid.
     flags: vec4<u32>,
-    // x: surface opacity (below 1 in x-ray).
-    xray: vec4<f32>,
+    // x: surface opacity (below 1 in x-ray); y: vertex dot diameter (px).
+    extra: vec4<f32>,
+    // Selected elements, and unselected edges and vertices, in element modes.
+    element: vec4<f32>,
+    edit_wire: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> v: View;
@@ -112,7 +115,7 @@ fn fs_surface(i: SurfaceOut, @builtin(front_facing) facing: bool) -> @location(0
         n = -n;
     }
     if (v.flags.x == 2u) {
-        return vec4<f32>(0.92, 0.92, 0.91, v.xray.x);
+        return vec4<f32>(0.92, 0.92, 0.91, v.extra.x);
     }
     var color: vec3<f32>;
     if (v.flags.x == 1u) {
@@ -145,7 +148,7 @@ fn fs_surface(i: SurfaceOut, @builtin(front_facing) facing: bool) -> @location(0
     if (is_selected(i.part)) {
         color = mix(color, v.selection.rgb, v.selection.a);
     }
-    return vec4<f32>(color, v.xray.x);
+    return vec4<f32>(color, v.extra.x);
 }
 
 // Part ids (index + 1; 0 is background) for picking and outlines.
@@ -161,21 +164,25 @@ struct LineOut {
     @location(0) @interpolate(flat) part: u32,
 };
 
-@vertex
-fn vs_line(@location(0) local: vec3<f32>, @location(1) part: u32) -> LineOut {
+// Clip position of an object-space point of `part`, pulled toward the
+// camera by the fraction `k` of its distance so edges win over their own
+// faces; along the pixel's ray, so it does not move on screen. Surfaces get
+// no depth bias: slope-scaled bias let back faces show through at
+// silhouettes.
+fn pulled(local: vec3<f32>, part: u32, k: f32) -> vec4<f32> {
     let pos = (parts[part].model * vec4<f32>(local, 1.0)).xyz;
-    // Pull edges toward the camera by a small fraction of their distance so
-    // they win over their own faces; along the pixel's ray, so they do not
-    // move on screen. Surfaces get no depth bias: slope-scaled bias let back
-    // faces show through at silhouettes.
-    let k = 0.0008;
     var p = pos + (v.eye.xyz - pos) * k;
     if (v.eye.w > 0.5) {
         let to_eye = normalize((transpose(v.view) * vec4<f32>(0.0, 0.0, 1.0, 0.0)).xyz);
         p = pos + to_eye * (abs(dot(v.eye.xyz - pos, to_eye)) * k);
     }
+    return v.view_proj * vec4<f32>(p, 1.0);
+}
+
+@vertex
+fn vs_line(@location(0) local: vec3<f32>, @location(1) part: u32) -> LineOut {
     var o: LineOut;
-    o.clip = v.view_proj * vec4<f32>(p, 1.0);
+    o.clip = pulled(local, part, 0.0008);
     o.part = part;
     return o;
 }
@@ -186,6 +193,84 @@ fn fs_line(i: LineOut) -> @location(0) vec4<f32> {
         return vec4<f32>(v.selection.rgb, 1.0);
     }
     return v.wire;
+}
+
+// ---- element overlay (vertex, edge and face modes) ---------------------------
+
+// Bit 31 of the part marks a selected element.
+const EDIT_PART: u32 = 0x7fffffffu;
+
+struct EditOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) @interpolate(flat) selected: u32,
+    // Position inside a vertex dot, -1 to 1.
+    @location(1) uv: vec2<f32>,
+};
+
+fn edit_color(selected: u32) -> vec4<f32> {
+    if (selected == 1u) {
+        return vec4<f32>(v.element.rgb, 1.0);
+    }
+    return v.edit_wire;
+}
+
+@vertex
+fn vs_edit_line(@location(0) local: vec3<f32>, @location(1) part: u32) -> EditOut {
+    var o: EditOut;
+    o.clip = pulled(local, part & EDIT_PART, 0.0012);
+    o.selected = part >> 31u;
+    o.uv = vec2<f32>(0.0);
+    return o;
+}
+
+@fragment
+fn fs_edit(i: EditOut) -> @location(0) vec4<f32> {
+    return edit_color(i.selected);
+}
+
+// One instance per vertex: a screen-aligned quad of six vertices.
+@vertex
+fn vs_edit_point(@builtin(vertex_index) corner: u32, @location(0) local: vec3<f32>, @location(1) part: u32) -> EditOut {
+    var quad = array<vec2<f32>, 6>(
+        vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, -1.0), vec2<f32>(1.0, 1.0),
+        vec2<f32>(-1.0, -1.0), vec2<f32>(1.0, 1.0), vec2<f32>(-1.0, 1.0),
+    );
+    let c = quad[corner];
+    let selected = part >> 31u;
+    let size = select(v.extra.y, v.extra.y * 1.35, selected == 1u);
+    var clip = pulled(local, part & EDIT_PART, 0.0016);
+    // Half the diameter in pixels is size / target in clip units (times w).
+    clip = vec4<f32>(clip.xy + c * size / v.params.zw * clip.w, clip.zw);
+    var o: EditOut;
+    o.clip = clip;
+    o.selected = selected;
+    o.uv = c;
+    return o;
+}
+
+@fragment
+fn fs_edit_point(i: EditOut) -> @location(0) vec4<f32> {
+    let r = length(i.uv);
+    if (r > 1.0) {
+        discard;
+    }
+    let c = edit_color(i.selected);
+    // A soft rim keeps small dots round.
+    return vec4<f32>(c.rgb, c.a * clamp((1.0 - r) * 4.0, 0.0, 1.0));
+}
+
+@vertex
+fn vs_edit_face(@location(0) local: vec3<f32>, @location(1) part: u32) -> EditOut {
+    var o: EditOut;
+    o.clip = pulled(local, part & EDIT_PART, 0.0010);
+    o.selected = 1u;
+    o.uv = vec2<f32>(0.0);
+    return o;
+}
+
+@fragment
+fn fs_edit_face(i: EditOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(v.element.rgb, 0.28);
 }
 
 // ---- infinite ground grid ------------------------------------------------------

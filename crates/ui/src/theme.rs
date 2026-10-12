@@ -284,6 +284,10 @@ impl Tokens {
             surface: l(self.surface, 1.0),
             selection: l(self.selection, 0.18),
             wire: l(self.wire, 1.0),
+            element: l(self.element_selected, 1.0),
+            edit_wire: l(self.wire, 1.0),
+            // Points; the viewport scales it to pixels.
+            vertex_px: 5.0,
         }
     }
 }

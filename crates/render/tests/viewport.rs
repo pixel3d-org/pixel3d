@@ -1,5 +1,6 @@
 //! The interactive viewport path, rendered headless: background, surfaces,
-//! grid, selection outline, picking, per-part transforms and x-ray.
+//! grid, selection outline, picking, per-part transforms, x-ray and the
+//! element overlay.
 //!
 //! These tests need a GPU or a software adapter (CI installs lavapipe on
 //! Linux and uses WARP on Windows).
@@ -12,8 +13,8 @@ use std::sync::{Mutex, OnceLock};
 use glam::{Mat4, Vec3};
 use p3d_render::viewport::linear_hex;
 use p3d_render::{
-    Image, OrbitCamera, Renderer, Shading, ViewFrame, ViewKind, ViewScene, ViewStyle, ViewportRenderer, part_matrices, prepare_view, view_meshes,
-    world_bounds,
+    ElementSets, Image, OrbitCamera, Renderer, Shading, ViewFrame, ViewKind, ViewScene, ViewStyle, ViewportRenderer, edit_overlay, part_matrices,
+    prepare_view, view_meshes, world_bounds,
 };
 use p3d_scene::Document;
 use p3d_testdata::scenes;
@@ -220,6 +221,39 @@ fn xray_shows_what_is_behind() {
     assert!(through > 20, "grid pixels seen through the crate: {through}");
     // Same input, same pixels.
     assert_eq!(shot(&mut v, &s, 1, &ViewFrame { xray: Some(0.5), ..f }), xray);
+}
+
+#[test]
+fn element_overlay_draws_edges_dots_and_selected_faces() {
+    let s = scene(&scenes::crate_scene());
+    let r = gpu();
+    let mut v = viewport();
+    let f = frame(&s, ViewKind::Front);
+    let plain = shot(&mut v, &s, 1, &f);
+    let mesh = std::sync::Arc::clone(&s.view.meshes[0]);
+    let none = std::collections::BTreeSet::new();
+    let all_verts = mesh.verts().collect();
+    let all_faces = mesh.faces().collect();
+    let overlay = edit_overlay(&mesh, 0, ElementSets { verts: &all_verts, edges: &none, faces: &none }, true);
+    assert_eq!(overlay.lines.len(), mesh.edge_count() * 2);
+    assert_eq!(overlay.points.len(), mesh.vert_count());
+    v.set_edit(r.device(), &overlay, 1);
+    let dots = shot(&mut v, &s, 1, &f);
+    let orange = srgb(linear_hex(0xfb923c, 1.0));
+    let count =
+        |img: &Image| (0..img.height).flat_map(|y| (0..img.width).map(move |x| (x, y))).filter(|&(x, y)| near(img.get(x, y), orange, 12)).count();
+    assert!(count(&dots) > 10, "selected vertex dots: {}", count(&dots));
+    assert_eq!(count(&plain), 0);
+    // Selected faces are tinted, not solid: a different picture, few exact dots.
+    let faces = edit_overlay(&mesh, 0, ElementSets { verts: &none, edges: &none, faces: &all_faces }, false);
+    v.set_edit(r.device(), &faces, 2);
+    let tinted = shot(&mut v, &s, 1, &f);
+    assert!(differing(&tinted, &plain) > 500);
+    // The same key does not upload again; clearing removes the overlay.
+    v.set_edit(r.device(), &overlay, 2);
+    assert_eq!(shot(&mut v, &s, 1, &f), tinted);
+    v.clear_edit();
+    assert_eq!(shot(&mut v, &s, 1, &f), plain);
 }
 
 #[test]

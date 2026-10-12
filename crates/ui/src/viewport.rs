@@ -104,6 +104,10 @@ pub struct ViewportState {
     /// The viewport rectangle last frame (points) and its pixel size.
     pub rect: Rect,
     pub size_px: [u32; 2],
+    /// The element overlay to draw (set by the app in element modes).
+    pub edit_overlay: Option<(Arc<p3d_render::EditOverlay>, u64)>,
+    /// Clicks pick vertices, edges or faces instead of objects.
+    pub pick_elements: bool,
     /// Frame the scene on the next frame (after loading a file).
     pub frame_pending: bool,
     pub gpu: bool,
@@ -139,6 +143,8 @@ impl Default for ViewportState {
             next_pick: 1,
             pending_pick: None,
             rect: Rect::NOTHING,
+            edit_overlay: None,
+            pick_elements: false,
             size_px: [0, 0],
             frame_pending: true,
             gpu: false,
@@ -155,6 +161,9 @@ pub enum ViewportEvent {
     /// A click picked an object (`None`: empty space). `add` toggles it in
     /// the selection instead of replacing it.
     Picked { object: Option<ObjectKey>, add: bool },
+    /// A click in an element mode at `at` (points); the app picks the
+    /// vertex, edge or face there.
+    ElementClick { at: egui::Pos2, add: bool },
 }
 
 /// GPU resources stored in egui_wgpu's callback resources.
@@ -174,6 +183,8 @@ pub fn install(rs: &egui_wgpu::RenderState) -> PickSlot {
 
 struct Callback {
     frame: ViewFrame,
+    /// The element overlay and its key, in element modes.
+    edit: Option<(Arc<p3d_render::EditOverlay>, u64)>,
     view: Arc<ViewScene>,
     geometry: u64,
     models: Arc<Vec<Mat4>>,
@@ -200,6 +211,10 @@ impl egui_wgpu::CallbackTrait for Callback {
         if gpu.selection_version != self.selection_version {
             gpu.renderer.set_selection(device, queue, &self.selection);
             gpu.selection_version = self.selection_version;
+        }
+        match &self.edit {
+            Some((overlay, key)) => gpu.renderer.set_edit(device, overlay, *key),
+            None => gpu.renderer.clear_edit(),
         }
         gpu.renderer.render(device, queue, encoder, &self.frame);
         Vec::new()
@@ -274,6 +289,15 @@ impl ViewportState {
     /// The world matrix of an object's part, if it is drawn.
     ///
     /// Complexity: O(parts).
+    /// The part index, mesh and world matrix of `object` in the cached scene.
+    ///
+    /// Complexity: O(parts).
+    pub fn part_of(&self, object: ObjectKey) -> Option<(u32, Arc<p3d_mesh::Mesh>, Mat4)> {
+        let c = self.cache.as_ref()?;
+        let i = c.view.parts.iter().position(|p| p.object == object)?;
+        Some((i as u32, Arc::clone(c.view.meshes.get(i)?), *c.models.get(i)?))
+    }
+
     pub fn part_matrix(&self, object: ObjectKey) -> Option<Mat4> {
         let c = self.cache.as_ref()?;
         c.view.parts.iter().position(|p| p.object == object).map(|i| c.models[i])
@@ -378,6 +402,7 @@ impl ViewportState {
         settings: &ViewSettings,
         style: p3d_render::ViewStyle,
     ) -> Vec<ViewportEvent> {
+        let element_mode = self.pick_elements;
         let rect = ui.max_rect();
         self.rect = rect;
         let resp = ui.interact(rect, ui.id().with("viewport"), Sense::click_and_drag());
@@ -402,7 +427,13 @@ impl ViewportState {
         let h = ((rect.max.y * ppp).round() - top).max(1.0) as u32;
         self.size_px = [w, h];
         let mut pick = None;
-        if resp.clicked()
+        if element_mode
+            && resp.clicked()
+            && let Some(p) = resp.interact_pointer_pos()
+        {
+            let add = ui.input(|i| i.modifiers.shift || i.modifiers.command);
+            events.push(ViewportEvent::ElementClick { at: p, add });
+        } else if resp.clicked()
             && let Some(p) = resp.interact_pointer_pos()
             && self.gpu
         {
@@ -423,7 +454,7 @@ impl ViewportState {
             camera: self.camera,
             shading: settings.shading(),
             grid: settings.grid,
-            style,
+            style: p3d_render::ViewStyle { vertex_px: style.vertex_px * ppp, ..style },
             ids: self.has_selection(),
             pick,
             xray: settings.xray.then_some(settings.xray_alpha),
@@ -434,6 +465,7 @@ impl ViewportState {
                 rect,
                 Callback {
                     frame,
+                    edit: self.edit_overlay.clone(),
                     view: Arc::clone(&cache.view),
                     geometry: cache.geometry,
                     models,

@@ -705,13 +705,28 @@ pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
         let s = app.stats();
         let any = s.selected.objects > 0;
         let pair = |sel: usize, total: usize| if any { format!("{} / {}", thousands(sel), thousands(total)) } else { thousands(total) };
-        let rows = [
-            (t("Objects"), format!("{} / {}", thousands(s.selected.objects), thousands(s.total.objects))),
-            (t("Vertices"), pair(s.selected.verts, s.total.verts)),
-            (t("Edges"), pair(s.selected.edges, s.total.edges)),
-            (t("Faces"), pair(s.selected.faces, s.total.faces)),
-            (t("Triangles"), pair(s.selected.tris, s.total.tris)),
-        ];
+        let both = |sel: usize, total: usize| format!("{} / {}", thousands(sel), thousands(total));
+        // In element modes the counts are the edited mesh's, as in Blender.
+        let edited = (app.ui.mode != crate::SelectMode::Object).then(|| app.edit.mesh().zip(app.edit.flushed())).flatten();
+        let rows = match edited {
+            Some((m, f)) => {
+                let tris: usize = f.faces.iter().map(|&x| m.face_len(x).saturating_sub(2)).sum();
+                [
+                    (t("Objects"), both(s.selected.objects, s.total.objects)),
+                    (t("Vertices"), both(f.verts.len(), m.vert_count())),
+                    (t("Edges"), both(f.edges.len(), m.edge_count())),
+                    (t("Faces"), both(f.faces.len(), m.face_count())),
+                    (t("Triangles"), both(tris, m.triangle_count())),
+                ]
+            }
+            None => [
+                (t("Objects"), both(s.selected.objects, s.total.objects)),
+                (t("Vertices"), pair(s.selected.verts, s.total.verts)),
+                (t("Edges"), pair(s.selected.edges, s.total.edges)),
+                (t("Faces"), pair(s.selected.faces, s.total.faces)),
+                (t("Triangles"), pair(s.selected.tris, s.total.tris)),
+            ],
+        };
         // A soft shadow keeps the text readable over geometry.
         let shadow = if theme::active() == egui::Theme::Dark { egui::Color32::from_black_alpha(150) } else { egui::Color32::from_white_alpha(170) };
         let label_w = rows.iter().map(|(l, _)| p.layout_no_wrap((*l).to_owned(), theme::small(), tk.text_dim).size().x).fold(0.0, f32::max);

@@ -21,7 +21,7 @@ use wgpu::util::DeviceExt;
 
 use crate::camera::OrbitCamera;
 use crate::image::Image;
-use crate::scene::{LineVertex, Vertex, ViewScene};
+use crate::scene::{EditOverlay, LineVertex, Vertex, ViewScene};
 use crate::{MAX_SIZE, RenderError};
 
 const HDR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -88,6 +88,12 @@ pub struct ViewStyle {
     /// Alpha is how strongly selected surfaces are tinted.
     pub selection: [f32; 4],
     pub wire: [f32; 4],
+    /// Selected vertices, edges and faces in the element modes.
+    pub element: [f32; 4],
+    /// Unselected edges and vertices of the mesh being edited.
+    pub edit_wire: [f32; 4],
+    /// Diameter of vertex dots in pixels.
+    pub vertex_px: f32,
 }
 
 /// sRGB 8-bit to linear.
@@ -119,6 +125,9 @@ impl Default for ViewStyle {
             surface: linear_hex(0xa8aeb6, 1.0),
             selection: linear_hex(0x4a8fff, 0.18),
             wire: linear_hex(0x101216, 1.0),
+            element: linear_hex(0xfb923c, 1.0),
+            edit_wire: linear_hex(0x101216, 1.0),
+            vertex_px: 6.0,
         }
     }
 }
@@ -179,7 +188,10 @@ struct Globals {
     wire: [f32; 4],
     params: [f32; 4],
     flags: [u32; 4],
-    xray: [f32; 4],
+    /// x: surface opacity (below 1 in x-ray); y: vertex dot diameter (px).
+    extra: [f32; 4],
+    element: [f32; 4],
+    edit_wire: [f32; 4],
 }
 
 struct Targets {
@@ -192,6 +204,13 @@ struct Targets {
     ids_view: wgpu::TextureView,
     id_depth: wgpu::TextureView,
     composite: wgpu::BindGroup,
+}
+
+/// The uploaded [`EditOverlay`]: buffers and vertex counts.
+struct EditGeometry {
+    lines: Option<(wgpu::Buffer, u32)>,
+    points: Option<(wgpu::Buffer, u32)>,
+    faces: Option<(wgpu::Buffer, u32)>,
 }
 
 struct Geometry {
@@ -224,6 +243,10 @@ pub struct ViewportRenderer {
     surfaces: wgpu::RenderPipeline,
     /// Surfaces for x-ray: blended, without depth writes.
     surfaces_xray: wgpu::RenderPipeline,
+    /// The element overlay: edges, vertex dots and selected faces.
+    edit_lines: wgpu::RenderPipeline,
+    edit_points: wgpu::RenderPipeline,
+    edit_faces: wgpu::RenderPipeline,
     lines: wgpu::RenderPipeline,
     grid: wgpu::RenderPipeline,
     ids: wgpu::RenderPipeline,
@@ -231,6 +254,8 @@ pub struct ViewportRenderer {
     targets: Option<Targets>,
     geometry: Option<Geometry>,
     key: Option<u64>,
+    edit: Option<EditGeometry>,
+    edit_key: Option<u64>,
     pick: Option<Pick>,
     picks: PickSlot,
 }
@@ -420,6 +445,44 @@ impl ViewportRenderer {
             depth_state(false, GreaterEqual, Default::default()),
             msaa,
         );
+        let point_buffers = [Some(wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<LineVertex>() as u64,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Uint32],
+        })];
+        let edit_lines = pipeline(
+            "viewport edit edges",
+            &scene_layout,
+            "vs_edit_line",
+            "fs_edit",
+            &line_buffers[..],
+            &opaque[..],
+            LineList,
+            depth_state(false, GreaterEqual, Default::default()),
+            msaa,
+        );
+        let edit_points = pipeline(
+            "viewport edit vertices",
+            &scene_layout,
+            "vs_edit_point",
+            "fs_edit_point",
+            &point_buffers[..],
+            &blended[..],
+            TriangleList,
+            depth_state(false, GreaterEqual, Default::default()),
+            msaa,
+        );
+        let edit_faces = pipeline(
+            "viewport edit faces",
+            &scene_layout,
+            "vs_edit_face",
+            "fs_edit_face",
+            &line_buffers[..],
+            &blended[..],
+            TriangleList,
+            depth_state(false, GreaterEqual, Default::default()),
+            msaa,
+        );
         let grid = pipeline(
             "viewport grid",
             &scene_layout,
@@ -466,6 +529,9 @@ impl ViewportRenderer {
             background,
             surfaces,
             surfaces_xray,
+            edit_lines,
+            edit_points,
+            edit_faces,
             lines,
             grid,
             ids,
@@ -473,6 +539,8 @@ impl ViewportRenderer {
             targets: None,
             geometry: None,
             key: None,
+            edit: None,
+            edit_key: None,
             pick: None,
             picks: Arc::new(Mutex::new(None)),
         }
@@ -580,6 +648,37 @@ impl ViewportRenderer {
         self.targets = Some(Targets { width, height, msaa, resolved, depth, ids, ids_view, id_depth, composite });
     }
 
+    /// Uploads the element overlay unless `key` is the one uploaded last.
+    ///
+    /// Complexity: O(overlay vertices) on a new key, O(1) otherwise.
+    pub fn set_edit(&mut self, device: &wgpu::Device, overlay: &EditOverlay, key: u64) {
+        if self.edit_key == Some(key) {
+            return;
+        }
+        let buffer = |label, list: &[LineVertex]| {
+            (!list.is_empty()).then(|| {
+                let b = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                    label: Some(label),
+                    contents: bytemuck::cast_slice(list),
+                    usage: wgpu::BufferUsages::VERTEX,
+                });
+                (b, list.len() as u32)
+            })
+        };
+        self.edit = Some(EditGeometry {
+            lines: buffer("viewport edit edges", &overlay.lines),
+            points: buffer("viewport edit vertices", &overlay.points),
+            faces: buffer("viewport edit faces", &overlay.faces),
+        });
+        self.edit_key = Some(key);
+    }
+
+    /// Stops drawing the element overlay.
+    pub fn clear_edit(&mut self) {
+        self.edit = None;
+        self.edit_key = None;
+    }
+
     /// Encodes the offscreen passes of one frame into `encoder`. Call
     /// [`ViewportRenderer::composite`] in a later pass of the same submission.
     ///
@@ -634,6 +733,24 @@ impl ViewportRenderer {
             if frame.grid && !xray {
                 pass.set_pipeline(&self.grid);
                 pass.draw(0..3, 0..1);
+            }
+            // The element overlay last, over the grid: it writes no depth.
+            if let Some(e) = &self.edit {
+                if let Some((b, n)) = &e.faces {
+                    pass.set_pipeline(&self.edit_faces);
+                    pass.set_vertex_buffer(0, b.slice(..));
+                    pass.draw(0..*n, 0..1);
+                }
+                if let Some((b, n)) = &e.lines {
+                    pass.set_pipeline(&self.edit_lines);
+                    pass.set_vertex_buffer(0, b.slice(..));
+                    pass.draw(0..*n, 0..1);
+                }
+                if let Some((b, n)) = &e.points {
+                    pass.set_pipeline(&self.edit_points);
+                    pass.set_vertex_buffer(0, b.slice(..));
+                    pass.draw(0..6, 0..*n);
+                }
             }
         }
         {
@@ -762,7 +879,9 @@ impl ViewportRenderer {
             wire: s.wire,
             params: [cam.grid_cell(), (cam.distance * 8.0).max(cam.grid_cell() * 40.0), frame.width as f32, frame.height as f32],
             flags: [frame.shading.surface_mode(), u32::from(frame.grid), encode, u32::from(ids_valid)],
-            xray: [frame.xray.map_or(1.0, |a| a.clamp(0.0, 1.0)), 0.0, 0.0, 0.0],
+            extra: [frame.xray.map_or(1.0, |a| a.clamp(0.0, 1.0)), s.vertex_px, 0.0, 0.0],
+            element: s.element,
+            edit_wire: s.edit_wire,
         }
     }
 

@@ -13,6 +13,7 @@ pub mod cmdline;
 pub mod commands;
 pub mod control;
 pub mod docking;
+pub mod elements;
 pub mod health;
 pub mod i18n;
 mod icon_data;
@@ -243,6 +244,8 @@ pub struct PixelApp {
     pub health: health::HealthState,
     /// Scene statistics for the overlay and the status bar.
     pub stats: stats::StatsCache,
+    /// Selected vertices, edges and faces of the mesh being edited.
+    pub edit: elements::EditState,
     /// The command palette while open.
     pub palette: Option<palette::Palette>,
     /// The Console's command line.
@@ -275,6 +278,7 @@ impl PixelApp {
             shots: screenshot::Shots::default(),
             health: health::HealthState::default(),
             stats: stats::StatsCache::default(),
+            edit: elements::EditState::default(),
             palette: None,
             cmdline: cmdline::CmdLine::default(),
             quit_after_shot: false,
@@ -471,6 +475,14 @@ impl PixelApp {
                 self.set_status(format!("{} {label}", t("Redid")));
                 Ok(json!({ "redone": label }))
             }
+            "edit.select_all" if self.ui.mode != SelectMode::Object && self.edit.object.is_some() => {
+                self.edit.select_all(self.ui.mode);
+                Ok(json!({ "elements": self.edit.picked().0.len() }))
+            }
+            "edit.select_none" if self.ui.mode != SelectMode::Object && self.edit.object.is_some() => {
+                self.edit.clear();
+                Ok(json!({ "elements": 0 }))
+            }
             "edit.select_all" => {
                 self.selection = self.doc().objects().map(|(k, _)| k).collect();
                 Ok(json!({ "selected": self.selection.len() }))
@@ -478,6 +490,11 @@ impl PixelApp {
             "edit.select_none" => {
                 self.selection.clear();
                 Ok(json!({ "selected": 0 }))
+            }
+            "edit.delete" if self.ui.mode != SelectMode::Object => {
+                // Ops take named groups, not picked ids (project spec 4.3);
+                // deleting picked elements waits for an op that can.
+                Err(t("Deleting selected vertices, edges or faces is not available yet; switch to Object mode to delete objects.").to_owned())
             }
             "edit.delete" => {
                 let targets = self.selected_targets();
@@ -795,6 +812,12 @@ impl PixelApp {
                     (None, false) => self.selection.clear(),
                     (None, true) => {}
                 },
+                ViewportEvent::ElementClick { at, add } => {
+                    let Some(k) = self.edit.object else { continue };
+                    let (Some((_, mesh, model)), Some(bvh)) = (self.viewport.part_of(k), self.edit.bvh()) else { continue };
+                    let hit = elements::pick(&mesh, &bvh, model, &self.viewport.camera, self.viewport.rect, at, self.ui.mode);
+                    self.edit.click(hit, add);
+                }
             }
         }
     }
@@ -877,6 +900,17 @@ impl PixelApp {
                 let sel = self.selection.clone();
                 self.viewport.scene(&doc, key, &self.hidden);
                 self.viewport.set_selection(&sel);
+                // The element modes edit the active mesh object; its overlay
+                // is rebuilt only when the selection or the mesh changes.
+                let element_mode = self.ui.mode != SelectMode::Object;
+                let editing = if element_mode { self.active_object() } else { self.edit.object };
+                let part = editing.and_then(|k| self.viewport.part_of(k));
+                self.edit.sync(part.as_ref().and(editing), part.as_ref().map(|p| &p.1), self.ui.mode);
+                self.viewport.edit_overlay = match (&part, element_mode) {
+                    (Some((i, _, _)), true) => self.edit.overlay(*i, self.ui.mode).map(|(o, k, _)| (o, k)),
+                    _ => None,
+                };
+                self.viewport.pick_elements = element_mode && self.edit.object.is_some();
                 let view_rect = chrome::viewport_header(self, ui, ui.max_rect());
                 viewport_events = ui
                     .scope_builder(egui::UiBuilder::new().max_rect(view_rect), |ui| {

@@ -16,8 +16,10 @@ egui = { workspace = true, features = ["default_fonts"] }
 egui-wgpu = { workspace = true }
 glam = { workspace = true }
 p3d-engine = { workspace = true }
+p3d-geo = { workspace = true }
 p3d-io = { workspace = true }
 p3d-math = { workspace = true }
+p3d-mesh = { workspace = true }
 p3d-ops = { workspace = true }
 p3d-perceive = { workspace = true }
 p3d-render = { workspace = true }

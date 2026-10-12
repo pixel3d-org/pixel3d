@@ -21,7 +21,7 @@ options:
       --sample             open the sample scene
       --screenshot <png>   save a screenshot of the window, then quit
       --light              use the light theme for this run
-      --command <id>       run a command after start (repeatable), e.g. edit.select_all
+      --command <line>     run a command after start (repeatable), e.g. 'ui.mode mode=face'
       --hover <x,y>        with --screenshot: rest the pointer there (points) first
       --click              with --hover: click there once before the screenshot
   -V, --version            print the version
@@ -250,8 +250,10 @@ fn run(args: Args) -> anyhow::Result<()> {
             if args.sample {
                 let _ = app.run("file.sample", serde_json::Value::Null);
             }
+            // Command lines as the Console takes them: `ui.mode mode=face`.
             for c in &args.commands {
-                if let Err(e) = app.run(c, serde_json::Value::Null) {
+                let outcome = p3d_ui::commands::parse_line(c).and_then(|(id, params)| app.run(&id, params));
+                if let Err(e) = outcome {
                     tracing::warn!(command = %c, error = %e, "start-up command failed");
                 }
             }

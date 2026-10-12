@@ -227,3 +227,62 @@ pub fn world_bounds(part: &ViewPart, model: glam::Mat4) -> (Vec3, Vec3) {
     }
     (lo, hi)
 }
+
+/// Bit of [`LineVertex::part`] that marks a selected element in an
+/// [`EditOverlay`].
+pub const EDIT_SELECTED: u32 = 1 << 31;
+
+/// The mesh being edited, drawn over the scene in the element selection
+/// modes: its edges (two vertices each), its vertices (one each, drawn as
+/// dots) and its selected faces as triangles (three vertices each). Object
+/// space; `part` is the part index (for its transform), with
+/// [`EDIT_SELECTED`] set on selected elements.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct EditOverlay {
+    pub lines: Vec<LineVertex>,
+    pub points: Vec<LineVertex>,
+    pub faces: Vec<LineVertex>,
+}
+
+/// The selected elements an [`EditOverlay`] highlights, by mesh id.
+#[derive(Debug, Clone, Copy)]
+pub struct ElementSets<'a> {
+    pub verts: &'a std::collections::BTreeSet<u32>,
+    pub edges: &'a std::collections::BTreeSet<u32>,
+    pub faces: &'a std::collections::BTreeSet<u32>,
+}
+
+/// Builds the overlay of `mesh`, drawn as part `part`; `points` adds the
+/// vertex dots (vertex mode).
+///
+/// Complexity: O((V + E) log s + corners of the selected faces), s the
+/// selection size.
+pub fn edit_overlay(mesh: &p3d_mesh::Mesh, part: u32, sel: ElementSets<'_>, points: bool) -> EditOverlay {
+    let at = |v: u32| mesh.positions.get(v as usize).map_or([0.0; 3], |p| p.to_array());
+    let flag = |on: bool| if on { part | EDIT_SELECTED } else { part };
+    let mut out = EditOverlay { lines: Vec::with_capacity(mesh.edge_count() * 2), ..Default::default() };
+    for e in mesh.edges() {
+        let [a, b] = mesh.edge_verts(e);
+        let p = flag(sel.edges.contains(&e));
+        out.lines.push(LineVertex { pos: at(a), part: p });
+        out.lines.push(LineVertex { pos: at(b), part: p });
+    }
+    if points {
+        out.points = mesh.verts().map(|v| LineVertex { pos: at(v), part: flag(sel.verts.contains(&v)) }).collect();
+    }
+    let mut corners = Vec::new();
+    for &f in sel.faces {
+        if !mesh.is_alive(p3d_mesh::ElementKind::Face, f) {
+            continue;
+        }
+        corners.clear();
+        corners.extend(mesh.face_verts(f));
+        // A fan is enough for a tint over convex and mildly concave faces.
+        for i in 1..corners.len().saturating_sub(1) {
+            for v in [corners[0], corners[i], corners[i + 1]] {
+                out.faces.push(LineVertex { pos: at(v), part: part | EDIT_SELECTED });
+            }
+        }
+    }
+    out
+}
