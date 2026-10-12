@@ -11,6 +11,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+fixedbitset = { workspace = true }
 glam = { workspace = true }
+indexmap = { workspace = true }
 rustc-hash = { workspace = true }
+smallvec = { workspace = true }
 thiserror = { workspace = true }

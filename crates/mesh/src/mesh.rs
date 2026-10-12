@@ -1,7 +1,12 @@
 //! The half-edge mesh: topology arrays, element liveness, adjacency queries
 //! and simple geometric measures.
 
-use glam::Vec3;
+use glam::{Vec2, Vec3, Vec4};
+use indexmap::IndexMap;
+use smallvec::SmallVec;
+
+use crate::attrs::EdgeFlags;
+use crate::groups::Group;
 
 /// Marker for "no element" in topology arrays.
 pub const INVALID: u32 = u32::MAX;
@@ -29,6 +34,21 @@ pub struct Mesh {
     pub(crate) face_he: Vec<u32>,
     /// Vertex positions in object space, one per vertex slot.
     pub positions: Vec<Vec3>,
+    /// UV layers (UV0, UV1 for lightmaps), one value per half-edge slot:
+    /// the corner of the half-edge's face at its origin vertex.
+    pub corner_uv: SmallVec<[Vec<Vec2>; 2]>,
+    /// Custom split normals per half-edge slot.
+    pub corner_normal: Option<Vec<Vec3>>,
+    /// Vertex colors per half-edge slot.
+    pub corner_color: Option<Vec<Vec4>>,
+    /// Material slot per face slot.
+    pub face_material: Vec<u16>,
+    /// Seam and sharp flags per edge slot.
+    pub edge_flags: Vec<EdgeFlags>,
+    /// Subdivision crease weight in [0, 1] per edge slot.
+    pub edge_crease: Option<Vec<f32>>,
+    /// Named element groups in creation order.
+    pub(crate) groups: IndexMap<String, Group>,
     pub(crate) free_verts: Vec<u32>,
     pub(crate) free_edges: Vec<u32>,
     pub(crate) free_faces: Vec<u32>,

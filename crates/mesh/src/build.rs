@@ -135,6 +135,9 @@ impl Mesh {
             start += size as usize;
         }
 
+        mesh.face_material = vec![0; mesh.face_slots()];
+        mesh.edge_flags = vec![crate::EdgeFlags::NONE; mesh.edge_slots()];
+
         link_boundary(&mut mesh)?;
 
         if let Some(v) = mesh.vert_he.iter().position(|&h| h == INVALID) {

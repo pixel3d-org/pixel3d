@@ -1,5 +1,6 @@
 //! Invariant checks for the half-edge mesh.
 
+use crate::attrs::MAX_UV_LAYERS;
 use crate::mesh::{INVALID, Mesh};
 
 /// A broken mesh invariant: what is wrong and on which element.
@@ -127,8 +128,33 @@ impl Mesh {
         self.validate_attributes()
     }
 
-    /// Attribute column lengths. Extended as attributes are added.
+    /// Attribute column lengths and group contents.
+    ///
+    /// Complexity: O(slots) per group.
     fn validate_attributes(&self) -> Result<(), ValidationError> {
+        let (nh, ne, nf) = (self.he_slots(), self.edge_slots(), self.face_slots());
+        ensure!(self.corner_uv.len() <= MAX_UV_LAYERS, "{} UV layers", self.corner_uv.len());
+        for (i, layer) in self.corner_uv.iter().enumerate() {
+            ensure!(layer.len() == nh, "UV layer {i} has {} values for {nh} half-edges", layer.len());
+        }
+        if let Some(n) = &self.corner_normal {
+            ensure!(n.len() == nh, "{} corner normals for {nh} half-edges", n.len());
+        }
+        if let Some(c) = &self.corner_color {
+            ensure!(c.len() == nh, "{} corner colors for {nh} half-edges", c.len());
+        }
+        ensure!(self.face_material.len() == nf, "{} face materials for {nf} faces", self.face_material.len());
+        ensure!(self.edge_flags.len() == ne, "{} edge flags for {ne} edges", self.edge_flags.len());
+        if let Some(c) = &self.edge_crease {
+            ensure!(c.len() == ne, "{} edge creases for {ne} edges", c.len());
+        }
+        for (name, g) in self.groups() {
+            ensure!(!name.is_empty(), "group with an empty name");
+            ensure!(g.bits().len() == self.slots(g.kind()), "group `{name}` has {} bits for {} slots", g.bits().len(), self.slots(g.kind()));
+            if let Some(i) = g.iter().find(|&i| !self.is_alive(g.kind(), i)) {
+                return Err(ValidationError(format!("group `{name}` holds dead {} element {i}", g.kind().as_str())));
+            }
+        }
         Ok(())
     }
 }
