@@ -16,7 +16,7 @@ Progress checklist for the roadmap. Tick a box in the commit that completes it; 
 - [x] `cargo xtask layers` (ranks inside layers: ADR 0001)
 - [x] `cargo xtask ci` and `cargo xtask ci-fast` (ci-fast tests changed crates and their dependents)
 - [x] CI workflows (`ci.yml`, `nightly.yml`): `cargo xtask ci` on Windows, macOS and Linux
-- [ ] Licenses: `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md`
+- [x] Licenses: `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md`
 - [ ] `README.md` (product description)
 - [x] `docs/STATUS.md` with every phase as checkboxes
 - [ ] `docs/architecture.md`

@@ -1,0 +1,19 @@
+pixel3d
+Copyright (c) 2026 hasan-muzak and the pixel3d contributors.
+Licensed under the MIT License or the Apache License, Version 2.0, at your option
+(LICENSE-MIT, LICENSE-APACHE).
+
+Third-party material
+
+Software dependencies are listed in Cargo.lock; their licenses are checked by cargo-deny against
+the allow list in deny.toml. Dependencies under a weak-copyleft license (MPL-2.0) are used
+unmodified as separate libraries and are listed here with their source location. There are none
+yet.
+
+Bundled assets (icons, images, fonts, sample models) are listed with their authors, sources and
+licenses in ATTRIBUTION.md.
+
+Unity is a trademark of Unity Technologies. Unreal and Unreal Engine are trademarks of Epic Games,
+Inc. Godot is a trademark of the Godot Foundation. Blender is a trademark of the Blender
+Foundation. pixel3d is an independent project and is not affiliated with, sponsored by or endorsed
+by any of them.
