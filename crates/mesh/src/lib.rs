@@ -4,6 +4,7 @@
 
 mod attrs;
 mod build;
+mod combine;
 mod edit;
 mod groups;
 mod mesh;

@@ -71,3 +71,48 @@ proptest! {
         }
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn flip_reverses_every_face(m in strategy::mesh()) {
+        let mut f = m.clone();
+        f.flip_all();
+        prop_assert_eq!(f.validate(), Ok(()));
+        for face in m.faces() {
+            let (a, b) = (m.face_normal(face), f.face_normal(face));
+            prop_assert!(a.length() < 1e-6 || a.dot(b) < -0.99, "face {} not reversed", face);
+        }
+        f.flip_all();
+        prop_assert_eq!(f.validate(), Ok(()));
+        prop_assert_eq!(f.triangle_count(), m.triangle_count());
+    }
+
+    #[test]
+    fn mirror_transform_is_valid(m in strategy::mesh(), axis in 0usize..3) {
+        let mut s = Vec3::ONE;
+        s[axis] = -1.0;
+        let mut t = m.clone();
+        t.transform(glam::Affine3A::from_scale(s));
+        prop_assert_eq!(t.validate(), Ok(()));
+        for face in m.faces() {
+            let mirrored = m.face_normal(face) * s;
+            prop_assert!(mirrored.length() < 1e-6 || t.face_normal(face).dot(mirrored) > 0.99);
+        }
+    }
+
+    #[test]
+    fn components_split_and_append_back(m in strategy::mesh()) {
+        let (labels, n) = m.face_components();
+        let parts = m.split_by_face_labels(&labels);
+        prop_assert_eq!(parts.len(), n as usize);
+        let mut joined = Mesh::new();
+        for p in &parts {
+            prop_assert_eq!(p.validate(), Ok(()));
+            joined.append(p);
+        }
+        prop_assert_eq!(joined.validate(), Ok(()));
+        prop_assert_eq!((joined.vert_count(), joined.edge_count(), joined.face_count()), (m.vert_count(), m.edge_count(), m.face_count()));
+    }
+}
