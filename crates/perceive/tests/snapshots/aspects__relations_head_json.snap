@@ -1,0 +1,57 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.data
+---
+{
+  "floating": [
+    {
+      "gap": 0.02,
+      "nearest": "head",
+      "part": "hat"
+    }
+  ],
+  "grounded": [],
+  "pairs": [
+    {
+      "a": "head",
+      "approximate": false,
+      "at": [
+        -0.08,
+        0.16,
+        0.0
+      ],
+      "b": "ear_l",
+      "dist": 0.01884,
+      "kind": "penetrating",
+      "sinks": "ear_l"
+    },
+    {
+      "a": "head",
+      "approximate": false,
+      "at": [
+        0.08,
+        0.16,
+        0.0
+      ],
+      "b": "ear_r",
+      "dist": 0.01884,
+      "kind": "penetrating",
+      "sinks": "ear_r"
+    },
+    {
+      "a": "head",
+      "approximate": false,
+      "at": [
+        0.0,
+        0.25,
+        0.0
+      ],
+      "b": "hat",
+      "dist": 0.02,
+      "kind": "gap",
+      "sinks": null
+    }
+  ],
+  "tolerance": 0.001,
+  "truncated": false
+}

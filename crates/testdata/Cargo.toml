@@ -14,4 +14,5 @@ workspace = true
 glam = { workspace = true }
 p3d-geo = { workspace = true }
 p3d-mesh = { workspace = true }
+p3d-scene = { workspace = true }
 proptest = { workspace = true }

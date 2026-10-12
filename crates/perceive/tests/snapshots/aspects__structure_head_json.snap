@@ -1,0 +1,124 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.data
+---
+{
+  "bottom": 0.05,
+  "floating": 1,
+  "gaps": 1,
+  "mirror_pairs": [
+    [
+      "ear_l",
+      "ear_r"
+    ]
+  ],
+  "others": [],
+  "parts": [
+    {
+      "center": [
+        0.0,
+        0.15,
+        0.0
+      ],
+      "depth": 0,
+      "groups": [],
+      "id": 1,
+      "name": "head",
+      "path": "head",
+      "relations": [
+        "ear_l sinks in 19 mm",
+        "ear_r sinks in 19 mm",
+        "20 mm from hat"
+      ],
+      "size": [
+        0.2,
+        0.2,
+        0.2
+      ],
+      "tags": [],
+      "tris": 768
+    },
+    {
+      "center": [
+        -0.11,
+        0.16,
+        0.0
+      ],
+      "depth": 0,
+      "groups": [],
+      "id": 2,
+      "name": "ear_l",
+      "path": "ear_l",
+      "relations": [
+        "sinks 19 mm into head"
+      ],
+      "size": [
+        0.06,
+        0.06,
+        0.06
+      ],
+      "tags": [],
+      "tris": 192
+    },
+    {
+      "center": [
+        0.11,
+        0.16,
+        0.0
+      ],
+      "depth": 0,
+      "groups": [],
+      "id": 3,
+      "name": "ear_r",
+      "path": "ear_r",
+      "relations": [
+        "sinks 19 mm into head"
+      ],
+      "size": [
+        0.06,
+        0.06,
+        0.06
+      ],
+      "tags": [],
+      "tris": 192
+    },
+    {
+      "center": [
+        0.0,
+        0.295,
+        0.0
+      ],
+      "depth": 0,
+      "groups": [
+        "right",
+        "left",
+        "top",
+        "bottom",
+        "front",
+        "back"
+      ],
+      "id": 4,
+      "name": "hat",
+      "path": "hat",
+      "relations": [
+        "20 mm from head",
+        "floating"
+      ],
+      "size": [
+        0.12,
+        0.05,
+        0.12
+      ],
+      "tags": [],
+      "tris": 12
+    }
+  ],
+  "penetrating": 2,
+  "size": [
+    0.28,
+    0.27,
+    0.2
+  ],
+  "title": "scene",
+  "touching": 0
+}

@@ -1,0 +1,9 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+relations of scene: 4 parts, contact within 1.1 mm
+crate - lid: touching at (-292, 600, 292)
+crate - handle_l: touching at (-300, 400, -80)
+crate - handle_r: touching at (300, 400, 80)
+on the ground (y = 0): crate

@@ -1,0 +1,48 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.data
+---
+{
+  "bottom": 0.6,
+  "floating": 0,
+  "gaps": 0,
+  "mirror_pairs": [],
+  "others": [],
+  "parts": [
+    {
+      "center": [
+        0.0,
+        0.62,
+        0.0
+      ],
+      "depth": 0,
+      "groups": [
+        "right",
+        "left",
+        "top",
+        "bottom",
+        "front",
+        "back"
+      ],
+      "id": 2,
+      "name": "lid",
+      "path": "crate/lid",
+      "relations": [],
+      "size": [
+        0.62,
+        0.04,
+        0.62
+      ],
+      "tags": [],
+      "tris": 12
+    }
+  ],
+  "penetrating": 0,
+  "size": [
+    0.62,
+    0.04,
+    0.62
+  ],
+  "title": "lid (o:2)",
+  "touching": 0
+}

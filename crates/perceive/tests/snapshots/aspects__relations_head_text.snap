@@ -1,0 +1,9 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+relations of scene: 4 parts, contact within 1 mm
+head - ear_l: ear_l sinks 19 mm into head at (-80, 160, 0)
+head - ear_r: ear_r sinks 19 mm into head at (80, 160, 0)
+head - hat: gap 20 mm at (0, 250, 0)
+floating: hat touches nothing; nearest head at 20 mm

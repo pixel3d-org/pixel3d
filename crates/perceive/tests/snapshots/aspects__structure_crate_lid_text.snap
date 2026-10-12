@@ -1,0 +1,7 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+structure of lid (o:2): 1 part, world mm (+Y up, front +Z), positions are box centers
+size 620 x 40 x 620 mm, bottom y=600
+lid (o:2) 620 x 40 x 620 at (0, 620, 0); 12 tris; groups right left top bottom front back

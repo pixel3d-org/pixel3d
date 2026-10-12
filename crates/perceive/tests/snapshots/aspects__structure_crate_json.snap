@@ -1,0 +1,146 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.data
+---
+{
+  "bottom": 0.0,
+  "floating": 0,
+  "gaps": 0,
+  "mirror_pairs": [
+    [
+      "handle_l",
+      "handle_r"
+    ]
+  ],
+  "others": [],
+  "parts": [
+    {
+      "center": [
+        0.0,
+        0.3,
+        0.0
+      ],
+      "depth": 0,
+      "groups": [
+        "right",
+        "left",
+        "top",
+        "bottom",
+        "front",
+        "back",
+        "bevel"
+      ],
+      "id": 1,
+      "name": "crate",
+      "path": "crate",
+      "relations": [
+        "on the ground",
+        "under lid",
+        "touches handle_l",
+        "touches handle_r"
+      ],
+      "size": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "tags": [],
+      "tris": 108
+    },
+    {
+      "center": [
+        0.0,
+        0.62,
+        0.0
+      ],
+      "depth": 1,
+      "groups": [
+        "right",
+        "left",
+        "top",
+        "bottom",
+        "front",
+        "back"
+      ],
+      "id": 2,
+      "name": "lid",
+      "path": "crate/lid",
+      "relations": [
+        "rests on crate"
+      ],
+      "size": [
+        0.62,
+        0.04,
+        0.62
+      ],
+      "tags": [],
+      "tris": 12
+    },
+    {
+      "center": [
+        -0.315,
+        0.42,
+        0.0
+      ],
+      "depth": 1,
+      "groups": [
+        "right",
+        "left",
+        "top",
+        "bottom",
+        "front",
+        "back"
+      ],
+      "id": 3,
+      "name": "handle_l",
+      "path": "crate/handle_l",
+      "relations": [
+        "touches crate"
+      ],
+      "size": [
+        0.03,
+        0.04,
+        0.16
+      ],
+      "tags": [],
+      "tris": 12
+    },
+    {
+      "center": [
+        0.315,
+        0.42,
+        0.0
+      ],
+      "depth": 1,
+      "groups": [
+        "right",
+        "left",
+        "top",
+        "bottom",
+        "front",
+        "back"
+      ],
+      "id": 4,
+      "name": "handle_r",
+      "path": "crate/handle_r",
+      "relations": [
+        "touches crate"
+      ],
+      "size": [
+        0.03,
+        0.04,
+        0.16
+      ],
+      "tags": [],
+      "tris": 12
+    }
+  ],
+  "penetrating": 0,
+  "size": [
+    0.66,
+    0.64,
+    0.62
+  ],
+  "title": "scene",
+  "touching": 3
+}

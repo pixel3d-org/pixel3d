@@ -5,6 +5,7 @@
 //! - Sized meshes for benchmarks: [`grid`], [`sphere`], [`beveled_box`],
 //!   [`terrain`], [`tube`], each sized by an approximate triangle count.
 //! - Broken polygon soups that the kernel must reject: [`broken`].
+//! - Small scenes for perception and agent tests: [`scenes`].
 //! - proptest strategies for random valid meshes: [`strategy`].
 //! - Problem sizes for the complexity scaling check: [`scale_sizes`].
 
@@ -13,6 +14,7 @@ use p3d_geo::prim::{BoxSpec, CapKind, CylinderSpec, Origin, PlaneSpec, QuadSpher
 use p3d_mesh::Mesh;
 
 pub mod broken;
+pub mod scenes;
 pub mod strategy;
 
 /// Standard benchmark sizes in triangles.

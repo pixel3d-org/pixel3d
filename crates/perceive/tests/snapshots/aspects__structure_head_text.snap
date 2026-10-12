@@ -1,0 +1,12 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+structure of scene: 4 parts, world mm (+Y up, front +Z), positions are box centers
+size 280 x 270 x 200 mm, bottom y=50
+head (o:1) 200 x 200 x 200 at (0, 150, 0); 768 tris; ear_l sinks in 19 mm, ear_r sinks in 19 mm, 20 mm from hat
+ear_l (o:2) 60 x 60 x 60 at (-110, 160, 0); 192 tris; sinks 19 mm into head
+ear_r (o:3) 60 x 60 x 60 at (110, 160, 0); 192 tris; sinks 19 mm into head
+hat (o:4) 120 x 50 x 120 at (0, 295, 0); 12 tris; groups right left top bottom front back; 20 mm from head, floating
+mirror pairs (x, by bounds): ear_l | ear_r
+contacts: 0 touching, 1 gaps, 2 penetrating, 1 floating (perceive relations for details)

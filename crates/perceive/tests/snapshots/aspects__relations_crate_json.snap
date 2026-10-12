@@ -1,0 +1,53 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.data
+---
+{
+  "floating": [],
+  "grounded": [
+    "crate"
+  ],
+  "pairs": [
+    {
+      "a": "crate",
+      "approximate": false,
+      "at": [
+        -0.292,
+        0.6,
+        0.292
+      ],
+      "b": "lid",
+      "dist": 0.0,
+      "kind": "touching",
+      "sinks": null
+    },
+    {
+      "a": "crate",
+      "approximate": false,
+      "at": [
+        -0.3,
+        0.4,
+        -0.08
+      ],
+      "b": "handle_l",
+      "dist": 0.0,
+      "kind": "touching",
+      "sinks": null
+    },
+    {
+      "a": "crate",
+      "approximate": false,
+      "at": [
+        0.3,
+        0.4,
+        0.08
+      ],
+      "b": "handle_r",
+      "dist": 0.0,
+      "kind": "touching",
+      "sinks": null
+    }
+  ],
+  "tolerance": 0.00111,
+  "truncated": false
+}

@@ -9,3 +9,16 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+glam = { workspace = true }
+p3d-analyze = { workspace = true }
+p3d-geo = { workspace = true }
+p3d-mesh = { workspace = true }
+p3d-scene = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+insta = { workspace = true, features = ["json"] }
+p3d-testdata = { workspace = true }
