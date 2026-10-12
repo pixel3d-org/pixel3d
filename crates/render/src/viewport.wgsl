@@ -28,6 +28,8 @@ struct View {
     // x: surface mode (0 shaded, 1 matcap, 2 flat paper); y: grid on;
     // z: 1 when the output target is not sRGB (encode in the shader); w: ids valid.
     flags: vec4<u32>,
+    // x: surface opacity (below 1 in x-ray).
+    xray: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> v: View;
@@ -110,7 +112,7 @@ fn fs_surface(i: SurfaceOut, @builtin(front_facing) facing: bool) -> @location(0
         n = -n;
     }
     if (v.flags.x == 2u) {
-        return vec4<f32>(0.92, 0.92, 0.91, 1.0);
+        return vec4<f32>(0.92, 0.92, 0.91, v.xray.x);
     }
     var color: vec3<f32>;
     if (v.flags.x == 1u) {
@@ -143,7 +145,7 @@ fn fs_surface(i: SurfaceOut, @builtin(front_facing) facing: bool) -> @location(0
     if (is_selected(i.part)) {
         color = mix(color, v.selection.rgb, v.selection.a);
     }
-    return vec4<f32>(color, 1.0);
+    return vec4<f32>(color, v.xray.x);
 }
 
 // Part ids (index + 1; 0 is background) for picking and outlines.

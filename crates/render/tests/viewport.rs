@@ -1,5 +1,5 @@
 //! The interactive viewport path, rendered headless: background, surfaces,
-//! grid, selection outline, picking and per-part transforms.
+//! grid, selection outline, picking, per-part transforms and x-ray.
 //!
 //! These tests need a GPU or a software adapter (CI installs lavapipe on
 //! Linux and uses WARP on Windows).
@@ -61,7 +61,17 @@ fn frame(s: &Scene, view: ViewKind) -> ViewFrame {
     let mut camera = OrbitCamera::default();
     camera.set_view(view);
     camera.frame(s.lo, s.hi, 4.0 / 3.0);
-    ViewFrame { width: 160, height: 120, camera, shading: Shading::Solid, grid: false, style: ViewStyle::default(), ids: false, pick: None }
+    ViewFrame {
+        width: 160,
+        height: 120,
+        camera,
+        shading: Shading::Solid,
+        grid: false,
+        style: ViewStyle::default(),
+        ids: false,
+        pick: None,
+        xray: None,
+    }
 }
 
 fn shot_with(v: &mut ViewportRenderer, s: &Scene, models: &[Mat4], key: u64, f: &ViewFrame) -> Image {
@@ -189,6 +199,27 @@ fn transforms_move_parts_without_new_geometry() {
     let img = shot_with(&mut v, &s, &moved, 1, &f);
     assert!(differing(&img, &base) > 500);
     assert_eq!(v.key(), Some(1));
+}
+
+#[test]
+fn xray_shows_what_is_behind() {
+    let s = scene(&scenes::crate_scene());
+    let mut v = viewport();
+    let f = frame(&s, ViewKind::ThreeQuarter);
+    let opaque = shot(&mut v, &s, 1, &f);
+    let xray = shot(&mut v, &s, 1, &ViewFrame { xray: Some(0.5), ..f });
+    assert!(differing(&xray, &opaque) > 500, "surfaces turn see-through");
+    // The ground grid under the crate is hidden when opaque and shows
+    // through in x-ray.
+    let opaque_grid = shot(&mut v, &s, 1, &ViewFrame { grid: true, ..f });
+    let xray_grid = shot(&mut v, &s, 1, &ViewFrame { grid: true, xray: Some(0.5), ..f });
+    let through = (0..opaque.height)
+        .flat_map(|y| (0..opaque.width).map(move |x| (x, y)))
+        .filter(|&(x, y)| opaque_grid.get(x, y) == opaque.get(x, y) && xray_grid.get(x, y) != xray.get(x, y))
+        .count();
+    assert!(through > 20, "grid pixels seen through the crate: {through}");
+    // Same input, same pixels.
+    assert_eq!(shot(&mut v, &s, 1, &ViewFrame { xray: Some(0.5), ..f }), xray);
 }
 
 #[test]

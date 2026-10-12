@@ -501,6 +501,16 @@ impl PixelApp {
                 self.ui.view.grid = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.grid);
                 Ok(json!({ "grid": self.ui.view.grid }))
             }
+            "view.xray" => {
+                self.ui.view.xray = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.xray);
+                if let Some(a) = params.get("alpha").and_then(Value::as_f64) {
+                    if !(0.0..=1.0).contains(&a) {
+                        return Err(format!("alpha must be between 0 and 1, got {a}"));
+                    }
+                    self.ui.view.xray_alpha = a as f32;
+                }
+                Ok(json!({ "xray": self.ui.view.xray, "alpha": self.ui.view.xray_alpha }))
+            }
             "view.stats" => {
                 self.ui.view.stats = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.stats);
                 Ok(json!({ "stats": self.ui.view.stats }))

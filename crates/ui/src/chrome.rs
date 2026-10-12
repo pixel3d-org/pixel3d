@@ -139,6 +139,7 @@ fn header_view() -> Vec<Vec<Item>> {
             item!(Grid, "view.grid", "Ground grid", "", "Show or hide the ground grid", no_params, |a| a.ui.view.grid),
             item!(Orthographic, "view.ortho", "Orthographic", "5", "Switch between perspective and orthographic", no_params, |a| a.ui.view.ortho),
         ],
+        vec![item!(XRay, "view.xray", "X-ray", "Alt+Z", "See through surfaces to the edges and objects behind them", no_params, |a| a.ui.view.xray)],
         vec![
             item!(ShadeWire, "view.shading", "Wireframe", "", "Edges only", || json!({ "mode": "wire" }), |a| a.ui.view.shading == "wire"),
             item!(ShadeSolid, "view.shading", "Solid", "", "Lit surfaces", || json!({ "mode": "solid" }), |a| a.ui.view.shading == "solid"),
@@ -726,14 +727,15 @@ pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
         }
     }
     let label = format!(
-        "{}, {}",
+        "{}, {}{}",
         if app.ui.view.ortho { t("Orthographic") } else { t("Perspective") },
         match app.ui.view.shading() {
             p3d_render::Shading::Solid => t("Solid"),
             p3d_render::Shading::SolidWire => t("Solid with edges"),
             p3d_render::Shading::Wire => t("Wireframe"),
             p3d_render::Shading::Matcap => t("Clay"),
-        }
+        },
+        if app.ui.view.xray { format!(", {}", t("X-ray")) } else { String::new() }
     );
     p.text(rect.left_top() + vec2(10.0, 8.0), Align2::LEFT_TOP, label, theme::small(), tk.text_dim);
 }
@@ -771,6 +773,7 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num3), "ui.mode", || json!({ "mode": "edge" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num4), "ui.mode", || json!({ "mode": "face" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num5), "view.ortho", || Value::Null),
+        (KeyboardShortcut::new(Modifiers::ALT, Key::Z), "view.xray", || Value::Null),
     ];
     for (shortcut, command, params) in table {
         if ctx.input_mut(|i| i.consume_shortcut(shortcut)) {

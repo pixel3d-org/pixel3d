@@ -119,6 +119,7 @@ pub fn menus() -> Vec<Menu> {
                 None,
                 checked(|a| a.ui.view.ortho, icon(Icon::Orthographic, keyed("Orthographic", "view.ortho", key(Modifiers::NONE, Key::Num5)))),
                 checked(|a| a.ui.view.grid, icon(Icon::Grid, item("Ground grid", "view.grid"))),
+                checked(|a| a.ui.view.xray, icon(Icon::XRay, keyed("X-ray", "view.xray", key(Modifiers::ALT, Key::Z)))),
                 checked(|a| a.ui.view.stats, icon(Icon::Info, item("Statistics", "view.stats"))),
                 None,
                 header("Shading"),

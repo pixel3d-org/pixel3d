@@ -43,6 +43,9 @@ pub struct ViewSettings {
     pub snap: bool,
     /// Scene statistics in the top left corner (View > Statistics).
     pub stats: bool,
+    /// X-ray: see-through surfaces (Alt+Z), with this opacity.
+    pub xray: bool,
+    pub xray_alpha: f32,
 }
 
 impl Default for ViewSettings {
@@ -55,6 +58,8 @@ impl Default for ViewSettings {
             show_nav_gizmo: true,
             snap: false,
             stats: true,
+            xray: false,
+            xray_alpha: 0.5,
         }
     }
 }
@@ -421,6 +426,7 @@ impl ViewportState {
             style,
             ids: self.has_selection(),
             pick,
+            xray: settings.xray.then_some(settings.xray_alpha),
         };
         if self.gpu {
             let (models, models_version) = self.effective_models(&cache);

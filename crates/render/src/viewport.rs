@@ -138,6 +138,9 @@ pub struct ViewFrame {
     /// Pixel to read the part id of, with a request number echoed back in
     /// the [`PickResult`].
     pub pick: Option<(u32, u32, u64)>,
+    /// X-ray: surfaces drawn see-through with this opacity (0 to 1), every
+    /// edge visible; `None` draws them opaque.
+    pub xray: Option<f32>,
 }
 
 impl ViewFrame {
@@ -176,6 +179,7 @@ struct Globals {
     wire: [f32; 4],
     params: [f32; 4],
     flags: [u32; 4],
+    xray: [f32; 4],
 }
 
 struct Targets {
@@ -218,6 +222,8 @@ pub struct ViewportRenderer {
     composite_layout: wgpu::BindGroupLayout,
     background: wgpu::RenderPipeline,
     surfaces: wgpu::RenderPipeline,
+    /// Surfaces for x-ray: blended, without depth writes.
+    surfaces_xray: wgpu::RenderPipeline,
     lines: wgpu::RenderPipeline,
     grid: wgpu::RenderPipeline,
     ids: wgpu::RenderPipeline,
@@ -392,6 +398,17 @@ impl ViewportRenderer {
             depth_state(true, Greater, Default::default()),
             msaa,
         );
+        let surfaces_xray = pipeline(
+            "viewport surfaces x-ray",
+            &scene_layout,
+            "vs_surface",
+            "fs_surface",
+            &surface_buffers[..],
+            &blended[..],
+            TriangleList,
+            depth_state(false, Greater, Default::default()),
+            msaa,
+        );
         let lines = pipeline(
             "viewport wire",
             &scene_layout,
@@ -448,6 +465,7 @@ impl ViewportRenderer {
             composite_layout,
             background,
             surfaces,
+            surfaces_xray,
             lines,
             grid,
             ids,
@@ -593,8 +611,15 @@ impl ViewportRenderer {
             pass.set_bind_group(0, &self.globals_bind, &[]);
             pass.set_pipeline(&self.background);
             pass.draw(0..3, 0..1);
+            // In x-ray the grid goes first so it shows through the surfaces,
+            // which then write no depth: everything behind stays visible.
+            let xray = frame.xray.is_some();
+            if frame.grid && xray {
+                pass.set_pipeline(&self.grid);
+                pass.draw(0..3, 0..1);
+            }
             if let Some(g) = &self.geometry {
-                pass.set_pipeline(&self.surfaces);
+                pass.set_pipeline(if xray { &self.surfaces_xray } else { &self.surfaces });
                 pass.set_vertex_buffer(0, g.vertices.slice(..));
                 pass.set_index_buffer(g.indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.draw_indexed(0..g.index_count, 0, 0..1);
@@ -606,7 +631,7 @@ impl ViewportRenderer {
                     pass.draw(0..*count, 0..1);
                 }
             }
-            if frame.grid {
+            if frame.grid && !xray {
                 pass.set_pipeline(&self.grid);
                 pass.draw(0..3, 0..1);
             }
@@ -737,6 +762,7 @@ impl ViewportRenderer {
             wire: s.wire,
             params: [cam.grid_cell(), (cam.distance * 8.0).max(cam.grid_cell() * 40.0), frame.width as f32, frame.height as f32],
             flags: [frame.shading.surface_mode(), u32::from(frame.grid), encode, u32::from(ids_valid)],
+            xray: [frame.xray.map_or(1.0, |a| a.clamp(0.0, 1.0)), 0.0, 0.0, 0.0],
         }
     }
 
