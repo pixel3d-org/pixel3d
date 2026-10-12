@@ -54,11 +54,13 @@ impl RawMesh {
         self.he_face = vec![crate::INVALID; nh];
         for (f, &start) in self.face_he.iter().enumerate() {
             let mut h = start;
-            // At most nh steps: a corrupt loop cannot spin forever.
-            for _ in 0..nh {
+            // Each half-edge gets a face at most once: a walk stops at the first
+            // half-edge that already has one, so corrupt input (loops shared by
+            // several faces) stays O(H + F) and is then rejected by validation.
+            loop {
                 match self.he_face.get_mut(h as usize) {
-                    Some(slot) => *slot = f as u32,
-                    None => break,
+                    Some(slot) if *slot == crate::INVALID => *slot = f as u32,
+                    _ => break,
                 }
                 h = self.he_next[h as usize];
                 if h == start {
@@ -210,6 +212,25 @@ mod tests {
         stripped.he_face.clear();
         stripped.rebuild_links();
         assert_eq!(stripped, raw);
+    }
+
+    #[test]
+    fn adversarial_links_rebuild_in_linear_time() {
+        // One big cycle and a face starting at every half-edge: a walk per face
+        // would be O(F x H) = 2.5e9 steps; each half-edge is visited once instead.
+        let nh = 50_000u32;
+        let mut raw = RawMesh {
+            he_next: (0..nh).map(|h| (h + 1) % nh).collect(),
+            he_vert: (0..nh).map(|h| h % 3).collect(),
+            vert_he: vec![0, 1, 2],
+            face_he: (0..nh).collect(),
+            positions: vec![[0.0; 3]; 3],
+            ..RawMesh::default()
+        };
+        let start = std::time::Instant::now();
+        raw.rebuild_links();
+        assert!(start.elapsed().as_secs() < 5, "rebuild took {:?}", start.elapsed());
+        assert!(Mesh::from_raw(raw).is_err());
     }
 
     #[test]

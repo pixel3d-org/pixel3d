@@ -114,7 +114,22 @@ impl Mesh {
             ensure!(self.is_he_alive(h) && self.origin(h) == v, "vertex {v}: vert_he {h} does not start at it");
             ensure!(boundary_out[v as usize] <= 1, "vertex {v} has {} boundary fans", boundary_out[v as usize]);
             ensure!(boundary_out[v as usize] == 0 || self.is_boundary_he(h), "boundary vertex {v}: vert_he is not on the boundary");
-            ensure!(self.vert_outgoing(v).count() == degree[v as usize] as usize, "vertex {v} has more than one fan (non-manifold)");
+            // Walk the fan, stopping at the first step that leaves the vertex or
+            // exceeds its degree: O(degree) here, O(H) over all vertices even on
+            // corrupt input.
+            let deg = degree[v as usize] as usize;
+            let mut steps = 0usize;
+            let mut cur = h;
+            loop {
+                ensure!(self.is_he_alive(cur) && self.origin(cur) == v, "vertex {v}: its fan leaves the vertex");
+                steps += 1;
+                ensure!(steps <= deg, "vertex {v}: its fan does not close");
+                cur = self.rotate(cur);
+                if cur == h {
+                    break;
+                }
+            }
+            ensure!(steps == deg, "vertex {v} has more than one fan (non-manifold)");
         }
 
         // Free lists hold exactly the dead slots, each once.
