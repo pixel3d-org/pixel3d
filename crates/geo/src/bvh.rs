@@ -627,57 +627,92 @@ impl TriBvh {
     /// Complexity: O(n log n + overlapping leaf pairs) typical.
     pub fn self_crossings(&self, mut f: impl FnMut(u32, u32) -> bool) {
         let Some(x) = &self.bvh else { return };
-        let mut test = |t: u32, u: u32| -> bool {
+        self_pairs(x, |t, u| {
             let (vt, vu) = (self.verts[t as usize], self.verts[u as usize]);
             if vt.iter().any(|v| vu.contains(v)) || !triangles_cross(self.tris[t as usize], self.tris[u as usize]) {
                 return true;
             }
             f(t.min(u), t.max(u))
-        };
-        let mut stack = vec![(0u32, 0u32)];
-        while let Some((i, j)) = stack.pop() {
-            let (ni, nj) = (&x.nodes[i as usize], &x.nodes[j as usize]);
-            if i == j {
-                if ni.is_leaf() {
-                    let r = ni.first_index..ni.first_index + ni.prim_count;
-                    for p in r.clone() {
-                        for q in p + 1..r.end {
-                            if !test(x.primitive_indices[p as usize], x.primitive_indices[q as usize]) {
-                                return;
-                            }
+        });
+    }
+}
+
+/// Calls `f` once for every unordered pair of distinct primitives whose
+/// leaves' boxes overlap; stops when `f` returns false.
+///
+/// Complexity: O(n log n + overlapping leaf pairs) typical.
+fn self_pairs(x: &Bvh2, mut f: impl FnMut(u32, u32) -> bool) {
+    let mut stack = vec![(0u32, 0u32)];
+    while let Some((i, j)) = stack.pop() {
+        let (ni, nj) = (&x.nodes[i as usize], &x.nodes[j as usize]);
+        if i == j {
+            if ni.is_leaf() {
+                let r = ni.first_index..ni.first_index + ni.prim_count;
+                for p in r.clone() {
+                    for q in p + 1..r.end {
+                        if !f(x.primitive_indices[p as usize], x.primitive_indices[q as usize]) {
+                            return;
                         }
                     }
+                }
+            } else {
+                let (l, r) = (ni.first_index, ni.first_index + 1);
+                stack.extend([(l, r), (r, r), (l, l)]);
+            }
+            continue;
+        }
+        if !ni.aabb().intersect_aabb(nj.aabb()) {
+            continue;
+        }
+        match (ni.is_leaf(), nj.is_leaf()) {
+            (true, true) => {
+                for p in ni.first_index..ni.first_index + ni.prim_count {
+                    for q in nj.first_index..nj.first_index + nj.prim_count {
+                        if !f(x.primitive_indices[p as usize], x.primitive_indices[q as usize]) {
+                            return;
+                        }
+                    }
+                }
+            }
+            (false, true) => stack.extend([(ni.first_index + 1, j), (ni.first_index, j)]),
+            (true, false) => stack.extend([(i, nj.first_index + 1), (i, nj.first_index)]),
+            (false, false) => {
+                if ni.aabb().half_area() >= nj.aabb().half_area() {
+                    stack.extend([(ni.first_index + 1, j), (ni.first_index, j)]);
                 } else {
-                    let (l, r) = (ni.first_index, ni.first_index + 1);
-                    stack.extend([(l, r), (r, r), (l, l)]);
-                }
-                continue;
-            }
-            if !ni.aabb().intersect_aabb(nj.aabb()) {
-                continue;
-            }
-            match (ni.is_leaf(), nj.is_leaf()) {
-                (true, true) => {
-                    for p in ni.first_index..ni.first_index + ni.prim_count {
-                        for q in nj.first_index..nj.first_index + nj.prim_count {
-                            if !test(x.primitive_indices[p as usize], x.primitive_indices[q as usize]) {
-                                return;
-                            }
-                        }
-                    }
-                }
-                (false, true) => stack.extend([(ni.first_index + 1, j), (ni.first_index, j)]),
-                (true, false) => stack.extend([(i, nj.first_index + 1), (i, nj.first_index)]),
-                (false, false) => {
-                    if ni.aabb().half_area() >= nj.aabb().half_area() {
-                        stack.extend([(ni.first_index + 1, j), (ni.first_index, j)]);
-                    } else {
-                        stack.extend([(i, nj.first_index + 1), (i, nj.first_index)]);
-                    }
+                    stack.extend([(i, nj.first_index + 1), (i, nj.first_index)]);
                 }
             }
         }
     }
+}
+
+/// Pairs `(i, j)`, `i < j`, of boxes that overlap after growing each by
+/// `pad`, sorted; at most `max` pairs (the flag says whether more existed).
+/// A box tree finds them, so boxes that line up along an axis cost nothing
+/// extra.
+///
+/// Complexity: O(k log k + overlapping pairs) for k boxes.
+pub fn box_pairs(boxes: &[(Vec3, Vec3)], pad: f32, max: usize) -> (Vec<(usize, usize)>, bool) {
+    if boxes.len() < 2 {
+        return (Vec::new(), false);
+    }
+    let grown: Vec<Aabb> = boxes.iter().map(|(lo, hi)| Aabb::new(a(*lo - pad), a(*hi + pad))).collect();
+    let tree = obvhs::bvh2::builder::build_bvh2(&grown, BvhBuildParams::fast_build(), &mut Duration::default());
+    let mut pairs = Vec::new();
+    let mut truncated = false;
+    self_pairs(&tree, |p, q| {
+        if grown[p as usize].intersect_aabb(&grown[q as usize]) {
+            if pairs.len() >= max {
+                truncated = true;
+                return false;
+            }
+            pairs.push((p.min(q) as usize, p.max(q) as usize));
+        }
+        true
+    });
+    pairs.sort_unstable();
+    (pairs, truncated)
 }
 
 #[cfg(test)]
@@ -858,6 +893,24 @@ mod tests {
             .map(|(t, u)| triangle_distance(p.triangle(t), q.triangle(u)).0)
             .fold(f32::INFINITY, f32::min);
         assert!((p.nearest(&q, 10.0).unwrap().dist - brute).abs() < 1e-6);
+    }
+
+    #[test]
+    fn box_pairs_find_exactly_the_overlaps() {
+        let b = |x: f32, w: f32| (Vec3::new(x, 0.0, 0.0), Vec3::new(x + w, 1.0, 1.0));
+        let boxes = vec![b(0.0, 1.0), b(0.5, 1.0), b(3.0, 1.0), b(1.2, 0.5), b(10.0, 1.0)];
+        assert_eq!(box_pairs(&boxes, 0.0, 100), (vec![(0, 1), (1, 3)], false));
+        // Each box grows by the pad: boxes 2 and 3 are 1.3 apart, more than 2 x 0.5.
+        assert_eq!(box_pairs(&boxes, 0.5, 100).0, vec![(0, 1), (0, 3), (1, 3)]);
+        assert_eq!(box_pairs(&boxes, 0.7, 100).0, vec![(0, 1), (0, 3), (1, 3), (2, 3)]);
+        let (pairs, truncated) = box_pairs(&boxes, 0.5, 2);
+        assert_eq!(pairs.len(), 2);
+        assert!(truncated);
+        // A column of boxes: all overlap in x, none in y.
+        let column: Vec<(Vec3, Vec3)> = (0..200).map(|i| (Vec3::new(0.0, i as f32 * 2.0, 0.0), Vec3::new(1.0, i as f32 * 2.0 + 1.0, 1.0))).collect();
+        assert_eq!(box_pairs(&column, 0.0, 100), (Vec::new(), false));
+        assert_eq!(box_pairs(&column, 0.6, 1000).0.len(), 199);
+        assert_eq!(box_pairs(&column[..1], 1.0, 10), (Vec::new(), false));
     }
 
     #[test]
