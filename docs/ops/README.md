@@ -31,6 +31,10 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`prim.quad_sphere`](prim.quad_sphere.md) | Creates a sphere of even quads with no poles (a projected subdivided cube). |
 | [`prim.uv_sphere`](prim.uv_sphere.md) | Creates a latitude-longitude sphere with quads between parallels and triangle fans at both poles. |
 | [`prim.ico_sphere`](prim.ico_sphere.md) | Creates a geodesic sphere of nearly equal triangles (a subdivided icosahedron). |
+| [`prim.torus`](prim.torus.md) | Creates a torus (ring, donut) lying flat in the XZ plane, all quads. |
+| [`prim.tube`](prim.tube.md) | Creates a hollow cylinder (pipe with wall thickness) with groups outer, inner, cap_top, cap_bottom. |
+| [`prim.capsule`](prim.capsule.md) | Creates a capsule (a cylinder with round ends) of quads only, with groups side, cap_top, cap_bottom. |
+| [`prim.wedge`](prim.wedge.md) | Creates a wedge (ramp) whose slope runs down toward the front, with groups bottom, back, slope, left, right. |
 | [`prim.plane`](prim.plane.md) | Creates a flat grid of quads in the XZ plane facing up (+Y). |
 
 ## select

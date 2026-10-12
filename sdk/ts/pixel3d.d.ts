@@ -30,6 +30,12 @@ export type BoxFilter = {
 /** How cylinder caps are filled. */
 export type CapParam = "quad_grid" | "ngon" | "fan" | "none";
 
+/** Advanced capsule settings. */
+export type CapsuleAdvanced = {
+  /** Segments along the straight part. */
+  height_segments?: number;
+};
+
 /** Advanced cone settings. */
 export type ConeAdvanced = {
   /** Segments along the height. */
@@ -191,6 +197,12 @@ export type Selector = {
 
 /** How to split a mesh. */
 export type SeparateBy = "loose_parts" | "material" | "groups";
+
+/** Advanced tube settings. */
+export type TubeAdvanced = {
+  /** Segments along the height. */
+  height_segments?: number;
+};
 
 /** `scene.create_empty`: Creates an empty object: a transform for grouping parts or marking a pivot. */
 export type SceneCreateEmptyParams = {
@@ -457,6 +469,86 @@ export type PrimIcoSphereParams = {
   subdivisions?: number | null;
 };
 
+/** `prim.torus`: Creates a torus (ring, donut) lying flat in the XZ plane, all quads. */
+export type PrimTorusParams = {
+  /** Distance from the center to the middle of the ring. */
+  major_radius?: Length;
+  /** Radius of the ring's cross-section (half its thickness); less than the major radius. */
+  minor_radius?: Length;
+  /** Object name; a free name such as `torus_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom (rests on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Segments around Y; derived from the outer circumference when omitted (8 to 64). */
+  segments?: number | null;
+  /** Segments around the cross-section; derived from its circumference when omitted (8 to 64, even). */
+  sides?: number | null;
+};
+
+/** `prim.tube`: Creates a hollow cylinder (pipe with wall thickness) with groups outer, inner, cap_top, cap_bottom. */
+export type PrimTubeParams = {
+  /** Rarely needed settings. */
+  advanced?: TubeAdvanced;
+  /** Size along Y. */
+  height?: Length;
+  /** Radius of the hole; less than `radius` (wall thickness = radius - inner_radius). */
+  inner_radius?: Length;
+  /** Object name; a free name such as `tube_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom center (stands on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Outer radius. */
+  radius?: Length;
+  /** Segments around; derived from the outer circumference when omitted (8 to 64). */
+  segments?: number | null;
+};
+
+/** `prim.capsule`: Creates a capsule (a cylinder with round ends) of quads only, with groups side, cap_top, cap_bottom. */
+export type PrimCapsuleParams = {
+  /** Rarely needed settings. */
+  advanced?: CapsuleAdvanced;
+  /** Total height including both round ends; more than twice the radius. */
+  height?: Length;
+  /** Object name; a free name such as `capsule_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom (stands on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Radius of the body and the round ends. */
+  radius?: Length;
+  /** Segments around; a multiple of 8, derived from the circumference when omitted (8 to 64). */
+  segments?: number | null;
+};
+
+/** `prim.wedge`: Creates a wedge (ramp) whose slope runs down toward the front, with groups bottom, back, slope, left, right. */
+export type PrimWedgeParams = {
+  /** Size along Z (back to front); the slope runs down toward +Z. */
+  depth?: Length;
+  /** Height of the back (the slope's top edge). */
+  height?: Length;
+  /** Object name; a free name such as `wedge_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom center (stands on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Size along X (left to right). */
+  width?: Length;
+};
+
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
 export type PrimPlaneParams = {
   /** Rarely needed settings. */
@@ -590,6 +682,10 @@ export interface OpParams {
   "prim.quad_sphere": PrimQuadSphereParams;
   "prim.uv_sphere": PrimUvSphereParams;
   "prim.ico_sphere": PrimIcoSphereParams;
+  "prim.torus": PrimTorusParams;
+  "prim.tube": PrimTubeParams;
+  "prim.capsule": PrimCapsuleParams;
+  "prim.wedge": PrimWedgeParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

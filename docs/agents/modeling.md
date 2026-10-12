@@ -4,7 +4,7 @@ Build assets as several named parts in a hierarchy (`crate`, `crate/lid`, `crate
 
 ## Ops you have
 
-- `prim.box`, `prim.cylinder`, `prim.quad_sphere`, `prim.plane`: real-size primitives with clean quads and semantic groups. Boxes take `bevel` (`{"width": "8mm", "segments": 2}`); cylinders adapt their segment count to the asset class.
+- `prim.box`, `prim.cylinder`, `prim.cone`, `prim.quad_sphere`, `prim.uv_sphere`, `prim.ico_sphere`, `prim.torus`, `prim.tube`, `prim.capsule`, `prim.wedge`, `prim.plane`: real-size primitives with clean quads and semantic groups. Boxes take `bevel` (`{"width": "8mm", "segments": 2}`); round primitives adapt their segment count to the asset class. Prefer `quad_sphere` for balls, `capsule` for limbs, `torus` for hoops and rings, `tube` for pipes with wall thickness.
 - `scene.*`: `create_empty`, `delete`, `duplicate` (copy or instance), `rename`, `parent`, `unparent`, `set_transform` (absolute, or `relative: true` to move by an offset), `apply_transform`, `set_origin`, `tag`, `set_metadata`, `join`, `separate`.
 - `select.*`: `save` (selector to a group), `grow`, `shrink`, `group_delete`, `group_rename`.
 - `edit.*`: `fill` (close holes), `recalc_normals` (make parts face outward), `delete_elements` (faces, or faces using selected edges or vertices).
@@ -28,8 +28,8 @@ The document's asset class sets the triangle budget and adaptive detail:
 |---|---|
 | `prop_small` | 1,500 |
 | `prop_medium` (default) | 6,000 |
-| `prop_large` | 15,000 |
-| `hero_prop` | 30,000 |
+| `prop_large` | 25,000 |
+| `hero_prop` | 40,000 |
 
 `analyze` and `expect add budget` measure against it.
 

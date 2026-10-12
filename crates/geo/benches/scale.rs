@@ -7,8 +7,8 @@ use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use glam::{Affine3A, DVec3, Vec3};
 use p3d_geo::bvh::TriBvh;
 use p3d_geo::prim::{
-    BoxSpec, CapKind, ConeSpec, IcoSphereSpec, Origin, PlaneSpec, QuadSphereSpec, UvSphereSpec, cone, cuboid, ico_sphere, plane, quad_sphere,
-    uv_sphere,
+    BoxSpec, CapKind, CapsuleSpec, ConeSpec, IcoSphereSpec, Origin, PlaneSpec, QuadSphereSpec, TorusSpec, TubeSpec, UvSphereSpec, capsule, cone,
+    cuboid, ico_sphere, plane, quad_sphere, torus, tube, uv_sphere,
 };
 use p3d_testdata::{scale_sizes, sphere};
 
@@ -59,6 +59,29 @@ fn scale(c: &mut Criterion) {
         let s = (((tris as f64).sqrt() / 4.0).round().max(1.0) as u32) * 4;
         let spec = ConeSpec { radius_bottom: 0.5, radius_top: 0.2, height: 1.0, segments: s, height_segments: s / 2, cap: CapKind::QuadGrid };
         g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| cone(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_prim_torus");
+    for &tris in &sizes {
+        let t = ((tris as f64 / 2.0).sqrt().round()) as u32;
+        let spec = TorusSpec { major_radius: 0.5, minor_radius: 0.1, segments: t, sides: t };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| torus(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_prim_tube");
+    for &tris in &sizes {
+        // 4 s (rows + 1) triangles with rows = s / 4.
+        let s = ((tris as f64).sqrt().round()) as u32;
+        let spec = TubeSpec { outer_radius: 0.5, inner_radius: 0.4, height: 1.0, segments: s, height_segments: (s / 4).max(1) };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| tube(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_prim_capsule");
+    for &tris in &sizes {
+        // Ends about s^2 / 4 triangles plus 2 s rows on the side, rows = s / 8.
+        let s = (((tris as f64 * 2.0).sqrt() / 8.0).round().max(1.0) as u32) * 8;
+        let spec = CapsuleSpec { radius: 0.2, height: 1.0, segments: s, height_segments: s / 8 };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| capsule(black_box(spec), Origin::Center)));
     }
     g.finish();
 

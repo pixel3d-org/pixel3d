@@ -155,6 +155,29 @@ fn prim_cone_points_and_frustums() {
 }
 
 #[test]
+fn ring_and_round_primitives_check_their_sizes() {
+    let mut tx = Tx::new(Document::new());
+    let e = err(&mut tx, "prim.torus", json!({ "major_radius": 0.1, "minor_radius": 0.2 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/minor_radius")));
+    let e = err(&mut tx, "prim.tube", json!({ "radius": 0.1, "inner_radius": 0.1 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/inner_radius")));
+    let e = err(&mut tx, "prim.capsule", json!({ "radius": 0.2, "height": 0.4 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/height")));
+    let e = err(&mut tx, "prim.capsule", json!({ "segments": 12 }));
+    assert_eq!(e.suggestions, vec!["8", "16"]);
+    let groups = |a: &Applied| a.output.groups.iter().map(|g| g.name.clone()).collect::<Vec<_>>();
+    let a = run(&mut tx, "prim.tube", json!({ "name": "pipe" })).unwrap();
+    assert_eq!(groups(&a), vec!["outer", "inner", "cap_top", "cap_bottom"]);
+    let a = run(&mut tx, "prim.wedge", json!({ "name": "ramp" })).unwrap();
+    assert_eq!(groups(&a), vec!["bottom", "back", "slope", "left", "right"]);
+    let a = run(&mut tx, "prim.capsule", json!({ "name": "pill", "radius": 0.1, "height": 0.5 })).unwrap();
+    let m = tx.doc().object_mesh(a.output.created[0]).unwrap();
+    let (lo, hi) = m.bounds().unwrap();
+    assert!((hi - lo).abs_diff_eq(Vec3::new(0.2, 0.5, 0.2), 1e-5), "{}", hi - lo);
+    assert!(m.faces().all(|f| m.face_len(f) == 4));
+}
+
+#[test]
 fn adaptive_segments_follow_the_asset_class() {
     let mut tx = Tx::new(Document::new());
     let a = run(&mut tx, "prim.cylinder", json!({ "radius": 0.05 })).unwrap();
