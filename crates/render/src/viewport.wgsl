@@ -119,12 +119,13 @@ fn fs_surface(i: SurfaceOut, @builtin(front_facing) front: bool) -> @location(0)
         let spec = pow(max(dot(n, h), 0.0), 48.0) * 0.18;
         color = v.surface.rgb * (hemi + vec3<f32>(0.80) * key) + vec3<f32>(spec);
     }
+    if (!front) {
+        // The back of open surfaces (planes, cards) is legitimate: shade it a
+        // little darker. Inside-out parts are a Health finding, not a color.
+        color = color * 0.7;
+    }
     if (is_selected(i.part)) {
         color = mix(color, v.selection.rgb, v.selection.a);
-    }
-    if (!front) {
-        // Inside-out faces show in a warning tint.
-        color = vec3<f32>(0.55, 0.05, 0.06) * (0.6 + 0.4 * max(dot(n, normalize(v.light.xyz)), 0.0));
     }
     return vec4<f32>(color, 1.0);
 }
@@ -144,8 +145,18 @@ struct LineOut {
 
 @vertex
 fn vs_line(@location(0) pos: vec3<f32>, @location(1) part: u32) -> LineOut {
+    // Pull edges toward the camera by a small fraction of their distance so
+    // they win over their own faces; along the pixel's ray, so they do not
+    // move on screen. Surfaces get no depth bias: slope-scaled bias let back
+    // faces show through at silhouettes.
+    let k = 0.0008;
+    var p = pos + (v.eye.xyz - pos) * k;
+    if (v.eye.w > 0.5) {
+        let to_eye = normalize((transpose(v.view) * vec4<f32>(0.0, 0.0, 1.0, 0.0)).xyz);
+        p = pos + to_eye * (abs(dot(v.eye.xyz - pos, to_eye)) * k);
+    }
     var o: LineOut;
-    o.clip = v.view_proj * vec4<f32>(pos, 1.0);
+    o.clip = v.view_proj * vec4<f32>(p, 1.0);
     o.part = part;
     return o;
 }
@@ -190,23 +201,32 @@ fn fs_grid(i: Full) -> GridOut {
     let cell = v.params.x;
     let minor = lines(hit.xz / cell);
     let major = lines(hit.xz / (cell * 10.0));
-    // Axis lines: X runs along z = 0, Z along x = 0.
-    let ax = lines(vec2<f32>(hit.z / cell, hit.x / cell));
+    // Axis lines, 1.5 pixels wide: X runs along z = 0, Z along x = 0.
+    let ad = max(fwidth(hit.zx), vec2<f32>(1e-6)) * 1.5;
+    let ax = vec2<f32>(1.0) - min(abs(hit.zx) / ad, vec2<f32>(1.0));
     let fade = 1.0 - smoothstep(v.params.y * 0.35, v.params.y, distance(hit.xz, v.eye.xz));
     var color = vec4<f32>(v.grid_minor.rgb, max(minor.x, minor.y) * v.grid_minor.a);
     let maj = max(major.x, major.y) * v.grid_major.a;
     color = mix(color, vec4<f32>(v.grid_major.rgb, maj), step(color.a, maj));
-    if (abs(hit.z) < cell) {
-        color = mix(color, vec4<f32>(v.axis_x.rgb, 1.0), ax.x);
-    }
-    if (abs(hit.x) < cell) {
-        color = mix(color, vec4<f32>(v.axis_z.rgb, 1.0), ax.y);
-    }
+    color = mix(color, vec4<f32>(v.axis_x.rgb, 1.0), ax.x);
+    color = mix(color, vec4<f32>(v.axis_z.rgb, 1.0), ax.y);
     color.a = color.a * fade;
     if (t <= 0.0 || color.a < 0.004) {
         discard;
     }
-    let clip = v.view_proj * vec4<f32>(hit, 1.0);
+    // Sit a little behind surfaces on the ground plane (a floor hides the
+    // grid instead of flickering with it): back along the ray by a small
+    // fraction of the distance.
+    var to_eye = v.eye.xyz - hit;
+    var dist = length(to_eye);
+    if (v.eye.w > 0.5) {
+        to_eye = normalize((transpose(v.view) * vec4<f32>(0.0, 0.0, 1.0, 0.0)).xyz);
+        dist = abs(dot(v.eye.xyz - hit, to_eye));
+    } else {
+        to_eye = to_eye / max(dist, 1e-6);
+    }
+    let behind = hit - to_eye * (dist * 0.002);
+    let clip = v.view_proj * vec4<f32>(behind, 1.0);
     var o: GridOut;
     o.color = color;
     o.depth = clamp(clip.z / clip.w, 0.0, 1.0);

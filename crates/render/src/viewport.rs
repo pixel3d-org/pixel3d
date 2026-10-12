@@ -27,8 +27,6 @@ const HDR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 const IDS: wgpu::TextureFormat = wgpu::TextureFormat::R32Uint;
 const DEPTH: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 const SAMPLES: u32 = 4;
-/// Reverse-Z: surfaces are pushed back (toward 0) so their own edges win.
-const SURFACE_BIAS: wgpu::DepthBiasState = wgpu::DepthBiasState { constant: -2, slope_scale: -1.5, clamp: 0.0 };
 /// Largest viewport side in pixels.
 pub const MAX_VIEWPORT: u32 = 16_384;
 
@@ -335,7 +333,7 @@ impl ViewportRenderer {
             &surface_buffers[..],
             &opaque[..],
             TriangleList,
-            depth_state(true, Greater, SURFACE_BIAS),
+            depth_state(true, Greater, Default::default()),
             msaa,
         );
         let lines = pipeline(
@@ -368,7 +366,7 @@ impl ViewportRenderer {
             &surface_buffers[..],
             &id_target[..],
             TriangleList,
-            depth_state(true, Greater, SURFACE_BIAS),
+            depth_state(true, Greater, Default::default()),
             single,
         );
         let composite = pipeline(
