@@ -1,7 +1,5 @@
 //! Local topology edits that keep the mesh 2-manifold, and compaction.
 
-use fixedbitset::FixedBitSet;
-
 use crate::attrs::EdgeFlags;
 use crate::groups::ElementKind;
 use crate::mesh::{INVALID, Mesh};
@@ -54,37 +52,34 @@ impl Mesh {
     ///
     /// Deleted slots stay until [`Mesh::compact`].
     ///
-    /// Complexity: O(sum of the deleted faces' sizes + valences of their
-    /// vertices + groups x affected elements).
+    /// Complexity: O(c log c) for the c corners of the deleted faces, plus the
+    /// valences of their vertices, plus groups x affected elements. Independent
+    /// of the mesh size.
     pub fn delete_faces(&mut self, faces: &[u32]) -> Result<DeleteReport, EditError> {
-        let mut marked = FixedBitSet::with_capacity(self.face_slots());
-        let mut list = Vec::with_capacity(faces.len());
-        for &f in faces {
-            if !self.is_face_alive(f) {
-                return Err(EditError::NoSuchFace(f));
-            }
-            if !marked.put(f as usize) {
-                list.push(f);
-            }
+        if let Some(&f) = faces.iter().find(|&&f| !self.is_face_alive(f)) {
+            return Err(EditError::NoSuchFace(f));
         }
+        // Sort and dedupe instead of a mesh-sized bitset, so deleting a few faces
+        // costs O(k log k), not O(mesh size).
+        let mut list = faces.to_vec();
+        list.sort_unstable();
+        list.dedup();
         if list.is_empty() {
             return Ok(DeleteReport::default());
         }
 
         // Affected vertices and their outgoing half-edges in rotation order,
         // read before anything changes.
-        let mut vmark = FixedBitSet::with_capacity(self.vert_slots());
         let mut verts = Vec::new();
         let mut hes = Vec::new();
         for &f in &list {
             for h in self.face_halfedges(f) {
                 hes.push(h);
-                let v = self.origin(h);
-                if !vmark.put(v as usize) {
-                    verts.push(v);
-                }
+                verts.push(self.origin(h));
             }
         }
+        verts.sort_unstable();
+        verts.dedup();
         let mut ring = Vec::new();
         let mut ring_start = Vec::with_capacity(verts.len() + 1);
         for &v in &verts {

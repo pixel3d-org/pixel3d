@@ -1,8 +1,9 @@
 //! Whole-mesh transforms, orientation flips, appending and splitting.
 
+use fixedbitset::FixedBitSet;
 use glam::{Affine3A, Vec2, Vec3, Vec4};
 
-use crate::groups::ElementKind;
+use crate::groups::{ElementKind, Group};
 use crate::mesh::{INVALID, Mesh};
 
 impl Mesh {
@@ -109,7 +110,8 @@ impl Mesh {
     /// another kind is renamed with a `_1`, `_2` suffix. Returns the offsets
     /// of the appended vertices, edges and faces.
     ///
-    /// Complexity: O(V + H + F) of both meshes plus O(groups x slots).
+    /// Complexity: O(size of `other`) plus amortized O(groups x slots / 64) to
+    /// grow group bitsets; group merging is O(members of `other`).
     pub fn append(&mut self, other: &Mesh) -> [u32; 3] {
         // Shading of this mesh, needed only if the other one brings custom normals.
         let own_normals = (self.corner_normal.is_none() && other.corner_normal.is_some()).then(|| self.compute_corner_normals());
@@ -175,10 +177,14 @@ impl Mesh {
                 target = format!("{name}_{i}");
                 i += 1;
             }
-            let members: Vec<u32> = g.iter().map(|x| x + offset).collect();
-            let existing: Vec<u32> = self.group(&target).map(|x| x.iter().collect()).unwrap_or_default();
-            // Members are live by construction.
-            let _ = self.set_group(&target, g.kind(), existing.into_iter().chain(members));
+            // Merge in place: O(members of the other group), not O(receiver size),
+            // so joining many parts one by one stays linear.
+            let slots = self.slots(g.kind());
+            let merged = self.groups.entry(target).or_insert_with(|| Group::from_bits(g.kind(), FixedBitSet::with_capacity(slots)));
+            merged.grow(slots);
+            for x in g.iter() {
+                merged.insert(x + offset);
+            }
         }
         self.revision += 1;
         [vo, eo, fo]
@@ -191,7 +197,7 @@ impl Mesh {
     /// manifold. Corner data, materials, edge flags, creases and groups are
     /// carried over.
     ///
-    /// Complexity: O(V + H + F + parts) plus O(groups x slots).
+    /// Complexity: O(V + H + F + parts x groups) plus O(groups x members).
     pub fn split_by_face_labels(&self, labels: &[u32]) -> Vec<Mesh> {
         let parts = self.faces().filter_map(|f| labels.get(f as usize).copied().filter(|&l| l != INVALID)).max().map_or(0, |m| m as usize + 1);
         let label = |h: u32| -> u32 { self.face(h).and_then(|f| labels.get(f as usize).copied()).unwrap_or(INVALID) };
