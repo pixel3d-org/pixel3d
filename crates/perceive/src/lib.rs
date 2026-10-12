@@ -15,6 +15,7 @@ pub mod fmt;
 pub mod relations;
 pub mod sample;
 pub mod shape;
+pub mod silhouette;
 pub mod structure;
 pub mod view;
 

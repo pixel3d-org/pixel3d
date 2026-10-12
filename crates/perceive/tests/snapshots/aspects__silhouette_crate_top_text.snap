@@ -1,0 +1,8 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+silhouette top of scene (12 pts, mm, (x, z), precision 2.6 mm)
+  width 660 (x -330 to 330), height 620 (z -310 to 310)
+  outline 1: (-312,-310 lid) (312,-310) (312,-81) (330,-81 handle_r) (330,82) (312,82 lid) (312,310) (-312,310) (-312,82) (-330,82 handle_l) (-330,-81) (-312,-81 lid)
+  extremes: left handle_l (-330,1), right handle_r (330,1), top lid (0,310), bottom lid (0,-310)

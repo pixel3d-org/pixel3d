@@ -58,3 +58,19 @@ fn shape_families() {
     assert_eq!(r.data[3]["holes"], 1);
     assert_eq!(r.data[3]["closed"], false);
 }
+
+#[test]
+fn silhouette_reports() {
+    use p3d_perceive::silhouette::{SilhouetteOptions, ViewDir, report};
+    let doc = scenes::crate_scene();
+    let view = View::new(&doc, None).unwrap();
+    for dir in [ViewDir::Front, ViewDir::Right, ViewDir::Top] {
+        let r = report(&view, &SilhouetteOptions { view: dir, ..SilhouetteOptions::default() }).unwrap();
+        check(&format!("silhouette_crate_{}", dir.name()), &r);
+    }
+    let doc = scenes::head_scene();
+    let r = report(&View::new(&doc, None).unwrap(), &SilhouetteOptions::default()).unwrap();
+    check("silhouette_head_front", &r);
+    let e = report(&view, &SilhouetteOptions { points: 2, ..SilhouetteOptions::default() }).unwrap_err();
+    assert_eq!((e.code, e.path.as_deref()), ("OUT_OF_RANGE", Some("/points")));
+}

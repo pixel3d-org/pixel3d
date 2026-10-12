@@ -1,0 +1,9 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+silhouette front of scene (32 pts, mm, (x, y), precision 1.1 mm)
+  width 280 (x -140 to 140), height 270 (y 50 to 320)
+  outline 1: (16,50 head) (56,66) (75,84) (93,112) (98,132) (117,131 ear_r) (133,141) (140,168) (118,189) (93,185 head) (86,201) (68,224) (39,243) (15,249) (-15,249) (-56,234) (-74,217) (-93,185) (-113,190 ear_l) (-129,183) (-140,168) (-140,152) (-117,131) (-98,132 head) (-93,112) (-75,84) (-56,66) (-16,50)
+  outline 2: (-60,270 hat) (60,270) (60,320) (-60,320)
+  extremes: left ear_l (-140,160), right ear_r (140,160), top hat (0,320), bottom head (0,50)
