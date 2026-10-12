@@ -170,6 +170,16 @@ impl Renderer {
         &self.adapter
     }
 
+    /// The device, for other renderers that share it (the viewport in tests
+    /// and automation).
+    pub fn device(&self) -> &wgpu::Device {
+        &self.device
+    }
+
+    pub fn queue(&self) -> &wgpu::Queue {
+        &self.queue
+    }
+
     /// Renders the requested views: one image per view, or one contact
     /// sheet titled `sheet`.
     ///

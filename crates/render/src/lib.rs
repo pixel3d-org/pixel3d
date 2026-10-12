@@ -13,11 +13,16 @@ pub mod font;
 mod gpu;
 pub mod image;
 pub mod scene;
+pub mod viewport;
 
-pub use camera::{Camera, ViewKind};
+pub use camera::{Camera, OrbitCamera, ViewKind};
 pub use gpu::Renderer;
 pub use image::Image;
 pub use scene::{RenderScene, prepare};
+pub use viewport::{PickResult, Shading, ViewFrame, ViewStyle, ViewportRenderer};
+
+/// wgpu as this crate uses it, so frontends name the same types.
+pub use wgpu;
 
 /// Empty border around the framed scene, as a fraction of the image side.
 pub const MARGIN: f32 = 0.06;

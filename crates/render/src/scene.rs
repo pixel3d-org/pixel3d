@@ -27,6 +27,8 @@ pub struct LineVertex {
 /// A part to label.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartLabel {
+    /// The object this part draws (the viewport maps picks back to it).
+    pub object: ObjectKey,
     pub name: String,
     /// Area-weighted center of its surface (world).
     pub center: Vec3,
@@ -109,7 +111,7 @@ pub fn prepare(doc: &Document, root: Option<ObjectKey>) -> RenderScene {
         s.lo = s.lo.min(lo);
         s.hi = s.hi.max(hi);
         let center = if area > 0.0 { center / area } else { (lo + hi) / 2.0 };
-        s.parts.push(PartLabel { name: obj.name().to_owned(), center, lo, hi });
+        s.parts.push(PartLabel { object: key, name: obj.name().to_owned(), center, lo, hi });
     }
     if s.parts.is_empty() {
         s.lo = Vec3::ZERO;
