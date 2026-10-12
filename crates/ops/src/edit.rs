@@ -189,7 +189,8 @@ impl Op for RecalcNormals {
             summary: "Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way.",
             docs: "Closed parts are judged by their volume (a part whose faces point inward has negative volume); open parts by \
                    whether their faces point away from the part's center on average. Parts that already face the right way are \
-                   left alone. Within a part, faces always agree with their neighbours, so whole parts are flipped.\n\n\
+                   left alone, and so are the inner walls of hollow parts (cavities face inward by design). Within a part, faces \
+                   always agree with their neighbours, so whole parts are flipped.\n\n\
                    **Use for** `INVERTED_NORMALS` findings, or after mirroring or importing.",
             examples: &[OpExample { args: r#"{"target": "crate"}"#, result: "crate (o:1): all 1 part already faces outward" }],
             aliases: &["recalculate normals", "recalculate outside", "shift n", "conform normals", "unify normals", "fix normals"],
@@ -211,7 +212,7 @@ impl Op for RecalcNormals {
             .parts
             .iter()
             .enumerate()
-            .filter(|(i, part)| points_outward(mesh, &parts.labels, part, *i as u32) == p.inside)
+            .filter(|(i, part)| !part.cavity && points_outward(mesh, &parts.labels, part, *i as u32) == p.inside)
             .map(|(_, part)| part.first_face)
             .collect();
         let way = if p.inside { "inward" } else { "outward" };

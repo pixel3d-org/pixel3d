@@ -60,7 +60,13 @@ pub struct Topology {
 }
 
 impl Topology {
-    /// Every part is closed and points outward.
+    /// Every part is closed (no boundary edges).
+    pub fn is_closed(&self) -> bool {
+        self.parts > 0 && self.boundary_edges == 0
+    }
+
+    /// Every part is closed and points outward (inner walls of hollow parts
+    /// face inward by design).
     pub fn is_watertight(&self) -> bool {
         self.parts > 0 && self.boundary_edges == 0 && self.inverted_parts == 0
     }
@@ -81,6 +87,9 @@ pub struct Part {
     pub volume: f64,
     pub min: Vec3,
     pub max: Vec3,
+    /// A closed part facing inward inside the box of an outward closed part:
+    /// the inner wall of a hollow object, not a mistake.
+    pub cavity: bool,
 }
 
 /// Connected parts with each face's part label (`INVALID` for dead slots).
@@ -131,6 +140,7 @@ pub fn parts(mesh: &Mesh) -> Parts {
             volume: 0.0,
             min: Vec3::splat(f32::INFINITY),
             max: Vec3::splat(f32::NEG_INFINITY),
+            cavity: false,
         })
         .collect();
     for f in mesh.faces() {
@@ -166,7 +176,28 @@ pub fn parts(mesh: &Mesh) -> Parts {
     for p in &mut parts {
         p.closed = p.boundary_edges == 0;
     }
+    mark_cavities(&mut parts);
     Parts { labels, parts }
+}
+
+/// Marks inward-facing closed parts that sit inside the box of an
+/// outward-facing closed part as cavities.
+///
+/// Complexity: O(k log k + overlapping box pairs) for k parts.
+fn mark_cavities(parts: &mut [Part]) {
+    if !parts.iter().any(|p| p.closed && p.volume < 0.0) {
+        return;
+    }
+    let boxes: Vec<(Vec3, Vec3)> = parts.iter().map(|p| (p.min, p.max)).collect();
+    let (pairs, _) = p3d_geo::bvh::box_pairs(&boxes, 0.0, 1 << 20);
+    for (a, b) in pairs {
+        for (inner, outer) in [(a, b), (b, a)] {
+            let (i, o) = (&parts[inner], &parts[outer]);
+            if i.closed && o.closed && i.volume < 0.0 && o.volume > 0.0 && i.min.cmpge(o.min).all() && i.max.cmple(o.max).all() {
+                parts[inner].cavity = true;
+            }
+        }
+    }
 }
 
 /// Every boundary loop, ordered by its lowest half-edge index.
@@ -285,7 +316,7 @@ pub fn topology(mesh: &Mesh) -> Topology {
         t.area += p.area;
         if p.closed {
             t.volume += p.volume;
-            if p.volume < 0.0 {
+            if p.volume < 0.0 && !p.cavity {
                 t.inverted_parts += 1;
             }
             t.closed_parts += 1;
@@ -340,6 +371,25 @@ mod tests {
         assert!((loops[0].length - 4.0).abs() < 1e-6);
         assert!(loops[0].centroid.distance(Vec3::new(0.5, 1.0, 0.5)) < 1e-6, "{:?}", loops[0].centroid);
         assert!(!ps.parts[0].closed && ps.parts[1].closed && ps.parts[1].volume < 0.0);
+    }
+
+    #[test]
+    fn hollow_parts_are_not_inverted() {
+        let mut m = cube(Vec3::ZERO, 1.0);
+        let mut inner = cube(Vec3::splat(0.1), 0.8);
+        inner.flip_all();
+        m.append(&inner);
+        let t = topology(&m);
+        assert_eq!((t.parts, t.closed_parts, t.inverted_parts), (2, 2, 0));
+        assert!(t.is_watertight() && t.is_closed());
+        assert!((t.volume - (1.0 - 0.512)).abs() < 1e-6, "net solid volume: {}", t.volume);
+        let ps = parts(&m);
+        assert!(!ps.parts[0].cavity && ps.parts[1].cavity);
+        // An inward box outside any other part is a mistake, not a cavity.
+        let mut lone = cube(Vec3::new(5.0, 0.0, 0.0), 1.0);
+        lone.flip_all();
+        m.append(&lone);
+        assert_eq!(topology(&m).inverted_parts, 1);
     }
 
     #[test]

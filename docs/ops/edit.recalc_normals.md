@@ -9,7 +9,7 @@ Makes every connected part of a mesh face outward (or inward), flipping parts th
 - Flags: undoable
 - Also known as: recalculate normals, recalculate outside, shift n, conform normals, unify normals, fix normals
 
-Closed parts are judged by their volume (a part whose faces point inward has negative volume); open parts by whether their faces point away from the part's center on average. Parts that already face the right way are left alone. Within a part, faces always agree with their neighbours, so whole parts are flipped.
+Closed parts are judged by their volume (a part whose faces point inward has negative volume); open parts by whether their faces point away from the part's center on average. Parts that already face the right way are left alone, and so are the inner walls of hollow parts (cavities face inward by design). Within a part, faces always agree with their neighbours, so whole parts are flipped.
 
 **Use for** `INVERTED_NORMALS` findings, or after mirroring or importing.
 
