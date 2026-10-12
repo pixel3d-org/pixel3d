@@ -337,6 +337,11 @@ fn transitive(g: &Graph, adjacency: &[Vec<usize>], start: usize, out: &mut Vec<V
     }
 }
 
+/// Whether a target cfg applies only to wasm32.
+fn wasm_only(cfg: &str) -> bool {
+    cfg.contains("target_arch = \"wasm32\"") && !cfg.contains("not(target_arch = \"wasm32\")") && !cfg.contains("any(")
+}
+
 /// Builds the graph from `cargo metadata --format-version 1` (with `resolve`).
 ///
 /// Complexity: O(P + E) plus an O(P log P) id index.
@@ -361,6 +366,11 @@ pub fn from_metadata(meta: &Value) -> Result<Graph, String> {
             let to = index(d["pkg"].as_str().unwrap_or_default()).ok_or("metadata: dependency without package")?;
             let mut kinds: BTreeSet<DepKind> = BTreeSet::new();
             for k in d["dep_kinds"].as_array().into_iter().flatten() {
+                // pixel3d builds native targets only (addons are separate WASM guests):
+                // edges that exist only on wasm32 never reach a pixel3d binary.
+                if k["target"].as_str().is_some_and(wasm_only) {
+                    continue;
+                }
                 kinds.insert(match k["kind"].as_str() {
                     Some("dev") => DepKind::Dev,
                     Some("build") => DepKind::Build,
@@ -422,6 +432,15 @@ fn print_table(g: &Graph, members: &[(usize, &Package)]) {
 mod tests {
     use super::*;
     use DepKind::*;
+
+    #[test]
+    fn wasm_only_edges_are_recognized() {
+        assert!(wasm_only(r#"cfg(all(target_arch = "wasm32", not(target_os = "emscripten")))"#));
+        assert!(wasm_only(r#"cfg(target_arch = "wasm32")"#));
+        assert!(!wasm_only(r#"cfg(not(target_arch = "wasm32"))"#));
+        assert!(!wasm_only(r#"cfg(any(target_arch = "wasm32", unix))"#));
+        assert!(!wasm_only("cfg(windows)"));
+    }
 
     /// Builds a graph from `(crate, [(dep, kind)])`; names starting with
     /// `p3d-` or naming an app are workspace packages.

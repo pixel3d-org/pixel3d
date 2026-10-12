@@ -49,7 +49,7 @@ A crate may depend on every crate of a lower layer, and on crates of its own lay
 - Only `mcp` and `ai` depend on tokio, axum and reqwest.
 - Only `plugin` depends on wasmtime, rquickjs, boa_engine and oxc.
 
-`cargo xtask layers` checks every rule against the resolved dependency graph and runs in `cargo xtask ci` and `cargo xtask ci-fast`. The table lives in `xtask/src/layers.rs`; keep it, this document and ADR 0001 in sync.
+`cargo xtask layers` checks every rule against the resolved dependency graph and runs in `cargo xtask ci` and `cargo xtask ci-fast`. Dependencies that exist only for wasm32 targets are ignored: pixel3d builds native targets (addons are separate WASM guests). The table lives in `xtask/src/layers.rs`; keep it, this document and ADR 0001 in sync.
 
 ## Process and threading model
 
