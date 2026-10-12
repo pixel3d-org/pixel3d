@@ -48,6 +48,7 @@ pub enum Kind {
     Collection,
     LodGroup,
     Mesh,
+    Curve,
     Empty,
     MeshData,
 }
@@ -69,6 +70,8 @@ pub fn kind_of(obj: &Object) -> Kind {
         Kind::LodGroup
     } else if obj.mesh_key().is_some() {
         Kind::Mesh
+    } else if obj.curve_key().is_some() {
+        Kind::Curve
     } else if tagged(COLLECTION_TAG) {
         Kind::Collection
     } else {
@@ -89,7 +92,7 @@ fn open_by_default(doc: &Document, node: Node) -> bool {
     match node {
         Node::Scene => true,
         Node::Mesh(_) => false,
-        Node::Object(k) => doc.object(k).is_some_and(|o| !matches!(kind_of(o), Kind::Mesh | Kind::Empty) || !o.children().is_empty()),
+        Node::Object(k) => doc.object(k).is_some_and(|o| !matches!(kind_of(o), Kind::Mesh | Kind::Curve | Kind::Empty) || !o.children().is_empty()),
     }
 }
 
@@ -319,6 +322,7 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
                 Kind::Collection => (Icon::Collection, tk.text_dim),
                 Kind::LodGroup => (Icon::LodGroup, tk.icon_accent),
                 Kind::Mesh => (Icon::Mesh, tk.icon),
+                Kind::Curve => (Icon::Curve, tk.icon),
                 Kind::Empty => (Icon::Empty, tk.icon),
                 Kind::MeshData => (Icon::MeshData, tk.health_ok),
             };
@@ -354,7 +358,7 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
             }
             // A LOD badge after the name.
             let badge = match (row.kind, obj) {
-                (Kind::Mesh | Kind::Empty, Some(o)) => lod_level(o).map(|n| format!("LOD{n}")),
+                (Kind::Mesh | Kind::Curve | Kind::Empty, Some(o)) => lod_level(o).map(|n| format!("LOD{n}")),
                 (Kind::LodGroup, _) => Some("LOD".to_owned()),
                 _ => None,
             };

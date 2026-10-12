@@ -179,6 +179,7 @@ fn object_tab(app: &mut PixelApp, ui: &mut egui::Ui, key: ObjectKey) {
                     crate::outliner::Kind::Collection => Icon::Collection,
                     crate::outliner::Kind::LodGroup => Icon::LodGroup,
                     crate::outliner::Kind::Mesh => Icon::Mesh,
+                    crate::outliner::Kind::Curve => Icon::Curve,
                     _ => Icon::Empty,
                 },
                 false,

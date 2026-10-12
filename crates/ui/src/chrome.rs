@@ -836,6 +836,11 @@ pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
         return;
     }
     let p = ui.painter_at(rect);
+    // Curve objects: polylines over the scene (they have no faces).
+    let key = app.scene_key();
+    let doc = std::sync::Arc::clone(app.session.doc());
+    let lines = app.curves.get(key, &doc, &app.hidden);
+    crate::curves::draw(&p, &app.viewport.camera, rect, lines, &app.selection, tk.icon, tk.accent);
     draw_cursor(app, &p, rect);
     if app.ui.view.stats {
         let s = app.stats();

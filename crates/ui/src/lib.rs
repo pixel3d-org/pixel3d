@@ -12,6 +12,7 @@ pub mod chrome;
 pub mod cmdline;
 pub mod commands;
 pub mod control;
+pub mod curves;
 pub mod docking;
 pub mod elements;
 pub mod health;
@@ -274,6 +275,8 @@ pub struct PixelApp {
     pub health: health::HealthState,
     /// Scene statistics for the overlay and the status bar.
     pub stats: stats::StatsCache,
+    /// Curve objects sampled for drawing and picking.
+    pub curves: curves::CurveCache,
     /// Selected vertices, edges and faces of the mesh being edited.
     pub edit: elements::EditState,
     /// The command palette while open.
@@ -308,6 +311,7 @@ impl PixelApp {
             shots: screenshot::Shots::default(),
             health: health::HealthState::default(),
             stats: stats::StatsCache::default(),
+            curves: curves::CurveCache::default(),
             edit: elements::EditState::default(),
             palette: None,
             cmdline: cmdline::CmdLine::default(),
@@ -1095,6 +1099,14 @@ impl PixelApp {
                     (None, true) => {}
                 },
                 ViewportEvent::BoxSelect { area, op } => self.box_select(area, op),
+                ViewportEvent::MissedAt { at, add } => {
+                    // Curves have no surface in the id pass: try them by distance.
+                    let key = self.scene_key();
+                    let doc = std::sync::Arc::clone(self.session.doc());
+                    let lines = self.curves.get(key, &doc, &self.hidden);
+                    let curve = curves::pick(&self.viewport.camera, self.viewport.rect, lines, at);
+                    self.handle_viewport(vec![ViewportEvent::Picked { object: curve, add }]);
+                }
                 ViewportEvent::KnifeCut { a, b } => {
                     if let Err(e) = self.knife_cut(a, b) {
                         self.set_status(e);

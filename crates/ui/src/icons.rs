@@ -122,6 +122,7 @@ icons! {
     Wedge => d::WEDGE, false;
     BoxSelect => d::MARQUEE_2, false;
     Tube => d::CIRCLE_DOT, false;
+    Curve => d::VECTOR_SPLINE, false;
 }
 
 /// The flattened outlines of an icon, parsed on first use.

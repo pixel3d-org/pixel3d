@@ -100,7 +100,7 @@ pub struct ViewportState {
     selection_version: u64,
     picks: Option<PickSlot>,
     next_pick: u64,
-    pending_pick: Option<(u64, bool)>,
+    pending_pick: Option<(u64, bool, egui::Pos2)>,
     /// The viewport rectangle last frame (points) and its pixel size.
     pub rect: Rect,
     pub size_px: [u32; 2],
@@ -179,6 +179,8 @@ pub enum ViewportEvent {
     PlaceCursor { at: egui::Pos2 },
     /// A line dragged with the knife from `a` to `b` (points).
     KnifeCut { a: egui::Pos2, b: egui::Pos2 },
+    /// A click at `at` (points) that hit no surface.
+    MissedAt { at: egui::Pos2, add: bool },
 }
 
 /// GPU resources stored in egui_wgpu's callback resources.
@@ -572,7 +574,7 @@ impl ViewportState {
             let request = self.next_pick;
             self.next_pick += 1;
             let add = ui.input(|i| i.modifiers.shift || i.modifiers.command);
-            self.pending_pick = Some((request, add));
+            self.pending_pick = Some((request, add, p));
             pick = Some((x, y, request));
         }
         if self.pending_pick.is_some() {
@@ -636,15 +638,18 @@ impl ViewportState {
     }
 
     fn poll_pick(&mut self, cache: &SceneCache, events: &mut Vec<ViewportEvent>) {
-        let Some((request, add)) = self.pending_pick else { return };
+        let Some((request, add, at)) = self.pending_pick else { return };
         let Some(slot) = &self.picks else { return };
         let result = slot.lock().ok().and_then(|mut s| s.take());
         if let Some(r) = result
             && r.request == request
         {
             self.pending_pick = None;
-            let object = r.part.and_then(|i| cache.view.parts.get(i as usize)).map(|p| p.object);
-            events.push(ViewportEvent::Picked { object, add });
+            match r.part.and_then(|i| cache.view.parts.get(i as usize)).map(|p| p.object) {
+                Some(object) => events.push(ViewportEvent::Picked { object: Some(object), add }),
+                // No surface there: the app tries curves before clearing.
+                None => events.push(ViewportEvent::MissedAt { at, add }),
+            }
         }
     }
 
