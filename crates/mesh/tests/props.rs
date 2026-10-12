@@ -116,3 +116,43 @@ proptest! {
         prop_assert_eq!((joined.vert_count(), joined.edge_count(), joined.face_count()), (m.vert_count(), m.edge_count(), m.face_count()));
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn filling_every_hole_closes_the_mesh(m in strategy::mesh()) {
+        let mut f = m.clone();
+        let mut filled = 0usize;
+        // Fill loops of 3 or more edges until no boundary half-edge is left.
+        while let Some(h) = (0..f.he_slots() as u32).find(|&h| f.is_he_alive(h) && f.is_boundary_he(h)) {
+            if f.fill_boundary_loop(h).is_err() {
+                break;
+            }
+            filled += 1;
+            prop_assert_eq!(f.validate(), Ok(()));
+        }
+        prop_assert_eq!(f.face_count(), m.face_count() + filled);
+        prop_assert_eq!((f.vert_count(), f.edge_count()), (m.vert_count(), m.edge_count()));
+    }
+
+    #[test]
+    fn flipping_a_part_twice_is_identity(m in strategy::mesh(), pick in any::<u32>()) {
+        let live: Vec<u32> = m.faces().collect();
+        prop_assume!(!live.is_empty());
+        let f0 = live[pick as usize % live.len()];
+        let mut f = m.clone();
+        let n = f.flip_part(f0).unwrap();
+        prop_assert_eq!(f.validate(), Ok(()));
+        let part = m.part_faces(f0).unwrap();
+        prop_assert_eq!(n, part.len());
+        for face in m.faces() {
+            let (a, b) = (m.face_normal(face), f.face_normal(face));
+            let flipped = part.binary_search(&face).is_ok();
+            prop_assert!(a.length() < 1e-6 || a.dot(b) * if flipped { -1.0 } else { 1.0 } > 0.99, "face {}", face);
+        }
+        f.flip_part(f0).unwrap();
+        prop_assert_eq!(f.validate(), Ok(()));
+        prop_assert_eq!(f.to_tri_buffers(&TriOptions::default()).indices, m.to_tri_buffers(&TriOptions::default()).indices);
+    }
+}

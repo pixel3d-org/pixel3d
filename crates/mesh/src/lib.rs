@@ -6,6 +6,7 @@ mod attrs;
 mod build;
 mod combine;
 mod edit;
+mod fill;
 mod groups;
 mod mesh;
 mod normals;

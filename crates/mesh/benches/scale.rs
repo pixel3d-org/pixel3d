@@ -68,6 +68,36 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Every 7th face deleted, then every hole filled again.
+    let mut g = c.benchmark_group("scale_mesh_fill_holes");
+    for (t, m) in &meshes {
+        let mut holed = m.clone();
+        let del: Vec<u32> = holed.faces().step_by(7).collect();
+        let _ = holed.delete_faces(&del);
+        let starts: Vec<u32> = (0..holed.he_slots() as u32).filter(|&h| holed.is_he_alive(h) && holed.is_boundary_he(h)).collect();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &holed, |b, h| {
+            b.iter_batched(
+                || h.clone(),
+                |mut x| {
+                    for &s in &starts {
+                        if x.is_boundary_he(s) {
+                            let _ = x.fill_boundary_loop(s);
+                        }
+                    }
+                    x
+                },
+                BatchSize::LargeInput,
+            )
+        });
+    }
+    g.finish();
+
+    let mut g = c.benchmark_group("scale_mesh_flip_part");
+    for (t, m) in &meshes {
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| b.iter_batched(|| m.clone(), |mut x| x.flip_part(0), BatchSize::LargeInput));
+    }
+    g.finish();
+
     let mut g = c.benchmark_group("scale_mesh_compact");
     for (t, m) in &meshes {
         let mut holed = m.clone();

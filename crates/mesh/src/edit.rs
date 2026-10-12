@@ -9,6 +9,10 @@ use crate::mesh::{INVALID, Mesh};
 pub enum EditError {
     #[error("face {0} does not exist")]
     NoSuchFace(u32),
+    #[error("half-edge {0} is not on the boundary")]
+    NotBoundary(u32),
+    #[error("a boundary loop of {edges} edges cannot become a face")]
+    LoopTooShort { edges: usize },
 }
 
 /// What [`Mesh::delete_faces`] removed.
