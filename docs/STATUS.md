@@ -12,7 +12,7 @@ Progress checklist for the roadmap. Tick a box in the commit that completes it; 
 - [x] Workspace skeleton: every crate of the layer table as an empty library with workspace lints, `apps/pixel3d`, `apps/pixel3d-cli`, `xtask`
 - [x] `rust-toolchain.toml` (1.98.1), `rustfmt.toml`, `clippy.toml`, build profiles
 - [ ] `deny.toml` with the license allow list and banned crates
-- [ ] `cargo xtask emdash`
+- [x] `cargo xtask emdash`
 - [ ] `cargo xtask layers`
 - [ ] `cargo xtask ci` and `cargo xtask ci-fast`
 - [ ] CI workflows (`ci.yml`, `nightly.yml`)
