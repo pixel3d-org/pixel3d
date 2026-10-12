@@ -274,3 +274,17 @@ fn revisions_and_checkpoints_are_reachable() {
     assert!(s.doc_at(9).is_none());
     assert_eq!(s.checkpoint_doc("one").unwrap().object_count(), 1);
 }
+
+#[test]
+fn revisions_are_never_reused_after_undo() {
+    let mut s = Session::new();
+    exec(&mut s, &[call("prim.box", json!({ "name": "a" }))]);
+    exec(&mut s, &[call("prim.box", json!({ "name": "b" }))]);
+    s.undo().unwrap();
+    assert_eq!(s.revision(), 1);
+    exec(&mut s, &[call("prim.box", json!({ "name": "c" }))]);
+    assert_eq!(s.revision(), 3, "rev 2 was another state");
+    assert!(s.doc_at(2).is_none(), "the undone branch is gone");
+    let revs: Vec<u64> = s.history().iter().map(|h| h.revision).collect();
+    assert_eq!(revs, vec![1, 3]);
+}

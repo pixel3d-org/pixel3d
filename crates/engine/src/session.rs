@@ -75,6 +75,9 @@ pub struct Session {
     checkpoints: BTreeMap<String, Arc<Document>>,
     limits: UndoLimits,
     seed: u64,
+    /// Highest revision ever committed: new revisions never reuse a number,
+    /// even after undo, so `rev N` always names one state.
+    last_revision: u64,
 }
 
 impl Default for Session {
@@ -106,11 +109,13 @@ impl Session {
             checkpoints: BTreeMap::new(),
             limits: UndoLimits::default(),
             seed: 0,
+            last_revision: 0,
         }
     }
 
     /// Replaces the document (after loading a file); clears undo, redo and checkpoints.
     pub fn load(&mut self, doc: Document) {
+        self.last_revision = doc.revision;
         self.doc = Arc::new(doc);
         self.undo.clear();
         self.redo.clear();
@@ -157,7 +162,8 @@ impl Session {
 
     /// Makes `doc` current as a new revision, pushing the old state to undo.
     fn commit(&mut self, mut doc: Document, label: String) {
-        doc.revision = self.doc.revision + 1;
+        self.last_revision = self.last_revision.max(self.doc.revision) + 1;
+        doc.revision = self.last_revision;
         let new = Arc::new(doc);
         let bytes = unshared_bytes(&self.doc, &new);
         let old = std::mem::replace(&mut self.doc, new);
@@ -258,8 +264,13 @@ impl Session {
     }
 
     /// Committed transactions still in the undo list, oldest first.
+    /// Each entry carries the revision its transaction produced: the state
+    /// after it (the next undo step, or the current document for the last).
+    ///
+    /// Complexity: O(undo steps).
     pub fn history(&self) -> Vec<HistoryEntry> {
-        self.undo.iter().map(|s| HistoryEntry { label: s.label.clone(), revision: s.doc.revision + 1 }).collect()
+        let after = self.undo.iter().skip(1).map(|s| s.doc.revision).chain(std::iter::once(self.doc.revision));
+        self.undo.iter().zip(after).map(|(s, revision)| HistoryEntry { label: s.label.clone(), revision }).collect()
     }
 
     /// Bytes of mesh data kept alive only by undo steps (approximate).
