@@ -131,7 +131,7 @@ impl OpError {
             | SceneError::SingularParent { .. }
             | SceneError::IdTaken(_)
             | SceneError::HasChildren(_)) => Self::invalid(path, e.to_string()),
-            e @ (SceneError::StaleObject | SceneError::StaleMesh) => Self::internal(e.to_string()),
+            e @ (SceneError::StaleObject | SceneError::StaleMesh | SceneError::StaleCurve) => Self::internal(e.to_string()),
         }
     }
 

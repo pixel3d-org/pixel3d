@@ -9,10 +9,11 @@ use p3d_mesh::Mesh;
 use slotmap::{SecondaryMap, SlotMap};
 use smallvec::SmallVec;
 
+use crate::curve::Curve;
 use crate::expect::Expectation;
 use crate::history::{OpGraph, OpNode};
 use crate::name::{NameError, check_name, suggest};
-use crate::object::{GraphKey, MeshKey, Object, ObjectKey, ObjectKind};
+use crate::object::{CurveKey, GraphKey, MeshKey, Object, ObjectKey, ObjectKind};
 use crate::settings::DocSettings;
 
 /// Why a document edit or lookup failed. Nothing changes when an edit fails.
@@ -38,6 +39,8 @@ pub enum SceneError {
     StaleObject,
     #[error("the mesh no longer exists")]
     StaleMesh,
+    #[error("the curve no longer exists or already belongs to an object")]
+    StaleCurve,
 }
 
 /// Children of one parent by leaf name.
@@ -58,6 +61,9 @@ pub struct Document {
     by_id: Arc<BTreeMap<u32, ObjectKey>>,
     meshes: Arc<SlotMap<MeshKey, Arc<Mesh>>>,
     mesh_users: Arc<SecondaryMap<MeshKey, u32>>,
+    /// Curves, each owned by exactly one curve object.
+    curves: Arc<SlotMap<CurveKey, Arc<Curve>>>,
+    curve_owner: Arc<SecondaryMap<CurveKey, ObjectKey>>,
     graphs: Arc<SlotMap<GraphKey, Arc<OpGraph>>>,
     expectations: Arc<Vec<Expectation>>,
     next_id: u32,
@@ -79,6 +85,8 @@ impl Default for Document {
             by_id: Arc::default(),
             meshes: Arc::default(),
             mesh_users: Arc::default(),
+            curves: Arc::default(),
+            curve_owner: Arc::default(),
             graphs: Arc::default(),
             expectations: Arc::default(),
             next_id: 1,
@@ -315,6 +323,11 @@ impl Document {
         {
             return Err(SceneError::StaleMesh);
         }
+        if let ObjectKind::Curve { curve } = kind
+            && (!self.curves.contains_key(curve) || self.curve_owner.contains_key(curve))
+        {
+            return Err(SceneError::StaleCurve);
+        }
         if self.child_named(parent, name).is_some() {
             return Err(self.name_error(parent, name));
         }
@@ -339,6 +352,9 @@ impl Document {
         }
         if let ObjectKind::Mesh { mesh } = kind {
             bump(Arc::make_mut(&mut self.mesh_users), mesh);
+        }
+        if let ObjectKind::Curve { curve } = kind {
+            Arc::make_mut(&mut self.curve_owner).insert(curve, key);
         }
         self.index_insert(parent, name, key);
         Arc::make_mut(&mut self.by_id).insert(id, key);
@@ -562,6 +578,9 @@ impl Document {
         if let ObjectKind::Mesh { mesh } = o.kind {
             self.release_mesh(mesh);
         }
+        if let ObjectKind::Curve { curve } = o.kind {
+            self.drop_curve(curve);
+        }
         if let Some(g) = o.history {
             Arc::make_mut(&mut self.graphs).remove(g);
         }
@@ -638,8 +657,16 @@ impl Document {
         if old == kind {
             return Ok(());
         }
+        if let ObjectKind::Curve { curve } = kind
+            && (!self.curves.contains_key(curve) || self.curve_owner.contains_key(curve))
+        {
+            return Err(SceneError::StaleCurve);
+        }
         if let ObjectKind::Mesh { mesh } = kind {
             bump(Arc::make_mut(&mut self.mesh_users), mesh);
+        }
+        if let ObjectKind::Curve { curve } = kind {
+            Arc::make_mut(&mut self.curve_owner).insert(curve, key);
         }
         if let Some(o) = self.object_mut(key) {
             o.kind = kind;
@@ -647,7 +674,53 @@ impl Document {
         if let ObjectKind::Mesh { mesh } = old {
             self.release_mesh(mesh);
         }
+        if let ObjectKind::Curve { curve } = old {
+            self.drop_curve(curve);
+        }
         Ok(())
+    }
+
+    // ---- curves ----------------------------------------------------------------
+
+    /// Adds a curve no object owns yet.
+    pub fn add_curve(&mut self, curve: Curve) -> CurveKey {
+        Arc::make_mut(&mut self.curves).insert(Arc::new(curve))
+    }
+
+    /// Adds a curve and an object owning it.
+    pub fn create_curve_object(&mut self, name: &str, parent: Option<ObjectKey>, curve: Curve) -> Result<ObjectKey, SceneError> {
+        let ck = self.add_curve(curve);
+        match self.create_object(name, parent, ObjectKind::Curve { curve: ck }) {
+            Ok(k) => Ok(k),
+            Err(e) => {
+                Arc::make_mut(&mut self.curves).remove(ck);
+                Err(e)
+            }
+        }
+    }
+
+    pub fn curve(&self, key: CurveKey) -> Option<&Curve> {
+        self.curves.get(key).map(|c| &**c)
+    }
+
+    /// Mutable curve; copies it first if a snapshot shares it.
+    pub fn curve_mut(&mut self, key: CurveKey) -> Option<&mut Curve> {
+        Arc::make_mut(&mut self.curves).get_mut(key).map(Arc::make_mut)
+    }
+
+    /// The curve of a curve object.
+    pub fn object_curve(&self, key: ObjectKey) -> Option<&Curve> {
+        self.object(key)?.curve_key().and_then(|c| self.curve(c))
+    }
+
+    /// Every curve with its key, in slot order.
+    pub fn curve_entries(&self) -> impl Iterator<Item = (CurveKey, &Arc<Curve>)> {
+        self.curves.iter()
+    }
+
+    fn drop_curve(&mut self, curve: CurveKey) {
+        Arc::make_mut(&mut self.curve_owner).remove(curve);
+        Arc::make_mut(&mut self.curves).remove(curve);
     }
 
     /// Gives a mesh object its own copy of a mesh shared with other objects
@@ -796,6 +869,11 @@ impl Document {
                 }
                 bump(&mut users, mesh);
             }
+            if let ObjectKind::Curve { curve } = o.kind
+                && (!self.curves.contains_key(curve) || self.curve_owner.get(curve) != Some(&k))
+            {
+                return Err(format!("o:{} uses a missing or foreign curve", o.id));
+            }
         }
         if child_links != with_parent {
             return Err(format!("{child_links} child links for {with_parent} objects with a parent"));
@@ -810,6 +888,9 @@ impl Document {
             if counted == 0 || self.mesh_users(m) != counted {
                 return Err(format!("mesh has {} users, counted {counted}", self.mesh_users(m)));
             }
+        }
+        if self.curves.len() != self.curve_owner.len() {
+            return Err(format!("{} curves but {} owned", self.curves.len(), self.curve_owner.len()));
         }
         Ok(())
     }

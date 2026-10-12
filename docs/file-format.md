@@ -54,6 +54,7 @@ Blobs smaller than 64 KiB are stored uncompressed; larger ones use deflate at le
 - `next_id`: object ids (`o:<id>`) are never reused, so the next id is stored rather than inferred.
 - `meshes`: listed in first-use order. Two objects with the same mesh id are instances (editing one edits both). Two mesh ids with the same blob are independent copies that happen to be equal; the blob is stored once.
 - `objects`: parents come before their children and siblings keep their order. `parent` is omitted for top-level objects. Optional fields (`parent`, `mesh`, `tags`, `metadata`, `history`) are omitted when empty.
+- `kind` is `empty`, `mesh` (with `mesh`) or `curve` (with `curve`). A curve object stores its curve inline: `{"splines": [{"points": [[x, y, z], ...], "handles": [[[in], [out]], ...], "closed": true}]}`; `handles` (one in and one out handle per point, absolute positions) makes a spline a cubic Bezier spline, otherwise it is a polyline. Curves belong to one object and are never shared.
 - `expectations`: model tests (`dims`, `symmetric`, `attached`, `not_intersecting`, `budget`, `watertight`) in canonical units (meters). Objects are referenced by the name the author wrote and the id it resolved to, so renaming an object keeps its tests. Omitted when empty; files without it load as having none.
 - `rotation` is a quaternion `x, y, z, w`; units are meters.
 - Unknown top-level fields are kept and written back unchanged.

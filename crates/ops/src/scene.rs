@@ -231,6 +231,11 @@ impl Op for Duplicate {
                 let shared = Arc::clone(tx.doc().mesh_arc(mesh).ok_or_else(|| OpError::internal("mesh vanished"))?);
                 ObjectKind::Mesh { mesh: tx.doc_mut().add_shared_mesh(shared) }
             }
+            // Curves belong to one object: instances copy them too.
+            (ObjectKind::Curve { curve }, _) => {
+                let c = tx.doc().curve(curve).cloned().ok_or_else(|| OpError::internal("curve vanished"))?;
+                ObjectKind::Curve { curve: tx.doc_mut().add_curve(c) }
+            }
         };
         let name = p.name.clone().unwrap_or_else(|| tx.doc().unique_name(o.name(), o.parent()));
         let key = tx.doc_mut().create_object(&name, o.parent(), kind).map_err(scene_err("/name"))?;

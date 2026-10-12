@@ -119,6 +119,7 @@ fn build(doc: &Document) -> Result<Built, P3dError> {
             parent: o.parent().and_then(|p| doc.object(p)).map(|p| p.id()),
             kind: o.kind().as_str().to_owned(),
             mesh,
+            curve: doc.object_curve(k).cloned(),
             transform: TransformEntry { translation: t.translation.to_array(), rotation: t.rotation.to_array(), scale: t.scale.to_array() },
             tags: o.tags.to_vec(),
             metadata: o.metadata.clone(),
@@ -300,10 +301,16 @@ pub fn from_bytes(bytes: &[u8]) -> Result<Document, P3dError> {
     let mut queue: std::collections::VecDeque<&ObjectEntry> = children.get(&None).map(|v| v.iter().copied().collect()).unwrap_or_default();
     let fail = |o: &ObjectEntry, reason: String| P3dError::Object { id: o.id, name: o.name.clone(), reason };
     while let Some(o) = queue.pop_front() {
-        let kind = match (o.kind.as_str(), o.mesh) {
-            ("empty", None) => ObjectKind::Empty,
-            ("mesh", Some(m)) => ObjectKind::Mesh { mesh: *mesh_keys.get(&m).ok_or_else(|| fail(o, format!("unknown mesh {m}")))? },
-            (k, _) => return Err(fail(o, format!("bad kind `{k}` or mesh reference"))),
+        let kind = match (o.kind.as_str(), o.mesh, &o.curve) {
+            ("empty", None, None) => ObjectKind::Empty,
+            ("mesh", Some(m), None) => ObjectKind::Mesh { mesh: *mesh_keys.get(&m).ok_or_else(|| fail(o, format!("unknown mesh {m}")))? },
+            ("curve", None, Some(c)) => {
+                if !c.is_valid() {
+                    return Err(fail(o, "invalid curve data".into()));
+                }
+                ObjectKind::Curve { curve: doc.add_curve(c.clone()) }
+            }
+            (k, _, _) => return Err(fail(o, format!("bad kind `{k}` or data reference"))),
         };
         let parent = o.parent.map(|p| keys.get(&p).copied().ok_or_else(|| fail(o, format!("parent {p} missing")))).transpose()?;
         let key = doc.create_object_with_id(o.id, &o.name, parent, kind).map_err(|e| fail(o, e.to_string()))?;
