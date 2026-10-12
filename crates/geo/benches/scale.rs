@@ -6,7 +6,10 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use glam::{Affine3A, DVec3, Vec3};
 use p3d_geo::bvh::TriBvh;
-use p3d_geo::prim::{BoxSpec, CapKind, ConeSpec, Origin, PlaneSpec, QuadSphereSpec, cone, cuboid, plane, quad_sphere};
+use p3d_geo::prim::{
+    BoxSpec, CapKind, ConeSpec, IcoSphereSpec, Origin, PlaneSpec, QuadSphereSpec, UvSphereSpec, cone, cuboid, ico_sphere, plane, quad_sphere,
+    uv_sphere,
+};
 use p3d_testdata::{scale_sizes, sphere};
 
 fn scale(c: &mut Criterion) {
@@ -32,6 +35,21 @@ fn scale(c: &mut Criterion) {
         let n = ((tris as f64 / 12.0).sqrt().round()) as u32;
         let spec = BoxSpec { size: DVec3::ONE, segments: [n; 3], bevel_width: 0.05, bevel_segments: 3 };
         g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| cuboid(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_prim_uv_sphere");
+    for &tris in &sizes {
+        let s = ((tris as f64).sqrt().round()) as u32;
+        let spec = UvSphereSpec { radius: 0.5, segments: s, rings: (s / 2).max(2) };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| uv_sphere(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    // Levels give exactly 4x steps; the parameter is the real triangle count.
+    let mut g = c.benchmark_group("scale_prim_ico_sphere");
+    let level = ((sizes[0] as f64 / 20.0).log(4.0).round().max(1.0)) as u32;
+    for l in level..level + 3 {
+        let spec = IcoSphereSpec { radius: 0.5, subdivisions: l };
+        g.bench_with_input(BenchmarkId::from_parameter(20 * 4usize.pow(l)), &spec, |b, spec| b.iter(|| ico_sphere(black_box(spec), Origin::Center)));
     }
     g.finish();
     let mut g = c.benchmark_group("scale_prim_cone");

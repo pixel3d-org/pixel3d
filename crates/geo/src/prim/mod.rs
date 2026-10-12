@@ -13,7 +13,7 @@ mod sphere;
 pub use cuboid::{BoxSpec, cuboid};
 pub use cylinder::{CapKind, ConeSpec, CylinderSpec, cone, cylinder};
 pub use plane::{PlaneSpec, plane};
-pub use sphere::{QuadSphereSpec, quad_sphere};
+pub use sphere::{IcoSphereSpec, MAX_ICO_SUBDIVISIONS, QuadSphereSpec, UvSphereSpec, ico_sphere, quad_sphere, uv_sphere};
 
 use p3d_mesh::{BuildError, Mesh};
 

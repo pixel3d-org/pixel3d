@@ -52,6 +52,8 @@ impl Registry {
             Arc::new(Typed::<prim::Cylinder>::new()),
             Arc::new(Typed::<prim::Cone>::new()),
             Arc::new(Typed::<prim::QuadSphere>::new()),
+            Arc::new(Typed::<prim::UvSphere>::new()),
+            Arc::new(Typed::<prim::IcoSphere>::new()),
             Arc::new(Typed::<prim::Plane>::new()),
             Arc::new(Typed::<select::Save>::new()),
             Arc::new(Typed::<select::Grow>::new()),

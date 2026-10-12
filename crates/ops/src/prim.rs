@@ -544,6 +544,175 @@ impl Op for QuadSphere {
     }
 }
 
+// ---- prim.uv_sphere ----------------------------------------------------------------
+
+/// Parameters of `prim.uv_sphere`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct UvSphereParams {
+    /// Object name; a free name such as `sphere_1` is picked when omitted.
+    pub name: Option<String>,
+    /// Parent object (name, path or id); top level when omitted.
+    pub parent: Option<String>,
+    /// Sphere radius.
+    pub radius: Length,
+    /// Segments around Y; derived from the circumference when omitted (8 to 64, even).
+    pub segments: Option<u32>,
+    /// Bands from pole to pole; half the segments when omitted.
+    pub rings: Option<u32>,
+    /// Origin at the bottom (rests on the ground) or the center.
+    pub origin: OriginParam,
+    /// Origin position in the parent's space.
+    pub position: [Length; 3],
+}
+
+impl Default for UvSphereParams {
+    fn default() -> Self {
+        UvSphereParams {
+            name: None,
+            parent: None,
+            radius: Length(0.25),
+            segments: None,
+            rings: None,
+            origin: OriginParam::Bottom,
+            position: [Length(0.0); 3],
+        }
+    }
+}
+
+/// `prim.uv_sphere`.
+pub struct UvSphere;
+
+impl Op for UvSphere {
+    const ID: &'static str = "prim.uv_sphere";
+    type Params = UvSphereParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "UV sphere",
+            category: Category::Prim,
+            summary: "Creates a latitude-longitude sphere with quads between parallels and triangle fans at both poles.",
+            docs: "Meridians and parallels like a globe: quads everywhere except one fan of triangles at each pole. Parallels give clean \
+                   horizontal loops to cut or scale (domes, onion shapes, eyes with a pupil at a pole).\n\n\
+                   **Prefer** `prim.quad_sphere` for general round shapes (no poles, even quads, better for subdivision and UVs); use \
+                   this one when you need the pole and loop structure.\n\n\
+                   **Segments** default to the circumference over the asset class's target edge length; **rings** to half the segments.",
+            examples: &[OpExample {
+                args: r#"{"name": "eye", "radius": "12mm", "segments": 16, "rings": 8}"#,
+                result: "created eye (o:1) sphere 24 x 24 x 24 mm: 128 faces (224 tris; budget 6,000)",
+            }],
+            aliases: &["globe sphere", "latlong sphere", "polySphere", "add uv sphere"],
+            complexity: "O(segments x rings)",
+            flags: FLAGS,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &UvSphereParams) -> Result<(), OpError> {
+        check_length("/radius", p.radius, MIN_SIZE, MAX_SIZE)?;
+        if let Some(s) = p.segments {
+            check_count("/segments", s, 3, MAX_SEGMENTS)?;
+        }
+        if let Some(n) = p.rings {
+            check_count("/rings", n, 2, MAX_SEGMENTS)?;
+        }
+        check_placement(doc, p.name.as_deref(), p.parent.as_deref())
+    }
+
+    fn apply(tx: &mut Tx, p: &UvSphereParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let segments = p.segments.unwrap_or_else(|| tx.doc().settings.round_segments(std::f64::consts::TAU * p.radius.0, 2));
+        let rings = p.rings.unwrap_or((segments / 2).max(2));
+        let spec = kernel::UvSphereSpec { radius: p.radius.0, segments, rings };
+        let mesh = kernel::uv_sphere(&spec, p.origin.into()).map_err(kernel_error)?;
+        let key = create_mesh_object(tx, p.name.as_deref(), "sphere", p.parent.as_deref(), &p.position, mesh)?;
+        Ok(created_summary(tx, key, "sphere"))
+    }
+}
+
+// ---- prim.ico_sphere ----------------------------------------------------------------
+
+/// Parameters of `prim.ico_sphere`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct IcoSphereParams {
+    /// Object name; a free name such as `sphere_1` is picked when omitted.
+    pub name: Option<String>,
+    /// Parent object (name, path or id); top level when omitted.
+    pub parent: Option<String>,
+    /// Sphere radius.
+    pub radius: Length,
+    /// Subdivision level (0 to 8): 20 x 4^level triangles. Derived from the
+    /// asset class's target edge length when omitted (1 to 5).
+    pub subdivisions: Option<u32>,
+    /// Origin at the bottom (rests on the ground) or the center.
+    pub origin: OriginParam,
+    /// Origin position in the parent's space.
+    pub position: [Length; 3],
+}
+
+impl Default for IcoSphereParams {
+    fn default() -> Self {
+        IcoSphereParams {
+            name: None,
+            parent: None,
+            radius: Length(0.25),
+            subdivisions: None,
+            origin: OriginParam::Bottom,
+            position: [Length(0.0); 3],
+        }
+    }
+}
+
+/// `prim.ico_sphere`.
+pub struct IcoSphere;
+
+impl Op for IcoSphere {
+    const ID: &'static str = "prim.ico_sphere";
+    type Params = IcoSphereParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Ico sphere",
+            category: Category::Prim,
+            summary: "Creates a geodesic sphere of nearly equal triangles (a subdivided icosahedron).",
+            docs: "Triangles of almost equal size and shape, with no poles: twelve valence-5 vertices and valence 6 elsewhere. A vertex \
+                   sits at the top and the bottom.\n\n\
+                   **Use for** rocks and organic blobs that get displaced (`deform.displace`), low-poly faceted gems and planets, and \
+                   collision-friendly spheres. **Not for** shapes that will be subdivided or edge-looped (use `prim.quad_sphere`).\n\n\
+                   **Subdivisions:** level 1 has 80 triangles, 2 has 320, 3 has 1,280. When omitted, the level follows the asset \
+                   class's target edge length.",
+            examples: &[OpExample {
+                args: r#"{"name": "rock", "radius": 0.4, "subdivisions": 2}"#,
+                result: "created rock (o:1) sphere 0.8 x 0.8 x 0.8 m: 320 faces (320 tris; budget 6,000)",
+            }],
+            aliases: &["icosphere", "geodesic sphere", "add ico sphere", "polyPlatonicSolid", "geosphere"],
+            complexity: "O(4^subdivisions)",
+            flags: FLAGS,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &IcoSphereParams) -> Result<(), OpError> {
+        check_length("/radius", p.radius, MIN_SIZE, MAX_SIZE)?;
+        if let Some(l) = p.subdivisions {
+            check_count("/subdivisions", l, 0, kernel::MAX_ICO_SUBDIVISIONS)?;
+        }
+        check_placement(doc, p.name.as_deref(), p.parent.as_deref())
+    }
+
+    fn apply(tx: &mut Tx, p: &IcoSphereParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        // An icosahedron's edge is about 1.05 r; each level halves it.
+        let subdivisions = p.subdivisions.unwrap_or_else(|| {
+            let edge = f64::from(tx.doc().settings.target_edge_length());
+            (1.05 * p.radius.0 / edge).log2().round().clamp(1.0, 5.0) as u32
+        });
+        let spec = kernel::IcoSphereSpec { radius: p.radius.0, subdivisions };
+        let mesh = kernel::ico_sphere(&spec, p.origin.into()).map_err(kernel_error)?;
+        let key = create_mesh_object(tx, p.name.as_deref(), "sphere", p.parent.as_deref(), &p.position, mesh)?;
+        Ok(created_summary(tx, key, "sphere"))
+    }
+}
+
 // ---- prim.plane ----------------------------------------------------------------------
 
 /// Advanced plane settings.

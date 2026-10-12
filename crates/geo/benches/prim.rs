@@ -4,7 +4,10 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use glam::DVec3;
-use p3d_geo::prim::{BoxSpec, CapKind, ConeSpec, CylinderSpec, Origin, PlaneSpec, QuadSphereSpec, cone, cuboid, cylinder, plane, quad_sphere};
+use p3d_geo::prim::{
+    BoxSpec, CapKind, ConeSpec, CylinderSpec, IcoSphereSpec, Origin, PlaneSpec, QuadSphereSpec, UvSphereSpec, cone, cuboid, cylinder, ico_sphere,
+    plane, quad_sphere, uv_sphere,
+};
 use p3d_testdata::SIZES;
 
 fn prims(c: &mut Criterion) {
@@ -22,6 +25,14 @@ fn prims(c: &mut Criterion) {
         let n = ((tris as f64 / 12.0).sqrt().round()) as u32;
         g.bench_with_input(BenchmarkId::new("quad_sphere", tris), &n, |b, &n| {
             b.iter(|| quad_sphere(black_box(&QuadSphereSpec { radius: 0.5, segments: n }), Origin::Center))
+        });
+        let s = ((tris as f64).sqrt().round()) as u32;
+        g.bench_with_input(BenchmarkId::new("uv_sphere", tris), &s, |b, &s| {
+            b.iter(|| uv_sphere(black_box(&UvSphereSpec { radius: 0.5, segments: s, rings: (s / 2).max(2) }), Origin::Center))
+        });
+        let level = ((tris as f64 / 20.0).log(4.0).round().max(0.0)) as u32;
+        g.bench_with_input(BenchmarkId::new("ico_sphere", tris), &level, |b, &l| {
+            b.iter(|| ico_sphere(black_box(&IcoSphereSpec { radius: 0.5, subdivisions: l }), Origin::Center))
         });
         g.bench_with_input(BenchmarkId::new("box_bevel3", tris), &n, |b, &n| {
             let spec = BoxSpec { size: DVec3::ONE, segments: [n; 3], bevel_width: 0.05, bevel_segments: 3 };

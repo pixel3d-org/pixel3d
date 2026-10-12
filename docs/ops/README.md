@@ -29,6 +29,8 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`prim.cylinder`](prim.cylinder.md) | Creates a cylinder along Y with quad-grid, n-gon, fan or open caps and groups side, cap_top, cap_bottom. |
 | [`prim.cone`](prim.cone.md) | Creates a pointed cone or a frustum (truncated cone) along Y with groups side, cap_top, cap_bottom. |
 | [`prim.quad_sphere`](prim.quad_sphere.md) | Creates a sphere of even quads with no poles (a projected subdivided cube). |
+| [`prim.uv_sphere`](prim.uv_sphere.md) | Creates a latitude-longitude sphere with quads between parallels and triangle fans at both poles. |
+| [`prim.ico_sphere`](prim.ico_sphere.md) | Creates a geodesic sphere of nearly equal triangles (a subdivided icosahedron). |
 | [`prim.plane`](prim.plane.md) | Creates a flat grid of quads in the XZ plane facing up (+Y). |
 
 ## select

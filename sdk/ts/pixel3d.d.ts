@@ -420,6 +420,43 @@ export type PrimQuadSphereParams = {
   segments?: number | null;
 };
 
+/** `prim.uv_sphere`: Creates a latitude-longitude sphere with quads between parallels and triangle fans at both poles. */
+export type PrimUvSphereParams = {
+  /** Object name; a free name such as `sphere_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom (rests on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Sphere radius. */
+  radius?: Length;
+  /** Bands from pole to pole; half the segments when omitted. */
+  rings?: number | null;
+  /** Segments around Y; derived from the circumference when omitted (8 to 64, even). */
+  segments?: number | null;
+};
+
+/** `prim.ico_sphere`: Creates a geodesic sphere of nearly equal triangles (a subdivided icosahedron). */
+export type PrimIcoSphereParams = {
+  /** Object name; a free name such as `sphere_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom (rests on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Sphere radius. */
+  radius?: Length;
+  /**
+   * Subdivision level (0 to 8): 20 x 4^level triangles. Derived from the
+   * asset class's target edge length when omitted (1 to 5).
+   */
+  subdivisions?: number | null;
+};
+
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
 export type PrimPlaneParams = {
   /** Rarely needed settings. */
@@ -551,6 +588,8 @@ export interface OpParams {
   "prim.cylinder": PrimCylinderParams;
   "prim.cone": PrimConeParams;
   "prim.quad_sphere": PrimQuadSphereParams;
+  "prim.uv_sphere": PrimUvSphereParams;
+  "prim.ico_sphere": PrimIcoSphereParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

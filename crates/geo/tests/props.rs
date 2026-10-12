@@ -1,7 +1,10 @@
 //! Property tests for the primitive generators over their parameter ranges.
 
 use glam::DVec3;
-use p3d_geo::prim::{BoxSpec, CapKind, ConeSpec, CylinderSpec, Origin, QuadSphereSpec, cone, cuboid, cylinder, quad_sphere};
+use p3d_geo::prim::{
+    BoxSpec, CapKind, ConeSpec, CylinderSpec, IcoSphereSpec, Origin, QuadSphereSpec, UvSphereSpec, cone, cuboid, cylinder, ico_sphere, quad_sphere,
+    uv_sphere,
+};
 use p3d_mesh::Mesh;
 use proptest::prelude::*;
 
@@ -67,5 +70,23 @@ proptest! {
         prop_assert_eq!(m.group("side").map(|g| g.count()), Some((segments * rows) as usize));
         prop_assert_eq!(m.group("cap_top").is_some(), rt > 0.0);
         prop_assert_eq!(m.group("cap_bottom").is_some(), rb > 0.0);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(32))]
+
+    #[test]
+    fn uv_spheres(s in 3u32..40, n in 2u32..24, r in 0.01f64..10.0) {
+        let m = uv_sphere(&UvSphereSpec { radius: r, segments: s, rings: n }, Origin::Center).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        assert_closed_outward(&m)?;
+        prop_assert!(m.verts().all(|v| ((m.positions[v as usize].length() as f64) - r).abs() < 1e-5 * r.max(1.0)));
+    }
+
+    #[test]
+    fn ico_spheres(level in 0u32..5, r in 0.01f64..10.0) {
+        let m = ico_sphere(&IcoSphereSpec { radius: r, subdivisions: level }, Origin::Bottom).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        assert_closed_outward(&m)?;
+        prop_assert_eq!(m.face_count(), 20 * 4usize.pow(level));
     }
 }
