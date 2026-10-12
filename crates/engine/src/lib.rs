@@ -7,6 +7,7 @@
 //! validated, and commit together or not at all. Undo and redo swap
 //! snapshots; jobs run batches on the rayon pool against a snapshot.
 
+pub mod predict;
 mod run;
 mod session;
 

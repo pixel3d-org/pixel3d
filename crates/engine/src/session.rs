@@ -232,6 +232,31 @@ impl Session {
         Ok(self.doc.revision)
     }
 
+    /// The document at a revision still held by the session: the current
+    /// one, an undo or redo step, or a checkpoint.
+    ///
+    /// Complexity: O(undo steps + redo steps + checkpoints).
+    pub fn doc_at(&self, revision: u64) -> Option<Arc<Document>> {
+        std::iter::once(&self.doc)
+            .chain(self.undo.iter().map(|s| &s.doc))
+            .chain(self.redo.iter().map(|s| &s.doc))
+            .chain(self.checkpoints.values())
+            .find(|d| d.revision == revision)
+            .cloned()
+    }
+
+    /// The document stored under a checkpoint name.
+    ///
+    /// Complexity: O(log checkpoints).
+    pub fn checkpoint_doc(&self, name: &str) -> Option<Arc<Document>> {
+        self.checkpoints.get(name).cloned()
+    }
+
+    /// The seed ops of the next transaction derive theirs from.
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
     /// Committed transactions still in the undo list, oldest first.
     pub fn history(&self) -> Vec<HistoryEntry> {
         self.undo.iter().map(|s| HistoryEntry { label: s.label.clone(), revision: s.doc.revision + 1 }).collect()

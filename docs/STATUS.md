@@ -60,7 +60,7 @@ Acceptance:
 - [ ] `pixel3d-cli`: `mcp` over stdio, `run <script.json>`, `convert`
 - [ ] MCP tools: `scene_overview`, `describe`, `query`, `run`, `list_ops`, `describe_op`, `history`, `docs`
 - [x] Perception v0: `perceive` aspects `structure`, `shape`, `silhouette`, `section`, `relations`, `probe`, `diff` (`crates/perceive`; text and JSON snapshots in `tests/aspects.rs`; 100k triangles, uncached including BVH builds: structure 22 ms, shape 27 ms, silhouette 21 ms, section 1 ms, relations 22 ms, probe 15 ms, diff 44 ms with findings cached per revision; `cargo bench -p p3d-perceive --bench aspects`)
-- [ ] Diagnostics v0: geometry and relations findings with locations and fixes
+- [x] Diagnostics v0: geometry and relations findings with locations and fixes (`crates/perceive/src/diagnose.rs`: 10 codes; fixes are op calls whose results the engine predicts on a copy, `crates/engine/src/predict.rs`; 100k triangles: 102 ms)
 - [ ] Expectations v0: `dims`, `symmetric`, `attached`, `not_intersecting`, `budget`, `watertight`
 - [ ] `render`: offscreen wgpu (shaded, wire, matcap, contact sheet, part-label overlays)
 - [ ] `analyze` v0: topology metrics
@@ -69,7 +69,7 @@ Acceptance:
 Acceptance:
 
 - [ ] An MCP client builds a beveled crate in at most 3 calls
-- [ ] The broken-mesh corpus yields the exact expected findings
+- [x] The broken-mesh corpus yields the exact expected findings (`p3d_testdata::scenes::broken_corpus`, 9 scenes: `crates/perceive/tests/diagnose.rs` asserts code, severity, part, side and fix op; `crates/engine/tests/fixes.rs` asserts every top fix is predicted to resolve its finding)
 - [ ] Perception outputs stay under 600 tokens
 - [ ] MCP snapshot tests
 - [ ] CLI cold start < 150 ms

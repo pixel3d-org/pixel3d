@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 p3d-ops = { workspace = true }
+p3d-perceive = { workspace = true }
 p3d-scene = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
@@ -20,6 +21,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+p3d-testdata = { workspace = true }
 criterion = { workspace = true }
 serde_json = { workspace = true }
 

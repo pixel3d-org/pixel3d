@@ -754,7 +754,9 @@ version = "0.1.0"
 dependencies = [
  "criterion 0.8.2",
  "p3d-ops",
+ "p3d-perceive",
  "p3d-scene",
+ "p3d-testdata",
  "rayon",
  "serde",
  "serde_json",

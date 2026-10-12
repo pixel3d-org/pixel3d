@@ -259,3 +259,18 @@ fn edit_ops_undo_and_redo_exactly() {
         assert!(Arc::ptr_eq(s.doc(), state), "redo to state {i}");
     }
 }
+
+#[test]
+fn revisions_and_checkpoints_are_reachable() {
+    let mut s = Session::new();
+    exec(&mut s, &[call("prim.box", json!({ "name": "a" }))]);
+    s.checkpoint("one");
+    exec(&mut s, &[call("prim.box", json!({ "name": "b" }))]);
+    exec(&mut s, &[call("prim.box", json!({ "name": "c" }))]);
+    s.undo().unwrap();
+    for rev in 0..=3 {
+        assert_eq!(s.doc_at(rev).map(|d| d.revision), Some(rev), "revision {rev}");
+    }
+    assert!(s.doc_at(9).is_none());
+    assert_eq!(s.checkpoint_doc("one").unwrap().object_count(), 1);
+}
