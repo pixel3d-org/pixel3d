@@ -189,11 +189,11 @@ Acceptance:
 
 ## Phase 8: GUI shell
 
-- [x] Title bar, toolbar, docking, theme, code-painted icons, status bar (`crates/ui`: `chrome.rs` integrated macOS title row and toolbar with craft-ui overflow, `docking.rs` craft-ui dock with a protected viewport, `theme.rs` dark and light tokens of project spec 20.3, `icons.rs` 44 icons painted in code; `apps/pixel3d`, run `cargo run -p pixel3d -- --sample`; `--screenshot <png>` saves the window)
+- [x] Title bar, toolbar, docking, theme, code-painted icons, status bar (`crates/ui`: `chrome.rs` Blender-style top bar with the menus (integrated macOS title band), tool settings row with the contextual object actions, vertical tool column, viewport header; `docking.rs` craft-ui dock with a protected viewport; `theme.rs` dark and light tokens of project spec 20.3; `icons.rs` icons painted in code; `apps/pixel3d`, run `cargo run -p pixel3d -- --sample`; `--screenshot <png>` saves the window)
 - [ ] Start page, command line and palette, shortcuts, menus (native on macOS)
 - [ ] Viewport (offscreen render plus composite), camera navigation, grid, view cube
 - [ ] Picking, object and element selection, gizmo
-- [ ] Outliner, schema-driven Properties, History panel
+- [x] Outliner, schema-driven Properties, History panel (`outliner.rs`: search, tree, eye toggles, rename in place, context menu; `inspector.rs`: Tool, Scene, Object and Mesh tabs, the transform edited through `scene.set_transform` with one undo step per drag, "adjust last operation" re-running the op; `schema_form.rs`: one schema-to-widget mapping, tested on every built-in op in `schema_form::tests::forms_lay_out_every_builtin_op`; `panels.rs` History: the undo list, click to step back)
 - [ ] Control server
 - [ ] kittest snapshots
 

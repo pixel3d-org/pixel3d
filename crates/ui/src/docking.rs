@@ -84,8 +84,8 @@ impl Default for Workspace {
         let center = split(SplitAxis::Vertical, SplitSize::FixedSecond(170.0), tabs(&[Panel::Viewport]), tabs(&[Panel::History, Panel::Console]));
         let right = Node::Stack {
             entries: vec![
-                StackEntry { panel: Panel::Outliner, open: true, height: Some(260.0) },
-                StackEntry { panel: Panel::Properties, open: true, height: None },
+                StackEntry { panel: Panel::Outliner, open: true, height: Some(220.0) },
+                StackEntry { panel: Panel::Properties, open: true, height: Some(520.0) },
             ],
         };
         let root = split(SplitAxis::Horizontal, SplitSize::FixedSecond(320.0), center, right);

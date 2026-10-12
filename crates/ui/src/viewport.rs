@@ -62,6 +62,8 @@ pub struct SceneCache {
     pub geometry: u64,
     /// World matrix of every part.
     pub models: Arc<Vec<Mat4>>,
+    /// The hidden-set version the parts were chosen with.
+    pub hidden: u64,
 }
 
 /// Per-window viewport state (not persisted).
@@ -69,6 +71,8 @@ pub struct ViewportState {
     pub camera: OrbitCamera,
     cache: Option<SceneCache>,
     geometry_counter: u64,
+    /// Bumped when the set of objects hidden in the viewport changes.
+    hidden_version: u64,
     /// World matrices that override the document while a drag previews
     /// them (cleared when the drag ends).
     pub preview: BTreeMap<ObjectKey, Mat4>,
@@ -106,6 +110,7 @@ impl Default for ViewportState {
     fn default() -> Self {
         ViewportState {
             camera: OrbitCamera::default(),
+            hidden_version: 0,
             cache: None,
             geometry_counter: 0,
             preview: BTreeMap::new(),
@@ -199,19 +204,26 @@ impl ViewportState {
         self.gpu = true;
     }
 
+    /// The set of objects hidden in the viewport changed.
+    pub fn hidden_changed(&mut self) {
+        self.hidden_version = self.hidden_version.wrapping_add(1);
+    }
+
     /// The scene for the current document. When `key` changes the part
     /// matrices are recomputed, and the geometry only if a mesh changed.
     ///
     /// Complexity: O(objects) when only transforms changed, plus O(total
     /// mesh size) when a mesh changed, O(1) otherwise.
-    pub fn scene(&mut self, doc: &Document, key: u64) -> SceneCache {
+    pub fn scene(&mut self, doc: &Document, key: u64, hidden: &std::collections::BTreeSet<ObjectKey>) -> SceneCache {
         if let Some(c) = &self.cache
             && c.key == key
+            && c.hidden == self.hidden_version
         {
             return c.clone();
         }
         let _span = tracing::info_span!("viewport scene", key).entered();
-        let list = p3d_render::view_meshes(doc);
+        let mut list = p3d_render::view_meshes(doc);
+        list.retain(|(k, _)| !hidden.contains(k));
         let (view, geometry) = match &self.cache {
             Some(c) if c.view.same_meshes(&list) => (Arc::clone(&c.view), c.geometry),
             _ => {
@@ -220,7 +232,7 @@ impl ViewportState {
             }
         };
         let models = Arc::new(p3d_render::part_matrices(doc, &view.parts));
-        let c = SceneCache { key, view, geometry, models };
+        let c = SceneCache { key, view, geometry, models, hidden: self.hidden_version };
         self.cache = Some(c.clone());
         self.models_version = self.models_version.wrapping_add(1);
         // Part indices may have changed: the selection bitset must be rebuilt.
@@ -339,12 +351,20 @@ impl ViewportState {
 
     /// Lays out the viewport in `ui`: handles navigation and clicks and adds
     /// the paint callback.
-    pub fn show(&mut self, ui: &mut egui::Ui, doc: &Document, key: u64, settings: &ViewSettings, style: p3d_render::ViewStyle) -> Vec<ViewportEvent> {
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        doc: &Document,
+        key: u64,
+        hidden: &std::collections::BTreeSet<ObjectKey>,
+        settings: &ViewSettings,
+        style: p3d_render::ViewStyle,
+    ) -> Vec<ViewportEvent> {
         let rect = ui.max_rect();
         self.rect = rect;
         let resp = ui.interact(rect, ui.id().with("viewport"), Sense::click_and_drag());
         crate::control::record_widget(ui, &resp, "Viewport", "viewport", None);
-        let cache = self.scene(doc, key);
+        let cache = self.scene(doc, key, hidden);
         if self.frame_pending && rect.is_positive() {
             self.frame_pending = false;
             self.frame(&Default::default());

@@ -12,7 +12,7 @@ workspace = true
 
 [dependencies]
 craft-ui = { workspace = true }
-egui = { workspace = true }
+egui = { workspace = true, features = ["default_fonts"] }
 egui-wgpu = { workspace = true }
 glam = { workspace = true }
 p3d-engine = { workspace = true }

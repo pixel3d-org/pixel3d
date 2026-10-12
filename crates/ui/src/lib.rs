@@ -13,9 +13,12 @@ pub mod control;
 pub mod docking;
 pub mod i18n;
 pub mod icons;
+pub mod inspector;
 pub mod menus;
 pub mod navgizmo;
+pub mod outliner;
 pub mod panels;
+pub mod schema_form;
 pub mod screenshot;
 pub mod theme;
 pub mod viewport;
@@ -85,6 +88,8 @@ pub struct UiState {
     pub show_status_bar: bool,
     /// The tool column shows labels next to its icons.
     pub sidebar_labels: bool,
+    /// The open Properties tab.
+    pub inspector_tab: inspector::Tab,
     pub start_page: bool,
     pub tool: Tool,
     pub mode: SelectMode,
@@ -104,6 +109,7 @@ impl Default for UiState {
             show_toolbar: true,
             show_status_bar: true,
             sidebar_labels: false,
+            inspector_tab: inspector::Tab::default(),
             start_page: true,
             tool: Tool::Select,
             mode: SelectMode::Object,
@@ -137,6 +143,19 @@ pub struct Services {
     pub pick_save: Option<PickSave>,
 }
 
+/// The last single-op transaction: Properties shows its parameters and
+/// re-runs it with new ones (Blender's "Adjust Last Operation").
+#[derive(Debug, Clone, PartialEq)]
+pub struct LastOp {
+    pub op: String,
+    /// Canonical parameters (defaults filled in, units converted).
+    pub params: Value,
+    /// The revision the op produced; adjusting needs it to be current.
+    pub revision: u64,
+    /// Why the last adjustment was refused.
+    pub error: Option<String>,
+}
+
 /// The desktop application state.
 pub struct PixelApp {
     pub session: Session,
@@ -144,6 +163,15 @@ pub struct PixelApp {
     pub viewport: ViewportState,
     /// Selected objects (UI state, not document data).
     pub selection: BTreeSet<ObjectKey>,
+    /// The object clicked last (Properties shows it).
+    pub active: Option<ObjectKey>,
+    /// Objects hidden in the viewport only (UI state, like Blender's eye).
+    pub hidden: BTreeSet<ObjectKey>,
+    /// The last single-op transaction, adjustable in Properties.
+    pub last_op: Option<LastOp>,
+    /// The revision of an edit still being dragged: the next change of the
+    /// same drag replaces it, so one drag is one undo step.
+    coalesce: Option<u64>,
     pub services: Services,
     /// The file the document was opened from or saved to.
     pub path: Option<PathBuf>,
@@ -170,6 +198,10 @@ impl PixelApp {
             ui: UiState::default(),
             viewport: ViewportState::default(),
             selection: BTreeSet::new(),
+            active: None,
+            hidden: BTreeSet::new(),
+            last_op: None,
+            coalesce: None,
             services,
             path: None,
             generation: 0,
@@ -257,6 +289,11 @@ impl PixelApp {
         self.saved_revision = self.session.revision();
         self.path = path;
         self.selection.clear();
+        self.active = None;
+        self.hidden.clear();
+        self.viewport.hidden_changed();
+        self.last_op = None;
+        self.coalesce = None;
         self.viewport.frame_pending = true;
         self.ui.start_page = false;
     }
@@ -490,13 +527,95 @@ impl PixelApp {
                 if let Some(last) = r.results.last() {
                     self.status = Some((last.output.summary.clone(), Instant::now()));
                 }
+                self.last_op = match r.results.as_slice() {
+                    [one] => Some(LastOp { op: one.op.clone(), params: one.params.clone(), revision: r.revision, error: None }),
+                    _ => None,
+                };
                 if !created.is_empty() {
+                    self.active = created.first().copied();
                     self.selection = created.into_iter().collect();
                 }
                 self.ui.start_page = false;
                 Ok(json!({ "revision": r.revision, "summaries": r.results.iter().map(|x| x.output.summary.clone()).collect::<Vec<_>>() }))
             }
             Err(e) => Err(e.error.to_string()),
+        }
+    }
+
+    /// Re-runs the last single-op transaction with new parameters, in place
+    /// of the old run (still one undo step). Refused when anything changed
+    /// since; a failing run leaves the old result.
+    pub fn adjust_last(&mut self, params: Value) -> Result<(), String> {
+        let Some(last) = self.last_op.clone() else { return Err(t("nothing to adjust").to_owned()) };
+        if self.session.revision() != last.revision {
+            return Err(t("the scene changed since that operation").to_owned());
+        }
+        let label = self.session.undo().map_err(|e| e.message)?;
+        let opts = BatchOptions { label: Some(label), ..BatchOptions::default() };
+        match self.session.execute(&[OpCall::new(&last.op, params)], &opts) {
+            Ok(r) => {
+                if let Some(one) = r.results.first() {
+                    self.status = Some((one.output.summary.clone(), Instant::now()));
+                    if let Some(&k) = one.output.created.first() {
+                        self.active = Some(k);
+                        self.selection = one.output.created.iter().copied().collect();
+                    }
+                    self.last_op = Some(LastOp { op: last.op, params: one.params.clone(), revision: r.revision, error: None });
+                }
+                self.prune_selection();
+                Ok(())
+            }
+            Err(e) => {
+                let _ = self.session.redo();
+                let msg = e.error.to_string();
+                if let Some(l) = &mut self.last_op {
+                    l.error = Some(msg.clone());
+                }
+                Err(msg)
+            }
+        }
+    }
+
+    /// Runs calls as one transaction that replaces the previous one of the
+    /// same drag (one drag, one undo step). `dragging` false ends the drag.
+    pub fn execute_coalesced(&mut self, calls: &[OpCall], dragging: bool) -> Result<Value, String> {
+        if let Some(rev) = self.coalesce.take()
+            && rev == self.session.revision()
+        {
+            let _ = self.session.undo();
+        }
+        let r = self.execute(calls);
+        match &r {
+            Ok(_) if dragging => self.coalesce = Some(self.session.revision()),
+            Ok(_) => {}
+            Err(e) => self.set_status(e.clone()),
+        }
+        r
+    }
+
+    /// Ends a coalesced drag: the next edit is a new undo step.
+    pub fn end_drag(&mut self) {
+        self.coalesce = None;
+    }
+
+    /// Hides or shows objects in the viewport only.
+    pub fn set_hidden(&mut self, key: ObjectKey, hidden: bool) {
+        if hidden {
+            self.hidden.insert(key);
+            self.selection.remove(&key);
+        } else {
+            self.hidden.remove(&key);
+        }
+        self.viewport.hidden_changed();
+    }
+
+    /// The object Properties shows: the active one if selected, else the
+    /// only selected one.
+    pub fn active_object(&self) -> Option<ObjectKey> {
+        match self.active {
+            Some(a) if self.selection.contains(&a) && self.doc().object(a).is_some() => Some(a),
+            _ if self.selection.len() == 1 => self.selection.first().copied().filter(|k| self.doc().object(*k).is_some()),
+            _ => None,
         }
     }
 
@@ -548,13 +667,17 @@ impl PixelApp {
             match e {
                 ViewportEvent::Picked { object, add } => match (object, add) {
                     (Some(k), true) => {
-                        if !self.selection.remove(&k) {
+                        if self.selection.remove(&k) {
+                            self.active = self.selection.last().copied();
+                        } else {
                             self.selection.insert(k);
+                            self.active = Some(k);
                         }
                     }
                     (Some(k), false) => {
                         self.selection.clear();
                         self.selection.insert(k);
+                        self.active = Some(k);
                     }
                     (None, false) => self.selection.clear(),
                     (None, true) => {}
@@ -633,18 +756,21 @@ impl PixelApp {
                 let key = self.scene_key();
                 let style = theme::Tokens::get().view_style();
                 let sel = self.selection.clone();
-                self.viewport.scene(&doc, key);
+                self.viewport.scene(&doc, key, &self.hidden);
                 self.viewport.set_selection(&sel);
                 let view_rect = chrome::viewport_header(self, ui, ui.max_rect());
-                viewport_events =
-                    ui.scope_builder(egui::UiBuilder::new().max_rect(view_rect), |ui| self.viewport.show(ui, &doc, key, &self.ui.view, style)).inner;
+                viewport_events = ui
+                    .scope_builder(egui::UiBuilder::new().max_rect(view_rect), |ui| {
+                        self.viewport.show(ui, &doc, key, &self.hidden, &self.ui.view, style)
+                    })
+                    .inner;
                 chrome::viewport_overlay(self, ui);
                 nav = navgizmo::show(ui, view_rect, &mut self.viewport, self.ui.view.ortho);
             }
             other => {
                 egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| match other {
-                    docking::Panel::Outliner => panels::outliner(self, ui),
-                    docking::Panel::Properties => panels::properties(self, ui),
+                    docking::Panel::Outliner => outliner::show(self, ui),
+                    docking::Panel::Properties => inspector::show(self, ui),
                     docking::Panel::History => panels::history(self, ui),
                     docking::Panel::Console | docking::Panel::Viewport => panels::console(self, ui),
                 });
