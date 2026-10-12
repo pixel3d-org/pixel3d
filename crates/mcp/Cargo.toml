@@ -11,6 +11,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+base64 = { workspace = true }
 glam = { workspace = true }
 p3d-engine = { workspace = true }
 p3d-mesh = { workspace = true }
@@ -21,8 +22,13 @@ p3d-scene = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+rmcp = { workspace = true, features = ["transport-io"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["rt", "sync", "io-std"] }
 tracing = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
 p3d-testdata = { workspace = true }
+rmcp = { workspace = true, features = ["client", "transport-io"] }
+tokio = { workspace = true, features = ["rt", "sync", "io-std", "io-util", "macros"] }

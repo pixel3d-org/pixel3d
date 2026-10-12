@@ -11,5 +11,7 @@ pub mod agent;
 pub mod args;
 pub mod describe;
 pub mod docs;
+pub mod server;
 
 pub use agent::{Agent, ToolInfo, ToolOutput, tools};
+pub use server::{INSTRUCTIONS, ServeError, Server, serve_stdio};

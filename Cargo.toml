@@ -116,7 +116,8 @@ crossbeam-channel = "0.5.17"
 # Agent interface, plugins, assistant (L5 only)
 rmcp = "3.5.1"
 schemars = "1.2.2"
-tokio = "1.53.2"
+tokio = { version = "1.53.2", default-features = false }
+base64 = "0.23.1"
 axum = "0.8.9"
 wasmtime = "49.0.2"
 wit-bindgen = "0.62.0"
