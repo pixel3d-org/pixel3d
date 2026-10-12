@@ -130,6 +130,7 @@ pub fn to_bytes(doc: &Document) -> Result<(Vec<u8>, SaveReport), P3dError> {
         next_id: doc.next_id(),
         meshes,
         objects,
+        expectations: doc.expectations().to_vec(),
         extras: doc.extras.clone(),
     };
     let json = serde_json::to_vec_pretty(&manifest).map_err(|e| P3dError::Format(e.to_string()))?;
@@ -209,6 +210,7 @@ pub fn from_bytes(bytes: &[u8]) -> Result<Document, P3dError> {
     let mut doc = Document::new();
     doc.settings = manifest.settings.clone();
     doc.extras = manifest.extras.clone();
+    *doc.expectations_mut() = manifest.expectations.clone();
 
     // Meshes: each blob decoded once; copies share the decoded data.
     let mut decoded: BTreeMap<&str, std::sync::Arc<p3d_mesh::Mesh>> = BTreeMap::new();

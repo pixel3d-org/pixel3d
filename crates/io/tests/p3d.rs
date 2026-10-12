@@ -9,7 +9,7 @@ use glam::{DVec3, Quat, Vec3};
 use p3d_geo::prim::{BoxSpec, CylinderSpec, Origin, cuboid, cylinder};
 use p3d_io::p3d::{self, P3dError};
 use p3d_math::Trs;
-use p3d_scene::{AssetClass, Document, ObjectKind, OpNode};
+use p3d_scene::{AssetClass, Check, Document, Expectation, ObjectKind, ObjectRef, OpNode, Range};
 use serde_json::json;
 
 /// crate (box, bevel) > lid (box) > hinge (empty); post (cylinder);
@@ -37,6 +37,24 @@ fn sample() -> Document {
     }
     d.object_mut(hinge).unwrap().visible = false;
     d.push_history(c, OpNode { op: "prim.box".into(), version: 1, params: json!({ "width": 0.6 }), label: "box_1".into() }).unwrap();
+    d.expectations_mut().push(Expectation {
+        name: "E1".into(),
+        check: Check::Attached {
+            part: ObjectRef { name: "lid".into(), id: 2 },
+            to: ObjectRef { name: "crate".into(), id: 1 },
+            max_gap: 0.002,
+            max_penetration: 0.0,
+        },
+    });
+    d.expectations_mut().push(Expectation {
+        name: "size".into(),
+        check: Check::Dims {
+            target: ObjectRef { name: "crate".into(), id: 1 },
+            width: Some(Range { min: Some(0.5), max: None }),
+            height: None,
+            depth: None,
+        },
+    });
     // Free an id so next_id must be stored, not inferred.
     let tmp = d.create_object("tmp", None, ObjectKind::Empty).unwrap();
     d.delete(tmp, true).unwrap();
@@ -45,7 +63,7 @@ fn sample() -> Document {
 
 /// Everything observable about a document, in a comparable form.
 fn dump(d: &Document) -> Vec<String> {
-    let mut out = vec![format!("settings {:?} extras {:?} next {}", d.settings, d.extras, d.next_id())];
+    let mut out = vec![format!("settings {:?} extras {:?} next {} expect {:?}", d.settings, d.extras, d.next_id(), d.expectations())];
     for (k, o) in d.objects() {
         let t = o.transform;
         out.push(format!(
@@ -182,6 +200,6 @@ fn manifest_is_readable_json_with_stable_order() {
     let mut text = String::new();
     zip.by_name("manifest.json").unwrap().read_to_string(&mut text).unwrap();
     let keys: Vec<&str> = text.lines().filter(|l| l.starts_with("  \"")).map(|l| l.trim().split('"').nth(1).unwrap()).collect();
-    assert_eq!(keys, vec!["format", "format_version", "app_version", "settings", "next_id", "meshes", "objects", "future_field"]);
+    assert_eq!(keys, vec!["format", "format_version", "app_version", "settings", "next_id", "meshes", "objects", "expectations", "future_field"]);
     assert!(text.contains("\"hero_prop\""));
 }

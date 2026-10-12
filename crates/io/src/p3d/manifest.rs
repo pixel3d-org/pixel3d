@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use p3d_scene::{DocSettings, OpNode};
+use p3d_scene::{DocSettings, Expectation, OpNode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -26,6 +26,9 @@ pub struct Manifest {
     /// Objects with parents before children, siblings in order.
     #[serde(default)]
     pub objects: Vec<ObjectEntry>,
+    /// Expectations (model tests) in the order they were added.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expectations: Vec<Expectation>,
     /// Fields this version does not know; written back unchanged.
     #[serde(flatten)]
     pub extras: BTreeMap<String, Value>,

@@ -9,6 +9,7 @@ use p3d_mesh::Mesh;
 use slotmap::{SecondaryMap, SlotMap};
 use smallvec::SmallVec;
 
+use crate::expect::Expectation;
 use crate::history::{OpGraph, OpNode};
 use crate::name::{NameError, check_name, suggest};
 use crate::object::{GraphKey, MeshKey, Object, ObjectKey, ObjectKind};
@@ -58,6 +59,7 @@ pub struct Document {
     meshes: Arc<SlotMap<MeshKey, Arc<Mesh>>>,
     mesh_users: Arc<SecondaryMap<MeshKey, u32>>,
     graphs: Arc<SlotMap<GraphKey, Arc<OpGraph>>>,
+    expectations: Arc<Vec<Expectation>>,
     next_id: u32,
     pub settings: DocSettings,
     /// Unknown top-level fields of the file this document came from, kept so
@@ -78,6 +80,7 @@ impl Default for Document {
             meshes: Arc::default(),
             mesh_users: Arc::default(),
             graphs: Arc::default(),
+            expectations: Arc::default(),
             next_id: 1,
             settings: DocSettings::default(),
             extras: BTreeMap::new(),
@@ -670,6 +673,27 @@ impl Document {
         } else {
             users.insert(mesh, left);
         }
+    }
+
+    // ---- expectations ----------------------------------------------------------
+
+    /// Expectations in the order they were added.
+    pub fn expectations(&self) -> &[Expectation] {
+        &self.expectations
+    }
+
+    /// Mutable expectations (copied first if a snapshot shares them).
+    ///
+    /// Complexity: O(expectations) on the first write after a snapshot.
+    pub fn expectations_mut(&mut self) -> &mut Vec<Expectation> {
+        Arc::make_mut(&mut self.expectations)
+    }
+
+    /// `E<n>` for the smallest n not used by an expectation.
+    ///
+    /// Complexity: O(expectations x n).
+    pub fn next_expectation_name(&self) -> String {
+        (1u32..).map(|n| format!("E{n}")).find(|n| !self.expectations.iter().any(|e| &e.name == n)).unwrap_or_default()
     }
 
     // ---- history ---------------------------------------------------------------

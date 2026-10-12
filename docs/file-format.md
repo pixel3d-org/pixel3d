@@ -4,7 +4,7 @@ A `.p3d` file is a zip archive. Version 1 holds:
 
 | Entry | Content |
 |---|---|
-| `manifest.json` | Settings, objects, meshes, history, metadata (JSON, stable key order) |
+| `manifest.json` | Settings, objects, meshes, history, metadata, expectations (JSON, stable key order) |
 | `blobs/<blake3>.bin` | One mesh's arrays, rkyv-serialized; the name is the blake3 hex digest of the bytes |
 
 Thumbnails and textures join in later versions.
@@ -44,6 +44,9 @@ Blobs smaller than 64 KiB are stored uncompressed; larger ones use deflate at le
       "locked": false,
       "history": [ { "op": "prim.box", "version": 1, "params": { "width": 0.6 }, "label": "box_1" } ]
     }
+  ],
+  "expectations": [
+    { "name": "E1", "check": { "attached": { "part": { "name": "lid", "id": 2 }, "to": { "name": "crate", "id": 1 }, "max_gap": 0.002, "max_penetration": 0.0 } } }
   ]
 }
 ```
@@ -51,6 +54,7 @@ Blobs smaller than 64 KiB are stored uncompressed; larger ones use deflate at le
 - `next_id`: object ids (`o:<id>`) are never reused, so the next id is stored rather than inferred.
 - `meshes`: listed in first-use order. Two objects with the same mesh id are instances (editing one edits both). Two mesh ids with the same blob are independent copies that happen to be equal; the blob is stored once.
 - `objects`: parents come before their children and siblings keep their order. `parent` is omitted for top-level objects. Optional fields (`parent`, `mesh`, `tags`, `metadata`, `history`) are omitted when empty.
+- `expectations`: model tests (`dims`, `symmetric`, `attached`, `not_intersecting`, `budget`, `watertight`) in canonical units (meters). Objects are referenced by the name the author wrote and the id it resolved to, so renaming an object keeps its tests. Omitted when empty; files without it load as having none.
 - `rotation` is a quaternion `x, y, z, w`; units are meters.
 - Unknown top-level fields are kept and written back unchanged.
 

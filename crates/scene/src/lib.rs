@@ -3,6 +3,7 @@
 //! Layer L1 (document). See `docs/architecture.md`.
 
 mod document;
+pub mod expect;
 mod history;
 pub mod name;
 mod object;
@@ -11,6 +12,7 @@ mod settings;
 mod tests;
 
 pub use document::{Document, SceneError};
+pub use expect::{Check, Expectation, ObjectRef, Range};
 pub use history::{OpGraph, OpNode};
 pub use object::{GraphKey, MeshKey, Object, ObjectKey, ObjectKind};
 pub use settings::{AssetClass, DisplayUnits, DocSettings};
