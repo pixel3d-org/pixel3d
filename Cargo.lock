@@ -859,6 +859,7 @@ version = "0.1.0"
 name = "p3d-perceive"
 version = "0.1.0"
 dependencies = [
+ "criterion 0.8.2",
  "glam",
  "insta",
  "p3d-analyze",

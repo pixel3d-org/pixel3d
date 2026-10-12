@@ -23,5 +23,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 insta = { workspace = true, features = ["json"] }
 p3d-testdata = { workspace = true }
+
+[[bench]]
+name = "aspects"
+harness = false

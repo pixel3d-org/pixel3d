@@ -2,7 +2,7 @@
 
 Progress checklist for the roadmap. Tick a box in the commit that completes it; acceptance items record their evidence (test names, numbers, report links). Each completed phase gets a local tag `phase-N`.
 
-**Current phase: 1 (Kernel): deliverables and acceptance met locally; the `phase-0` and `phase-1` tags wait for CI on all three OSes (no remote yet).**
+**Current phase: 2 (Agent surface v0). Phases 0 and 1 are met locally; their tags wait for CI on all three OSes (no remote yet).**
 
 ## Phase 0: Bootstrap
 
@@ -59,7 +59,7 @@ Acceptance:
 
 - [ ] `pixel3d-cli`: `mcp` over stdio, `run <script.json>`, `convert`
 - [ ] MCP tools: `scene_overview`, `describe`, `query`, `run`, `list_ops`, `describe_op`, `history`, `docs`
-- [ ] Perception v0: `perceive` aspects `structure`, `shape`, `silhouette`, `section`, `relations`, `probe`, `diff`
+- [x] Perception v0: `perceive` aspects `structure`, `shape`, `silhouette`, `section`, `relations`, `probe`, `diff` (`crates/perceive`; text and JSON snapshots in `tests/aspects.rs`; 100k triangles, uncached including BVH builds: structure 22 ms, shape 27 ms, silhouette 21 ms, section 1 ms, relations 22 ms, probe 15 ms, diff 44 ms with findings cached per revision; `cargo bench -p p3d-perceive --bench aspects`)
 - [ ] Diagnostics v0: geometry and relations findings with locations and fixes
 - [ ] Expectations v0: `dims`, `symmetric`, `attached`, `not_intersecting`, `budget`, `watertight`
 - [ ] `render`: offscreen wgpu (shaded, wire, matcap, contact sheet, part-label overlays)

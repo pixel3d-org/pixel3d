@@ -8,7 +8,7 @@ use glam::{Vec2, Vec3};
 use serde::Serialize;
 
 use crate::Report;
-use crate::diagnose::diagnose;
+use crate::diagnose::{Finding, diagnose};
 use crate::error::PerceiveError;
 use crate::fmt::{dims, mm, point, thousands, volume};
 use crate::silhouette::{ViewDir, rasterize};
@@ -153,11 +153,13 @@ pub fn silhouette_delta(before: &View, after: &View, dir: ViewDir) -> Option<Sil
     })
 }
 
-/// Differences between two documents seen through the same target.
+/// Differences between two documents seen through the same target, with
+/// the findings of both sides (callers cache them per revision; see
+/// [`report`] for a version that computes them).
 ///
-/// Complexity: O(objects + vertices) for both views, plus two silhouette
-/// rasters and two [`diagnose`] runs.
-pub fn diff(before: &View, after: &View) -> Diff {
+/// Complexity: O(objects + vertices) for both views plus two silhouette
+/// rasters.
+pub fn diff(before: &View, after: &View, findings_before: &[Finding], findings_after: &[Finding]) -> Diff {
     let ids = |v: &View| -> BTreeSet<u32> { v.parts.iter().map(|p| p.id).chain(v.others.iter().map(|o| o.id)).collect() };
     let (ia, ib) = (ids(before), ids(after));
     let label = |v: &View, id: u32| {
@@ -254,9 +256,9 @@ pub fn diff(before: &View, after: &View) -> Diff {
         }
     }
     d.silhouette = silhouette_delta(before, after, ViewDir::Front);
-    let key = |f: &crate::diagnose::Finding| (f.code.to_owned(), f.part.clone());
-    let fa: BTreeSet<(String, String)> = diagnose(before).iter().map(key).collect();
-    let fb: BTreeSet<(String, String)> = diagnose(after).iter().map(key).collect();
+    let key = |f: &Finding| (f.code.to_owned(), f.part.clone());
+    let fa: BTreeSet<(String, String)> = findings_before.iter().map(key).collect();
+    let fb: BTreeSet<(String, String)> = findings_after.iter().map(key).collect();
     d.findings_added = fb.difference(&fa).map(|(code, part)| FindingRef { code: code.clone(), part: part.clone() }).collect();
     d.findings_resolved = fa.difference(&fb).map(|(code, part)| FindingRef { code: code.clone(), part: part.clone() }).collect();
     d
@@ -307,6 +309,8 @@ pub fn diff_text(title: &str, d: &Diff) -> String {
 }
 
 /// The `diff` report between two documents, both seen through `target`.
+///
+/// Complexity: [`diff`] plus two [`diagnose`] runs.
 pub fn report(before: &p3d_scene::Document, after: &p3d_scene::Document, target: Option<&str>) -> Result<Report, PerceiveError> {
     // A target that exists on one side only (added or deleted) is empty on the other.
     let (vb, va) = match (View::new(before, target), View::new(after, target)) {
@@ -315,6 +319,6 @@ pub fn report(before: &p3d_scene::Document, after: &p3d_scene::Document, target:
         (Ok(b), Err(_)) => (b, View::empty(after)),
         (Err(e), Err(_)) => return Err(e),
     };
-    let d = diff(&vb, &va);
+    let d = diff(&vb, &va, &diagnose(&vb), &diagnose(&va));
     Ok(Report::new("diff", diff_text(&va.title(), &d), &d))
 }
