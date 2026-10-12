@@ -48,4 +48,7 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # Git sources must be listed here with a pinned rev in Cargo.toml.
-allow-git = []
+allow-git = [
+    # craft-ui (MIT OR Apache-2.0), the shared egui components of the GUI shell.
+    "https://github.com/storytold/craft-libs",
+]
