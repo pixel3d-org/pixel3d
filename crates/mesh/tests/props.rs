@@ -1,7 +1,7 @@
 //! Property tests on random valid meshes (primitives with random parameters
 //! and random face deletions).
 
-use p3d_mesh::{Mesh, TriOptions, Vec3};
+use p3d_mesh::{CornerSrc, Mesh, Patch, TriOptions, Vec3};
 use p3d_testdata::strategy;
 use proptest::prelude::*;
 
@@ -154,5 +154,113 @@ proptest! {
         f.flip_part(f0).unwrap();
         prop_assert_eq!(f.validate(), Ok(()));
         prop_assert_eq!(f.to_tri_buffers(&TriOptions::default()).indices, m.to_tri_buffers(&TriOptions::default()).indices);
+    }
+}
+
+/// Faces picked by random numbers, sorted and deduplicated.
+fn pick_faces(m: &Mesh, picks: &[u32]) -> Vec<u32> {
+    let live: Vec<u32> = m.faces().collect();
+    let mut out: Vec<u32> = picks.iter().filter(|_| !live.is_empty()).map(|&p| live[p as usize % live.len()]).collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn patch_reinserting_faces_is_identity(m in strategy::mesh(), picks in prop::collection::vec(any::<u32>(), 1..10)) {
+        let faces = pick_faces(&m, &picks);
+        let mut p = Patch::new(&m);
+        for &f in &faces {
+            p.remove_face(f);
+            let vs: Vec<u32> = m.face_verts(f).collect();
+            let src: Vec<CornerSrc> = m.face_halfedges(f).map(CornerSrc::copy).collect();
+            p.add_face(&vs, &src, m.face_material(f), Some(f));
+        }
+        let mut n = m.clone();
+        let r = n.apply_patch(&p).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(n.validate(), Ok(()));
+        prop_assert_eq!((r.removed_edges, r.removed_verts, r.split_verts), (0, 0, 0));
+        prop_assert_eq!((n.vert_count(), n.edge_count(), n.face_count(), euler(&n)), (m.vert_count(), m.edge_count(), m.face_count(), euler(&m)));
+        prop_assert_eq!(n.triangle_count(), m.triangle_count());
+    }
+
+    #[test]
+    fn patch_poking_faces(m in strategy::mesh(), picks in prop::collection::vec(any::<u32>(), 1..10)) {
+        let faces = pick_faces(&m, &picks);
+        let mut p = Patch::new(&m);
+        let mut corners = 0usize;
+        for &f in &faces {
+            p.remove_face(f);
+            let vs: Vec<u32> = m.face_verts(f).collect();
+            let c = p.new_vert(m.face_centroid(f), None);
+            for i in 0..vs.len() {
+                p.add_face(&[vs[i], vs[(i + 1) % vs.len()], c], &[], 0, Some(f));
+            }
+            corners += vs.len();
+        }
+        let mut n = m.clone();
+        n.apply_patch(&p).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(n.validate(), Ok(()));
+        prop_assert_eq!(n.face_count(), m.face_count() - faces.len() + corners);
+        prop_assert_eq!(n.vert_count(), m.vert_count() + faces.len());
+        prop_assert_eq!(euler(&n), euler(&m));
+    }
+
+    #[test]
+    fn patch_extruding_a_random_region(m in strategy::mesh(), picks in prop::collection::vec(any::<u32>(), 1..12)) {
+        let faces = pick_faces(&m, &picks);
+        let in_region = |f: Option<u32>| f.is_some_and(|f| faces.binary_search(&f).is_ok());
+        let mut p = Patch::new(&m);
+        // One copy per fan of region faces around a vertex (a region can touch
+        // itself at a vertex): every region corner of a fan maps to its copy.
+        let mut copy: std::collections::BTreeMap<u32, u32> = std::collections::BTreeMap::new();
+        for &f in &faces {
+            for h in m.face_halfedges(f) {
+                if copy.contains_key(&h) {
+                    continue;
+                }
+                // Back up to the first corner of the fan, then walk it forward.
+                let mut first = h;
+                loop {
+                    let t = first ^ 1;
+                    if !in_region(m.face(t)) || m.next(t) == h {
+                        break;
+                    }
+                    first = m.next(t);
+                }
+                let v = m.origin(h);
+                let c = p.new_vert(m.positions[v as usize] + Vec3::Y * 0.1, Some(v));
+                let mut g = first;
+                loop {
+                    copy.insert(g, c);
+                    let t = m.prev(g) ^ 1;
+                    if !in_region(m.face(t)) || t == first {
+                        break;
+                    }
+                    g = t;
+                }
+            }
+        }
+        let mut sides = 0usize;
+        for &f in &faces {
+            p.remove_face(f);
+            let vs: Vec<u32> = m.face_halfedges(f).map(|h| copy[&h]).collect();
+            let src: Vec<CornerSrc> = m.face_halfedges(f).map(CornerSrc::copy).collect();
+            p.add_face(&vs, &src, 0, Some(f));
+            for h in m.face_halfedges(f) {
+                if !in_region(m.face(h ^ 1)) {
+                    let (u, w) = (m.origin(h), m.dest(h));
+                    p.add_face(&[u, w, copy[&m.next(h)], copy[&h]], &[], 0, None);
+                    sides += 1;
+                }
+            }
+        }
+        let mut n = m.clone();
+        n.apply_patch(&p).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(n.validate(), Ok(()));
+        prop_assert_eq!(n.face_count(), m.face_count() + sides);
     }
 }

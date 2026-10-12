@@ -356,6 +356,35 @@ impl Mesh {
         })
     }
 
+    /// Reserves room for at least this many more vertices, edges and faces
+    /// in every column, so edits that add them do not reallocate.
+    ///
+    /// Complexity: O(1) when the capacity suffices, otherwise O(current size)
+    /// for the reallocations.
+    pub fn reserve(&mut self, verts: usize, edges: usize, faces: usize) {
+        let h = 2 * edges;
+        for col in [&mut self.he_next, &mut self.he_prev, &mut self.he_vert, &mut self.he_face] {
+            col.reserve(h);
+        }
+        self.vert_he.reserve(verts);
+        self.positions.reserve(verts);
+        self.face_he.reserve(faces);
+        self.face_material.reserve(faces);
+        self.edge_flags.reserve(edges);
+        if let Some(c) = &mut self.edge_crease {
+            c.reserve(edges);
+        }
+        for col in &mut self.corner_uv {
+            col.reserve(h);
+        }
+        if let Some(c) = &mut self.corner_normal {
+            c.reserve(h);
+        }
+        if let Some(c) = &mut self.corner_color {
+            c.reserve(h);
+        }
+    }
+
     /// Approximate heap memory in bytes (array lengths, not capacities).
     ///
     /// Complexity: O(groups).
