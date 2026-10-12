@@ -1,0 +1,72 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "apps/*", "xtask"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+# Internal crates (layering: docs/architecture.md, checked by `cargo xtask layers`).
+p3d-math = { path = "crates/math" }
+p3d-mesh = { path = "crates/mesh" }
+p3d-scene = { path = "crates/scene" }
+p3d-query = { path = "crates/query" }
+p3d-geo = { path = "crates/geo" }
+p3d-uv = { path = "crates/uv" }
+p3d-opt = { path = "crates/opt" }
+p3d-bake = { path = "crates/bake" }
+p3d-tex = { path = "crates/tex" }
+p3d-rig = { path = "crates/rig" }
+p3d-anim = { path = "crates/anim" }
+p3d-render = { path = "crates/render" }
+p3d-sdf = { path = "crates/sdf" }
+p3d-remesh = { path = "crates/remesh" }
+p3d-features = { path = "crates/features" }
+p3d-strands = { path = "crates/strands" }
+p3d-io = { path = "crates/io" }
+p3d-profiles = { path = "crates/profiles" }
+p3d-analyze = { path = "crates/analyze" }
+p3d-perceive = { path = "crates/perceive" }
+p3d-ops = { path = "crates/ops" }
+p3d-graph = { path = "crates/graph" }
+p3d-spec = { path = "crates/spec" }
+p3d-engine = { path = "crates/engine" }
+p3d-mcp = { path = "crates/mcp" }
+p3d-control = { path = "crates/control" }
+p3d-ui = { path = "crates/ui" }
+p3d-plugin = { path = "crates/plugin" }
+p3d-ai = { path = "crates/ai" }
+p3d-testdata = { path = "crates/testdata" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# Library rules. Apps and xtask define their own `[lints]` tables.
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+# Required: transactions roll back with catch_unwind.
+panic = "unwind"
+debug = "line-tables-only"
+
+[profile.dev]
+opt-level = 1
+
+# Usable debug builds with fast dependencies.
+[profile.dev.package."*"]
+opt-level = 3

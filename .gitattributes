@@ -1,0 +1,11 @@
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.exr binary
+*.ktx2 binary
+*.glb binary
+*.fbx binary
+*.p3d binary
+*.p3dx binary
+*.wasm binary

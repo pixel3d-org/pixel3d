@@ -1,0 +1,11 @@
+[package]
+name = "p3d-scene"
+description = "Document model: objects, hierarchy, materials, textures, skeletons, clips, ids, names and settings."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
