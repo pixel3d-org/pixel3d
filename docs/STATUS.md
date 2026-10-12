@@ -41,10 +41,10 @@ Acceptance:
 - [x] `mesh`: half-edge kernel, attributes, groups, validation, compaction, triangle buffers
 - [x] `scene`: document, ids, names, hierarchy, settings
 - [x] `query`: selectors
-- [ ] `ops`: trait, registry, schemas, errors, outputs
+- [x] `ops`: trait, registry, schemas, errors, outputs
 - [ ] `engine`: Session, transactions, undo and redo, checkpoints, `catch_unwind` rollback, jobs, linear history graph
 - [ ] `.p3d` save and load
-- [ ] Ops: `scene.*`, `prim.box`, `prim.cylinder`, `prim.quad_sphere`, `prim.plane`, `select.*` basics
+- [x] Ops: `scene.*` (13), `prim.box`, `prim.cylinder`, `prim.quad_sphere`, `prim.plane`, `select.save/grow/shrink/group_delete/group_rename`
 - [ ] `cargo xtask codegen`
 - [x] `cargo xtask bench-scale` (criterion `scale_*` groups at n, 4n, 16n; log-log slope <= 1.25)
 
