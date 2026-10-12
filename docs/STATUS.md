@@ -45,12 +45,13 @@ Acceptance:
 - [ ] `engine`: Session, transactions, undo and redo, checkpoints, `catch_unwind` rollback, jobs, linear history graph
 - [ ] `.p3d` save and load
 - [ ] Ops: `scene.*`, `prim.box`, `prim.cylinder`, `prim.quad_sphere`, `prim.plane`, `select.*` basics
-- [ ] `cargo xtask codegen`, `cargo xtask bench-scale`
+- [ ] `cargo xtask codegen`
+- [x] `cargo xtask bench-scale` (criterion `scale_*` groups at n, 4n, 16n; log-log slope <= 1.25)
 
 Acceptance:
 
 - [ ] Property tests green
-- [ ] 1M-triangle grid builds in < 200 ms
+- [x] 1M-triangle grid builds in < 200 ms (37 ms, `cargo bench -p p3d-geo --bench prim -- prim/plane/1000000`, M-series laptop)
 - [ ] Save then load gives identical blob hashes
 - [ ] Undo and redo < 5 ms
 

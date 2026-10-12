@@ -18,3 +18,13 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+criterion = { workspace = true }
+p3d-testdata = { workspace = true }
+
+[[bench]]
+name = "prim"
+harness = false
+
+[[bench]]
+name = "scale"
+harness = false

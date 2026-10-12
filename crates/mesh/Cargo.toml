@@ -19,5 +19,14 @@ smallvec = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 p3d-testdata = { workspace = true }
 proptest = { workspace = true }
+
+[[bench]]
+name = "kernel"
+harness = false
+
+[[bench]]
+name = "scale"
+harness = false

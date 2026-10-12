@@ -95,7 +95,7 @@ fn run_steps(name: &str, steps: Vec<Step>) -> Result<(), String> {
     Ok(())
 }
 
-/// Everything CI runs, in the same order.
+/// Everything CI runs, in the same order (small bench-scale sizes).
 pub fn ci() -> Result<(), String> {
     run_steps(
         "ci",
@@ -107,6 +107,7 @@ pub fn ci() -> Result<(), String> {
             ("emdash", Box::new(emdash_step)),
             ("deny", Box::new(deny_step)),
             ("release build", cargo_step(&["build", "--workspace", "--release", "--locked"])),
+            ("bench-scale", Box::new(|| crate::bench_scale::run(&[]))),
         ],
     )
 }
