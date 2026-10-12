@@ -20,3 +20,9 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
+criterion = { workspace = true }
+p3d-testdata = { workspace = true }
+
+[[bench]]
+name = "scale"
+harness = false

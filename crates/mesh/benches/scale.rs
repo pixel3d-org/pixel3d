@@ -3,7 +3,7 @@
 
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use p3d_mesh::{Mesh, TriOptions};
 use p3d_testdata::{scale_sizes, sphere};
 
@@ -30,6 +30,41 @@ fn scale(c: &mut Criterion) {
     let mut g = c.benchmark_group("scale_mesh_tri_buffers");
     for (t, m) in &meshes {
         g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| b.iter(|| black_box(m).to_tri_buffers(&TriOptions::default())));
+    }
+    g.finish();
+
+    let mut g = c.benchmark_group("scale_mesh_corner_normals");
+    for (t, m) in &meshes {
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| b.iter(|| black_box(m).compute_corner_normals()));
+    }
+    g.finish();
+
+    let mut g = c.benchmark_group("scale_mesh_delete_faces");
+    for (t, m) in &meshes {
+        let del: Vec<u32> = m.faces().step_by(3).collect();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &(m.clone(), del), |b, (m, del)| {
+            b.iter_batched(|| m.clone(), |mut x| x.delete_faces(del).ok(), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
+    let mut g = c.benchmark_group("scale_mesh_flip");
+    for (t, m) in &meshes {
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| b.iter_batched(|| m.clone(), |mut x| x.flip_all(), BatchSize::LargeInput));
+    }
+    g.finish();
+
+    // Worst case for part count: every face its own part (n meshes out).
+    let mut g = c.benchmark_group("scale_mesh_split_parts");
+    for (t, m) in &meshes {
+        let labels: Vec<u32> = (0..m.face_slots() as u32).collect();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &labels, |b, l| b.iter(|| black_box(m).split_by_face_labels(l)));
+    }
+    g.finish();
+
+    let mut g = c.benchmark_group("scale_mesh_append");
+    for (t, m) in &meshes {
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| b.iter_batched(|| m.clone(), |mut x| x.append(m), BatchSize::LargeInput));
     }
     g.finish();
 
