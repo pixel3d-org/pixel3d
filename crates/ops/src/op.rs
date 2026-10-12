@@ -35,6 +35,7 @@ pub enum Category {
     Scene,
     Prim,
     Select,
+    Edit,
 }
 
 impl Category {
@@ -43,6 +44,7 @@ impl Category {
             Category::Scene => "scene",
             Category::Prim => "prim",
             Category::Select => "select",
+            Category::Edit => "edit",
         }
     }
 }
@@ -114,6 +116,9 @@ pub struct OpMeta {
 #[derive(Debug, Default)]
 pub struct OpCtx<'a> {
     pub seed: u64,
+    /// The call's explicit label, if any: groups an op creates are named
+    /// `<label>.<role>`.
+    pub label: Option<&'a str>,
     pub cancel: Option<&'a AtomicBool>,
     /// Progress in millionths (0 to 1,000,000).
     pub progress: Option<&'a AtomicU32>,

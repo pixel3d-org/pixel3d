@@ -8,4 +8,6 @@
 
 mod topology;
 
-pub use topology::{BoundaryLoop, Part, Parts, SHORT_EDGE, SLIVER_RATIO, Topology, boundary_loops, face_degenerate, parts, topology};
+pub use topology::{
+    BoundaryLoop, Part, Parts, SHORT_EDGE, SLIVER_RATIO, Topology, boundary_loop_count, boundary_loops, face_degenerate, parts, topology,
+};

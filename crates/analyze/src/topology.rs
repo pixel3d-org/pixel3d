@@ -205,6 +205,27 @@ pub fn boundary_loops(mesh: &Mesh, parts: &Parts) -> Vec<BoundaryLoop> {
     out
 }
 
+/// Number of boundary loops (holes and open borders).
+///
+/// Complexity: O(H) for H half-edge slots.
+pub fn boundary_loop_count(mesh: &Mesh) -> usize {
+    let mut seen = FixedBitSet::with_capacity(mesh.he_slots());
+    let mut n = 0;
+    for h in 0..mesh.he_slots() as u32 {
+        if !mesh.is_he_alive(h) || !mesh.is_boundary_he(h) || seen.contains(h as usize) {
+            continue;
+        }
+        n += 1;
+        let mut cur = h;
+        // Boundary loops are simple cycles; stop at any revisit on corrupt input.
+        while !seen.contains(cur as usize) {
+            seen.insert(cur as usize);
+            cur = mesh.next(cur);
+        }
+    }
+    n
+}
+
 /// Topology metrics of a whole mesh.
 ///
 /// Complexity: O(V + E + F + C) in element slots.

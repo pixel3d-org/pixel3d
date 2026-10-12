@@ -6,7 +6,7 @@ use p3d_scene::name::check_name;
 use p3d_scene::{Document, ObjectKey};
 
 use crate::error::OpError;
-use crate::op::GroupInfo;
+use crate::op::{GroupInfo, OpCtx};
 use crate::params::{Length, vec3};
 use crate::tx::Tx;
 
@@ -75,6 +75,22 @@ pub fn create_mesh_object(
         o.transform.translation = vec3(position);
     }
     Ok(key)
+}
+
+/// Label for the groups an op creates on a mesh (`<label>.<role>`): the
+/// call's explicit label, or the first `<short>_<n>` (n = 1, 2, ...) that no
+/// group on the mesh uses yet, so a later call never overwrites an earlier
+/// call's groups.
+///
+/// Complexity: O(groups x n) for the n labels already taken.
+pub fn group_label(mesh: &Mesh, ctx: &OpCtx, short: &str) -> String {
+    if let Some(l) = ctx.label {
+        return l.to_owned();
+    }
+    (1u32..)
+        .map(|n| format!("{short}_{n}"))
+        .find(|l| !mesh.groups().any(|(name, _)| name.strip_prefix(l.as_str()).is_some_and(|rest| rest.starts_with('.'))))
+        .unwrap_or_else(|| short.to_owned())
 }
 
 /// Groups of an object's mesh, in creation order.

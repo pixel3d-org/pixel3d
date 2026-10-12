@@ -8,6 +8,7 @@
 pub mod catalog;
 mod common;
 mod dynop;
+pub mod edit;
 mod error;
 mod op;
 pub mod params;

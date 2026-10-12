@@ -39,3 +39,11 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`select.shrink`](select.shrink.md) | Removes the outermost rings of elements from a group. |
 | [`select.group_delete`](select.group_delete.md) | Removes a named group; the geometry stays. |
 | [`select.group_rename`](select.group_rename.md) | Renames a named group, keeping its elements and position in the list. |
+
+## edit
+
+| Op | Summary |
+|---|---|
+| [`edit.fill`](edit.fill.md) | Closes holes (loops of boundary edges) with one face each. |
+| [`edit.recalc_normals`](edit.recalc_normals.md) | Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way. |
+| [`edit.delete_elements`](edit.delete_elements.md) | Deletes the selected faces (or every face using the selected edges or vertices) and anything left unused. |

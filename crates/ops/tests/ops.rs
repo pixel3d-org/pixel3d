@@ -6,7 +6,7 @@
 
 use glam::Vec3;
 use p3d_mesh::{EdgeFlags, ElementKind};
-use p3d_ops::{Applied, ErrorCode, OpCtx, OpError, Registry, Tx};
+use p3d_ops::{Applied, Category, ErrorCode, OpCtx, OpError, Registry, Tx};
 use p3d_scene::Document;
 use serde_json::{Value, json};
 
@@ -36,13 +36,21 @@ fn err(tx: &mut Tx, op: &str, args: Value) -> OpError {
 }
 
 /// The fixture every op example runs against: crate (o:1, 0.6 m box) with
-/// child lid (o:2, box) which has child hinge (o:3, empty), and post (o:3?).
+/// child lid (o:2, box) which has child hinge (o:4, empty), and post (o:3, cylinder).
 fn fixture() -> Tx {
     let mut tx = Tx::new(Document::new());
     ok(&mut tx, "prim.box", json!({ "name": "crate", "width": 0.6, "height": 0.6, "depth": 0.6 }));
     ok(&mut tx, "prim.box", json!({ "name": "lid", "parent": "crate", "width": 0.6, "height": 0.05, "depth": 0.6, "position": [0, 0.6, 0] }));
     ok(&mut tx, "prim.cylinder", json!({ "name": "post", "radius": 0.05, "height": 1.0, "segments": 8, "position": [2, 0, 0] }));
     ok(&mut tx, "scene.create_empty", json!({ "name": "hinge", "parent": "crate/lid" }));
+    tx
+}
+
+/// The fixture plus bin (o:5), an open box without its top, for `edit.*` examples.
+fn edit_fixture() -> Tx {
+    let mut tx = fixture();
+    ok(&mut tx, "prim.box", json!({ "name": "bin", "width": 0.4, "height": 0.3, "depth": 0.4, "position": [-2, 0, 0] }));
+    ok(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": { "group": "top" } } }));
     tx
 }
 
@@ -53,7 +61,11 @@ fn every_example_produces_its_documented_result() {
     for op in r.iter() {
         for ex in op.meta().examples {
             let args: Value = serde_json::from_str(ex.args).unwrap();
-            let mut tx = if op.id().starts_with("prim.") { Tx::new(Document::new()) } else { fixture() };
+            let mut tx = match op.meta().category {
+                Category::Prim => Tx::new(Document::new()),
+                Category::Edit => edit_fixture(),
+                _ => fixture(),
+            };
             match op.run(&mut tx, &args, &OpCtx::default()) {
                 Ok(a) if a.output.summary == ex.result => {}
                 Ok(a) => failures.push(format!("{}: expected `{}`\n      got `{}`", op.id(), ex.result, a.output.summary)),
@@ -294,4 +306,91 @@ fn join_into_a_nested_target_is_refused() {
     let s = ok(&mut tx, "scene.join", json!({ "targets": ["crate", "crate/lid"] }));
     assert_eq!(s, "joined 2 objects into crate (o:1): 12 faces");
     assert!(tx.doc().resolve("crate/hinge").is_ok());
+}
+
+fn topo(tx: &Tx, target: &str) -> p3d_analyze::Topology {
+    let key = tx.doc().resolve(target).unwrap();
+    p3d_analyze::topology(tx.doc().object_mesh(key).unwrap())
+}
+
+#[test]
+fn fill_closes_holes_with_labelled_groups() {
+    let mut tx = edit_fixture();
+    assert_eq!(topo(&tx, "bin").boundary_loops, 1);
+    let a = run(&mut tx, "edit.fill", json!({ "target": "bin" })).unwrap();
+    let t = topo(&tx, "bin");
+    assert!(t.is_watertight() && t.volume > 0.0, "{t:?}");
+    assert_eq!(a.output.groups[0].name, "fill_1.faces");
+    let e = err(&mut tx, "edit.fill", json!({ "target": "bin" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::EmptySelection, Some("/select")));
+
+    // A second fill on the same mesh does not overwrite fill_1's group.
+    ok(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": { "group": "fill_1.faces" } } }));
+    ok(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": { "group": "bottom" } } }));
+    assert_eq!(topo(&tx, "bin").boundary_loops, 2);
+    // Only the hole touching the selection is filled.
+    let a =
+        run(&mut tx, "edit.fill", json!({ "target": "bin", "select": { "edges": { "in_box": { "min": [-1, -0.01, -1], "max": [1, 0.01, 1] } } } }))
+            .unwrap();
+    assert_eq!(a.output.groups[0].name, "fill_2.faces");
+    assert_eq!(topo(&tx, "bin").boundary_loops, 1);
+    let key = tx.doc().resolve("bin").unwrap();
+    let mesh = tx.doc().object_mesh(key).unwrap();
+    let f = mesh.group("fill_2.faces").unwrap().iter().next().unwrap();
+    assert!(mesh.face_normal(f).y < -0.99, "the bottom cap faces down");
+
+    // An explicit call label names the group.
+    let r = Registry::builtin();
+    let ctx = OpCtx { label: Some("lid_cap"), ..OpCtx::default() };
+    let a = r.get("edit.fill").unwrap().run(&mut tx, &json!({ "target": "bin" }), &ctx).unwrap();
+    assert_eq!(a.output.groups[0].name, "lid_cap.faces");
+    assert!(topo(&tx, "bin").is_watertight());
+}
+
+#[test]
+fn recalc_normals_flips_inverted_parts() {
+    let mut tx = edit_fixture();
+    let key = tx.doc().resolve("crate").unwrap();
+    tx.mesh_mut(key, "").unwrap().flip_all();
+    assert_eq!(topo(&tx, "crate").inverted_parts, 1);
+    let s = ok(&mut tx, "edit.recalc_normals", json!({ "target": "crate" }));
+    assert_eq!(s, "crate (o:1): flipped 1 of 1 part (6 faces); normals face outward");
+    assert_eq!(topo(&tx, "crate").inverted_parts, 0);
+    assert!(topo(&tx, "crate").volume > 0.0);
+    let s = ok(&mut tx, "edit.recalc_normals", json!({ "target": "crate", "inside": true }));
+    assert!(s.contains("face inward"), "{s}");
+    assert!(topo(&tx, "crate").volume < 0.0);
+
+    // Open parts: the bin's faces point away from its center.
+    let s = ok(&mut tx, "edit.recalc_normals", json!({ "target": "bin" }));
+    assert!(s.contains("already face"), "{s}");
+    let bin = tx.doc().resolve("bin").unwrap();
+    tx.mesh_mut(bin, "").unwrap().flip_all();
+    let s = ok(&mut tx, "edit.recalc_normals", json!({ "target": "bin" }));
+    assert!(s.contains("flipped 1 of 1 part"), "{s}");
+}
+
+#[test]
+fn delete_elements_by_faces_edges_and_vertices() {
+    let mut tx = edit_fixture();
+    let s = ok(
+        &mut tx,
+        "edit.delete_elements",
+        json!({ "target": "crate", "select": { "edges": { "in_box": { "min": [-1, 0.59, -1], "max": [1, 0.61, 1] } } } }),
+    );
+    // The top edges touch the top and the four sides: only the bottom is left.
+    assert_eq!(s, "crate (o:1): deleted 5 faces, 8 edges and 4 vertices; 1 hole opened");
+    let s = ok(
+        &mut tx,
+        "edit.delete_elements",
+        json!({ "target": "post", "select": { "verts": { "in_box": { "min": [-1, 0.99, -1], "max": [1, 1.01, 1] } } } }),
+    );
+    assert!(s.contains("1 hole opened"), "{s}");
+    let e =
+        err(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": { "normal": { "dir": [0, 1, 0], "within_deg": 1 } } } }));
+    assert_eq!(e.code, ErrorCode::EmptySelection);
+    let e = err(&mut tx, "edit.delete_elements", json!({ "target": "hinge", "select": { "faces": {} } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/target")));
+    let a = run(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": {} } })).unwrap();
+    assert_eq!(a.output.warnings[0].fix.as_ref().map(|f| f.op.as_str()), Some("scene.delete"));
 }

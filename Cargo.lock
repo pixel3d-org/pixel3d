@@ -806,6 +806,7 @@ name = "p3d-ops"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "p3d-analyze",
  "p3d-geo",
  "p3d-math",
  "p3d-mesh",

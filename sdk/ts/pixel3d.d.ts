@@ -389,6 +389,36 @@ export type SelectGroupRenameParams = {
   to: string;
 };
 
+/** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
+export type EditFillParams = {
+  /**
+   * Holes to fill: those with a selected boundary edge or vertex, or
+   * bordering a selected face. Every hole when omitted.
+   */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.recalc_normals`: Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way. */
+export type EditRecalcNormalsParams = {
+  /** Point normals inward instead (for interiors seen from inside, such as rooms). */
+  inside?: boolean;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.delete_elements`: Deletes the selected faces (or every face using the selected edges or vertices) and anything left unused. */
+export type EditDeleteElementsParams = {
+  /**
+   * Faces to delete. Selecting edges or vertices deletes every face that
+   * uses them.
+   */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
 /** Parameters of each op, by op id. */
 export interface OpParams {
   "scene.create_empty": SceneCreateEmptyParams;
@@ -413,6 +443,9 @@ export interface OpParams {
   "select.shrink": SelectShrinkParams;
   "select.group_delete": SelectGroupDeleteParams;
   "select.group_rename": SelectGroupRenameParams;
+  "edit.fill": EditFillParams;
+  "edit.recalc_normals": EditRecalcNormalsParams;
+  "edit.delete_elements": EditDeleteElementsParams;
 }
 
 /** Every op id. */

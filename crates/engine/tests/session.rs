@@ -233,3 +233,29 @@ fn same_calls_give_identical_documents() {
     };
     assert_eq!(dump(&a), dump(&b));
 }
+
+#[test]
+fn edit_ops_undo_and_redo_exactly() {
+    let mut s = Session::new();
+    exec(&mut s, &[call("prim.box", json!({ "name": "bin", "advanced": { "segments": [2, 2, 2] } }))]);
+    let steps = [
+        vec![call("edit.delete_elements", json!({ "target": "bin", "select": { "faces": { "group": "top" } } }))],
+        vec![OpCall { label: Some("cap".into()), ..call("edit.fill", json!({ "target": "bin" })) }],
+        vec![call("edit.recalc_normals", json!({ "target": "bin", "inside": true }))],
+    ];
+    let mut states = vec![Arc::clone(s.doc())];
+    for step in &steps {
+        exec(&mut s, step);
+        states.push(Arc::clone(s.doc()));
+    }
+    let key = s.doc().resolve("bin").unwrap();
+    assert!(s.doc().object_mesh(key).unwrap().group("cap.faces").is_some(), "the call label names the group");
+    for i in (0..steps.len()).rev() {
+        s.undo().unwrap();
+        assert!(Arc::ptr_eq(s.doc(), &states[i]), "undo to state {i}");
+    }
+    for (i, state) in states.iter().enumerate().skip(1) {
+        s.redo().unwrap();
+        assert!(Arc::ptr_eq(s.doc(), state), "redo to state {i}");
+    }
+}
