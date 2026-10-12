@@ -199,6 +199,39 @@ impl EditState {
     }
 }
 
+/// How a box selection combines with the selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoxOp {
+    /// Replace (plain drag).
+    Set,
+    /// Extend (Shift).
+    Add,
+    /// Subtract (Ctrl or Cmd).
+    Sub,
+}
+
+impl EditState {
+    /// Applies a box selection of `ids` in `mode`.
+    ///
+    /// Complexity: O(ids log n).
+    pub fn apply_box(&mut self, ids: Vec<u32>, mode: SelectMode, op: BoxOp) {
+        if self.picked_mode != Some(mode) {
+            self.picked.clear();
+            self.picked_mode = Some(mode);
+        }
+        match op {
+            BoxOp::Set => self.picked = ids.into_iter().collect(),
+            BoxOp::Add => self.picked.extend(ids),
+            BoxOp::Sub => {
+                for id in ids {
+                    self.picked.remove(&id);
+                }
+            }
+        }
+        self.version += 1;
+    }
+}
+
 /// Screen position (points) of a world point, `None` behind the camera.
 fn project(vp: Mat4, rect: Rect, world: Vec3) -> Option<Pos2> {
     let c = vp * world.extend(1.0);
@@ -219,6 +252,52 @@ fn segment_distance(p: Pos2, a: Pos2, b: Pos2) -> f32 {
 /// The nearest candidate by distance, ties to the lower id.
 fn nearest(candidates: impl Iterator<Item = (f32, u32)>) -> Option<(f32, u32)> {
     candidates.min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+}
+
+/// The elements of `mode` inside `area` (points): vertices by position,
+/// edges by midpoint, faces by center. Unless `through` (x-ray), elements
+/// behind the surface are left out: a ray toward each candidate must not
+/// hit the mesh in front of it.
+///
+/// Complexity: O(V + E + F corners) projections, plus O(log F) per
+/// candidate inside the box when not `through`.
+#[allow(clippy::too_many_arguments)] // the picking context, like `pick`
+pub fn box_pick(mesh: &Mesh, bvh: &TriBvh, model: Mat4, camera: &OrbitCamera, rect: Rect, area: Rect, mode: SelectMode, through: bool) -> Vec<u32> {
+    let vp = camera.view_proj(rect.width() / rect.height().max(1.0));
+    let inv = model.inverse();
+    let visible = |local: Vec3, at: Pos2| {
+        if through {
+            return true;
+        }
+        let (o, d) = camera.ray(at.x - rect.left(), at.y - rect.top(), rect.width(), rect.height());
+        let (lo, ld) = (inv.transform_point3(o), inv.transform_vector3(d).normalize_or_zero());
+        let t = (local - lo).dot(ld);
+        bvh.raycast(lo, ld, f32::INFINITY).is_none_or(|h| h.t >= t - (1e-4 * t.abs() + 1e-4))
+    };
+    let inside = |local: Vec3| project(vp, rect, model.transform_point3(local)).filter(|s| area.contains(*s)).is_some_and(|s| visible(local, s));
+    let pos = |v: u32| mesh.positions.get(v as usize).copied().unwrap_or(Vec3::ZERO);
+    match mode {
+        SelectMode::Object => Vec::new(),
+        SelectMode::Vert => mesh.verts().filter(|&v| inside(pos(v))).collect(),
+        SelectMode::Edge => mesh
+            .edges()
+            .filter(|&e| {
+                let [a, b] = mesh.edge_verts(e);
+                inside((pos(a) + pos(b)) * 0.5)
+            })
+            .collect(),
+        SelectMode::Face => {
+            let normals = mesh.face_normals();
+            mesh.faces()
+                .filter(|&f| {
+                    let (sum, n) = mesh.face_verts(f).fold((Vec3::ZERO, 0.0), |(s, n), v| (s + pos(v), n + 1.0));
+                    // Just off the surface, so the face itself does not hide its center.
+                    let lift = normals.get(f as usize).copied().unwrap_or(Vec3::ZERO) * 1e-4;
+                    n > 0.0 && inside(sum / n + lift)
+                })
+                .collect()
+        }
+    }
 }
 
 /// The element of `mode` under `at` (points) on `mesh` drawn with `model`.
@@ -309,6 +388,30 @@ mod tests {
         s.click(Some(v), false);
         s.sync(Some(ObjectKey::default()), Some(&cube()), SelectMode::Vert);
         assert!(s.picked().0.is_empty());
+    }
+
+    #[test]
+    fn box_selection_skips_hidden_elements_unless_through() {
+        let m = cube();
+        let bvh = TriBvh::from_mesh(&m, glam::Affine3A::IDENTITY);
+        let mut cam = OrbitCamera::default();
+        cam.set_view(p3d_render::ViewKind::Front);
+        let (lo, hi) = m.bounds().unwrap();
+        cam.frame(lo, hi, 1.0);
+        let rect = Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(400.0, 400.0));
+        // The whole view: the 4 front vertices when hidden ones are skipped,
+        // all 8 in x-ray.
+        assert_eq!(box_pick(&m, &bvh, Mat4::IDENTITY, &cam, rect, rect, SelectMode::Vert, false).len(), 4);
+        assert_eq!(box_pick(&m, &bvh, Mat4::IDENTITY, &cam, rect, rect, SelectMode::Vert, true).len(), 8);
+        assert_eq!(box_pick(&m, &bvh, Mat4::IDENTITY, &cam, rect, rect, SelectMode::Face, false).len(), 1, "only the front face");
+        // An empty corner selects nothing.
+        let corner = Rect::from_min_size(pos2(0.0, 0.0), egui::vec2(5.0, 5.0));
+        assert!(box_pick(&m, &bvh, Mat4::IDENTITY, &cam, rect, corner, SelectMode::Vert, true).is_empty());
+        let mut s = EditState::default();
+        s.apply_box(vec![1, 2], SelectMode::Vert, BoxOp::Set);
+        s.apply_box(vec![3], SelectMode::Vert, BoxOp::Add);
+        s.apply_box(vec![1], SelectMode::Vert, BoxOp::Sub);
+        assert_eq!(s.picked().0.iter().copied().collect::<Vec<_>>(), vec![2, 3]);
     }
 
     #[test]

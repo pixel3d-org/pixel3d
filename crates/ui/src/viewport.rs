@@ -108,6 +108,8 @@ pub struct ViewportState {
     pub edit_overlay: Option<(Arc<p3d_render::EditOverlay>, u64)>,
     /// Clicks pick vertices, edges or faces instead of objects.
     pub pick_elements: bool,
+    /// The box being dragged (start and current corner, points).
+    marquee: Option<(egui::Pos2, egui::Pos2)>,
     /// Frame the scene on the next frame (after loading a file).
     pub frame_pending: bool,
     pub gpu: bool,
@@ -145,6 +147,7 @@ impl Default for ViewportState {
             rect: Rect::NOTHING,
             edit_overlay: None,
             pick_elements: false,
+            marquee: None,
             size_px: [0, 0],
             frame_pending: true,
             gpu: false,
@@ -164,6 +167,8 @@ pub enum ViewportEvent {
     /// A click in an element mode at `at` (points); the app picks the
     /// vertex, edge or face there.
     ElementClick { at: egui::Pos2, add: bool },
+    /// A box dragged with the primary button over `area` (points).
+    BoxSelect { area: Rect, op: crate::elements::BoxOp },
 }
 
 /// GPU resources stored in egui_wgpu's callback resources.
@@ -289,6 +294,33 @@ impl ViewportState {
     /// The world matrix of an object's part, if it is drawn.
     ///
     /// Complexity: O(parts).
+    /// Objects with a vertex inside `area` (points) on screen.
+    ///
+    /// Complexity: O(vertices of the visible meshes), stopping at the first
+    /// vertex inside for each object.
+    pub fn objects_in(&self, area: Rect) -> std::collections::BTreeSet<ObjectKey> {
+        let mut out = std::collections::BTreeSet::new();
+        let Some(c) = &self.cache else { return out };
+        let r = self.rect;
+        let vp = self.camera.view_proj(r.width() / r.height().max(1.0));
+        for (i, part) in c.view.parts.iter().enumerate() {
+            let (Some(m), Some(model)) = (c.view.meshes.get(i), c.models.get(i)) else { continue };
+            let mvp = vp * *model;
+            let inside = m.verts().any(|v| {
+                let clip = mvp * m.positions[v as usize].extend(1.0);
+                if clip.w <= 1e-6 {
+                    return false;
+                }
+                let n = clip.truncate() / clip.w;
+                area.contains(egui::pos2(r.left() + (n.x * 0.5 + 0.5) * r.width(), r.top() + (0.5 - n.y * 0.5) * r.height()))
+            });
+            if inside {
+                out.insert(part.object);
+            }
+        }
+        out
+    }
+
     /// The part index, mesh and world matrix of `object` in the cached scene.
     ///
     /// Complexity: O(parts).
@@ -418,6 +450,30 @@ impl ViewportState {
         }
         self.navigate(ui, &resp, settings.nav);
         let mut events = Vec::new();
+        // A primary drag without Alt draws a selection box.
+        let mods = ui.input(|i| i.modifiers);
+        if resp.drag_started_by(egui::PointerButton::Primary) && !mods.alt {
+            self.marquee = resp.interact_pointer_pos().map(|p| (p, p));
+        }
+        if resp.dragged_by(egui::PointerButton::Primary)
+            && let (Some((a, _)), Some(p)) = (self.marquee, ui.input(|i| i.pointer.latest_pos()))
+        {
+            self.marquee = Some((a, p));
+        }
+        if resp.drag_stopped()
+            && let Some((a, b)) = self.marquee.take()
+            && a.distance(b) > 3.0
+        {
+            use crate::elements::BoxOp;
+            let op = if mods.shift {
+                BoxOp::Add
+            } else if mods.command {
+                BoxOp::Sub
+            } else {
+                BoxOp::Set
+            };
+            events.push(ViewportEvent::BoxSelect { area: Rect::from_two_pos(a, b), op });
+        }
         self.poll_pick(&cache, &mut events);
 
         let ppp = ui.ctx().pixels_per_point();
@@ -483,6 +539,11 @@ impl ViewportState {
                 crate::theme::body(),
                 crate::theme::Tokens::get().text_dim,
             );
+        }
+        if let Some((a, b)) = self.marquee {
+            let tk = crate::theme::Tokens::get();
+            let r = Rect::from_two_pos(a, b).intersect(rect);
+            ui.painter().rect(r, 2.0, tk.window_fill, egui::Stroke::new(1.0, tk.window_stroke), egui::StrokeKind::Inside);
         }
         let now = std::time::Instant::now();
         if let Some(prev) = self.last_frame.replace(now) {

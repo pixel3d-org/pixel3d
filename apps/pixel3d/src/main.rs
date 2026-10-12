@@ -84,9 +84,12 @@ impl eframe::App for App {
         if self.app.quit_after_shot {
             raw.events.retain(|e| matches!(e, egui::Event::Screenshot { .. }));
             if let Some(at) = self.hover {
-                raw.events.push(egui::Event::PointerMoved(at));
-                // Press on the third frame, release on the fourth.
+                // Move there once, then rest (tooltips wait for a still pointer).
                 self.frames += 1;
+                if self.frames <= 2 {
+                    raw.events.push(egui::Event::PointerMoved(at));
+                }
+                // Press on the third frame, release on the fourth.
                 if self.click && (self.frames == 3 || self.frames == 4) {
                     let pressed = self.frames == 3;
                     raw.events.push(egui::Event::PointerButton {

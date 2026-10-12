@@ -75,6 +75,21 @@ pub enum SelectMode {
 }
 
 impl SelectMode {
+    /// The icon of the mode.
+    pub fn icon(self) -> icons::Icon {
+        match self {
+            SelectMode::Object => icons::Icon::ModeObject,
+            SelectMode::Vert => icons::Icon::ModeVert,
+            SelectMode::Edge => icons::Icon::ModeEdge,
+            SelectMode::Face => icons::Icon::ModeFace,
+        }
+    }
+
+    /// Edit mode: vertices, edges or faces of the active mesh.
+    pub fn is_edit(self) -> bool {
+        self != SelectMode::Object
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             SelectMode::Object => t("Object"),
@@ -146,6 +161,8 @@ pub struct UiState {
     pub start_page: bool,
     pub tool: Tool,
     pub mode: SelectMode,
+    /// The element mode Tab returns to.
+    pub element_mode: SelectMode,
     /// Recently opened or saved files, newest first.
     pub recent: Vec<String>,
 }
@@ -167,12 +184,18 @@ impl Default for UiState {
             start_page: true,
             tool: Tool::Select,
             mode: SelectMode::Object,
+            element_mode: SelectMode::Vert,
             recent: Vec::new(),
         }
     }
 }
 
 impl UiState {
+    /// The icon of the current mode.
+    pub fn mode_icon(&self) -> icons::Icon {
+        self.mode.icon()
+    }
+
     /// Puts `path` first in the recent files.
     ///
     /// Complexity: O(RECENT).
@@ -301,6 +324,102 @@ impl PixelApp {
     }
 
     /// Whether the History or Console panel is open.
+    /// Whether an element op can run on the edit selection now: `Ok` with
+    /// the `select` parameter to pass (`None` for the whole mesh), or why
+    /// not. Ops get the picked elements as `{"faces": {"ids": [...]}}`
+    /// (likewise edges and vertices), valid at the current revision.
+    ///
+    /// Complexity: O(selected) plus the op's schema size.
+    pub fn element_op_state(&self, op: &str) -> Result<Option<Value>, String> {
+        let registry = self.session.registry();
+        let Ok(o) = registry.get(op) else {
+            return Err(format!("{} `{op}`, {}", t("Needs"), t("which is not built yet.")));
+        };
+        if !self.ui.mode.is_edit() || self.edit.object.is_none() {
+            return Err(t("Works in Edit Mode (Tab) on the active mesh.").to_owned());
+        }
+        let schema = o.params_schema();
+        let Some(_) = schema.pointer("/properties/select") else { return Ok(None) };
+        // As in Blender, edit tools work on a selection, even where the op
+        // would take the whole mesh.
+        let (picked, mode) = self.edit.picked();
+        if picked.is_empty() || mode != Some(self.ui.mode) {
+            return Err(t("Select vertices, edges or faces first.").to_owned());
+        }
+        let by_id = schema.get("").and_then(Value::as_object).is_some_and(|d| d.values().any(|v| v.pointer("/properties/ids").is_some()));
+        if !by_id {
+            return Err(t("Waits for ops to take picked elements (selectors by element id).").to_owned());
+        }
+        let kind = match self.ui.mode {
+            SelectMode::Vert => "verts",
+            SelectMode::Edge => "edges",
+            _ => "faces",
+        };
+        Ok(Some(json!({ kind: { "ids": picked } })))
+    }
+
+    /// Runs an element op on the edited mesh and its selected elements.
+    pub fn run_element_op(&mut self, op: &str) -> Result<Value, String> {
+        let select = self.element_op_state(op)?;
+        let Some(id) = self.edit.object.and_then(|k| self.doc().object(k)).map(|o| o.public_id()) else {
+            return Err(t("nothing to edit").to_owned());
+        };
+        let mut params = json!({ "target": id });
+        if let Some(s) = select {
+            params["select"] = s;
+        }
+        let r = self.execute(&[OpCall::new(op, params)]);
+        if let Err(e) = &r {
+            self.set_status(e.clone());
+        }
+        r
+    }
+
+    /// A box selection: elements of the edited mesh in edit mode (hidden
+    /// ones only in x-ray), objects in Object mode.
+    ///
+    /// Complexity: as [`elements::box_pick`] or [`viewport::ViewportState::objects_in`].
+    pub fn box_select(&mut self, area: egui::Rect, op: elements::BoxOp) {
+        use elements::BoxOp;
+        if self.ui.mode.is_edit() {
+            let Some(k) = self.edit.object else { return };
+            let (Some((_, mesh, model)), Some(bvh)) = (self.viewport.part_of(k), self.edit.bvh()) else { return };
+            let ids = elements::box_pick(&mesh, &bvh, model, &self.viewport.camera, self.viewport.rect, area, self.ui.mode, self.ui.view.xray);
+            self.edit.apply_box(ids, self.ui.mode, op);
+            return;
+        }
+        let hits = self.viewport.objects_in(area);
+        match op {
+            BoxOp::Set => self.selection = hits,
+            BoxOp::Add => self.selection.extend(hits),
+            BoxOp::Sub => self.selection.retain(|k| !hits.contains(k)),
+        }
+        if self.active.is_none_or(|a| !self.selection.contains(&a)) {
+            self.active = self.selection.first().copied();
+        }
+    }
+
+    /// Switches between Object mode and the element modes. Edit mode needs
+    /// an active mesh object.
+    pub fn set_mode(&mut self, mode: SelectMode) -> Result<Value, String> {
+        if mode.is_edit() {
+            let mesh = self.active_object().is_some_and(|k| self.doc().object_mesh(k).is_some());
+            if !mesh && !self.ui.mode.is_edit() {
+                return Err(t("Select a mesh object to edit it").to_owned());
+            }
+            self.ui.element_mode = mode;
+        }
+        self.ui.mode = mode;
+        // Follow the edited mesh now, so commands right after see it.
+        if mode.is_edit() {
+            let doc = std::sync::Arc::clone(self.session.doc());
+            let editing = self.active_object().or(self.edit.object);
+            let mesh = editing.and_then(|k| doc.object(k)?.mesh_key()).and_then(|m| doc.mesh_arc(m));
+            self.edit.sync(mesh.and(editing), mesh, mode);
+        }
+        Ok(json!({ "mode": mode }))
+    }
+
     /// Object and element counts, selected and visible.
     ///
     /// Complexity: O(selected + hidden) per call; a recount (O(faces)) only
@@ -475,6 +594,17 @@ impl PixelApp {
                 self.set_status(format!("{} {label}", t("Redid")));
                 Ok(json!({ "redone": label }))
             }
+            "edit.select" => {
+                let target = params.get("target").and_then(Value::as_str).ok_or("target is required")?;
+                let k = self.doc().resolve(target).map_err(|e| e.to_string())?;
+                let add = params.get("add").and_then(Value::as_bool).unwrap_or(false);
+                self.handle_viewport(vec![ViewportEvent::Picked { object: Some(k), add }]);
+                Ok(json!({ "selected": self.selection.len() }))
+            }
+            "edit.element_op" => {
+                let op = params.get("op").and_then(Value::as_str).ok_or("op is required")?.to_owned();
+                self.run_element_op(&op)
+            }
             "edit.new_collection" => {
                 let members = self.selected_targets();
                 outliner::new_collection(self, &members)
@@ -609,9 +739,18 @@ impl PixelApp {
                 Ok(json!({ "tool": tool }))
             }
             "ui.mode" => {
-                let mode = serde_json::from_value::<SelectMode>(params.get("mode").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
-                self.ui.mode = mode;
-                Ok(json!({ "mode": mode }))
+                let raw = params.get("mode").cloned().unwrap_or(Value::Null);
+                let mode = if raw.as_str() == Some("edit") {
+                    self.ui.element_mode
+                } else {
+                    serde_json::from_value::<SelectMode>(raw).map_err(|_| t("mode is object, edit, vert, edge or face").to_owned())?
+                };
+                self.set_mode(mode)
+            }
+            "ui.edit" => {
+                // Tab: between Object mode and the last element mode.
+                let mode = if self.ui.mode.is_edit() { SelectMode::Object } else { self.ui.element_mode };
+                self.set_mode(mode)
             }
             "app.quit" => {
                 self.quit_requested = true;
@@ -817,6 +956,7 @@ impl PixelApp {
                     (None, false) => self.selection.clear(),
                     (None, true) => {}
                 },
+                ViewportEvent::BoxSelect { area, op } => self.box_select(area, op),
                 ViewportEvent::ElementClick { at, add } => {
                     let Some(k) = self.edit.object else { continue };
                     let (Some((_, mesh, model)), Some(bvh)) = (self.viewport.part_of(k), self.edit.bvh()) else { continue };

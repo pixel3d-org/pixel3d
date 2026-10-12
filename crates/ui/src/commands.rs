@@ -75,10 +75,18 @@ fn extra_commands() -> Vec<Command> {
         mk("ui.tool", || json!({ "tool": "move" }), "Move tool", "Move the selection with the gizmo", &["w", "g", "grab", "translate"], Icon::Move),
         mk("ui.tool", || json!({ "tool": "rotate" }), "Rotate tool", "Rotate the selection with the gizmo", &["e", "r", "rotation"], Icon::Rotate),
         mk("ui.tool", || json!({ "tool": "scale" }), "Scale tool", "Scale the selection with the gizmo", &["r", "s", "resize"], Icon::Scale),
-        mk("ui.mode", || json!({ "mode": "object" }), "Object mode", "Select whole objects", &["1", "object"], Icon::ModeObject),
-        mk("ui.mode", || json!({ "mode": "vert" }), "Vertex mode", "Select vertices", &["2", "vertex select", "points"], Icon::ModeVert),
-        mk("ui.mode", || json!({ "mode": "edge" }), "Edge mode", "Select edges", &["3", "edge select"], Icon::ModeEdge),
-        mk("ui.mode", || json!({ "mode": "face" }), "Face mode", "Select faces", &["4", "face select", "polygon"], Icon::ModeFace),
+        mk("ui.mode", || json!({ "mode": "object" }), "Object mode", "Work on whole objects", &["tab", "object"], Icon::ModeObject),
+        mk(
+            "ui.mode",
+            || json!({ "mode": "edit" }),
+            "Edit mode",
+            "Work on the vertices, edges and faces of the active mesh",
+            &["tab", "edit"],
+            Icon::ModeVert,
+        ),
+        mk("ui.mode", || json!({ "mode": "vert" }), "Vertex select", "Select vertices (edit mode)", &["1", "vertex mode", "points"], Icon::ModeVert),
+        mk("ui.mode", || json!({ "mode": "edge" }), "Edge select", "Select edges (edit mode)", &["2", "edge mode"], Icon::ModeEdge),
+        mk("ui.mode", || json!({ "mode": "face" }), "Face select", "Select faces (edit mode)", &["3", "face mode", "polygon"], Icon::ModeFace),
         mk("view.snap", null, "Snap", "Snap transform drags to the grid and 15 degree steps", &["snapping", "magnet", "shift tab"], Icon::Grid),
     ]
 }

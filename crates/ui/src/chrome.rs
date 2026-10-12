@@ -55,6 +55,18 @@ fn never(_: &PixelApp) -> bool {
 }
 
 macro_rules! item {
+    (op $icon:ident, $op:literal, $label:literal, $keys:literal, $desc:literal) => {
+        Item {
+            icon: Icon::$icon,
+            command: "edit.element_op",
+            label: $label,
+            keys: $keys,
+            desc: $desc,
+            params: || json!({ "op": $op }),
+            selected: never,
+            needs_selection: false,
+        }
+    };
     ($icon:ident, $cmd:literal, $label:literal, $keys:literal, $desc:literal) => {
         Item { icon: Icon::$icon, command: $cmd, label: $label, keys: $keys, desc: $desc, params: no_params, selected: never, needs_selection: false }
     };
@@ -78,16 +90,19 @@ fn on_selection(mut it: Item) -> Item {
 }
 
 /// The tool rail, in groups.
-fn sidebar_groups() -> Vec<Vec<Item>> {
+fn sidebar_groups(edit: bool) -> Vec<Vec<Item>> {
+    let tools = vec![
+        item!(Select, "ui.tool", "Select", "Q", "Click to select, Shift+click to add or remove", || json!({ "tool": "select" }), |a| a.ui.tool
+            == Tool::Select),
+        item!(Move, "ui.tool", "Move", "W", "Move the selection with the gizmo", || json!({ "tool": "move" }), |a| a.ui.tool == Tool::Move),
+        item!(Rotate, "ui.tool", "Rotate", "E", "Rotate the selection with the gizmo", || json!({ "tool": "rotate" }), |a| a.ui.tool == Tool::Rotate),
+        item!(Scale, "ui.tool", "Scale", "R", "Scale the selection with the gizmo", || json!({ "tool": "scale" }), |a| a.ui.tool == Tool::Scale),
+    ];
+    if edit {
+        return vec![tools, edit_tools(), edit_extras()];
+    }
     vec![
-        vec![
-            item!(Select, "ui.tool", "Select", "Q", "Click to select, Shift+click to add or remove", || json!({ "tool": "select" }), |a| a.ui.tool
-                == Tool::Select),
-            item!(Move, "ui.tool", "Move", "W", "Move the selection with the gizmo", || json!({ "tool": "move" }), |a| a.ui.tool == Tool::Move),
-            item!(Rotate, "ui.tool", "Rotate", "E", "Rotate the selection with the gizmo", || json!({ "tool": "rotate" }), |a| a.ui.tool
-                == Tool::Rotate),
-            item!(Scale, "ui.tool", "Scale", "R", "Scale the selection with the gizmo", || json!({ "tool": "scale" }), |a| a.ui.tool == Tool::Scale),
-        ],
+        tools,
         vec![
             item!(Box, "prim.box", "Box", "", "Add a box at the origin"),
             item!(Cylinder, "prim.cylinder", "Cylinder", "", "Add a cylinder at the origin"),
@@ -95,6 +110,36 @@ fn sidebar_groups() -> Vec<Vec<Item>> {
             item!(Plane, "prim.plane", "Plane", "", "Add a flat grid at the origin"),
             item!(Empty, "scene.create_empty", "Empty", "", "Add an empty: a transform without a mesh"),
         ],
+    ]
+}
+
+/// Edit mode: tools that reshape the selected elements (Blender's toolbar).
+fn edit_tools() -> Vec<Item> {
+    vec![
+        item!(op Extrude, "edit.extrude", "Extrude", "E", "Pull the selected faces out along their normals, with new side walls"),
+        item!(op Inset, "edit.inset", "Inset", "I", "Shrink the selected faces inward, with a ring of new faces"),
+        item!(op Bevel, "edit.bevel", "Bevel", "Ctrl+B", "Round off the selected edges or vertices"),
+        item!(op LoopCut, "edit.loop_cut", "Loop Cut", "Ctrl+R", "Cut a loop across the ring of quads of each selected edge"),
+        item!(op Knife, "edit.knife", "Knife", "K", "Cut new edges across faces"),
+        item!(op Smooth, "edit.smooth", "Smooth", "", "Relax the selected vertices (the whole mesh when none)"),
+        item!(op EdgeSlide, "edit.edge_slide", "Edge Slide", "", "Slide the selected edges along their neighbors"),
+        item!(op ShrinkFatten, "edit.shrink_fatten", "Shrink/Fatten", "Alt+S", "Move the selected vertices along their normals"),
+        item!(op Rip, "edit.rip", "Rip Region", "V", "Tear the selection free from the faces around it"),
+    ]
+}
+
+/// Edit mode: more mesh operations on the selection.
+fn edit_extras() -> Vec<Item> {
+    vec![
+        item!(op Poke, "edit.poke", "Poke", "", "Add a vertex in the middle of each selected face"),
+        item!(op Triangulate, "edit.triangulate", "Triangulate", "Ctrl+T", "Split the selected faces into triangles"),
+        item!(op Merge, "edit.merge", "Merge", "M", "Merge the selected vertices into one"),
+        item!(op Dissolve, "edit.dissolve", "Dissolve", "", "Remove the selected elements and join the faces around them"),
+        item!(op Subdivide, "edit.subdivide", "Subdivide", "", "Split the selected faces into smaller ones"),
+        item!(op Bridge, "edit.bridge", "Bridge", "", "Connect two edge loops with faces"),
+        item!(op Fill, "edit.fill", "Fill", "", "Close holes with faces"),
+        item!(op Split, "edit.split", "Split", "Y", "Detach the selected faces from their neighbors"),
+        item!(op Symmetrize, "edit.symmetrize", "Symmetrize", "", "Mirror one half of the mesh onto the other"),
     ]
 }
 
@@ -121,14 +166,13 @@ fn settings_items() -> Vec<Item> {
     ]
 }
 
-/// The viewport header: selection modes on the left, view toggles and
-/// shading on the right.
+/// The viewport header: the element select modes (edit mode) after the
+/// mode menu, view toggles and shading on the right.
 fn header_modes() -> Vec<Item> {
     vec![
-        item!(ModeObject, "ui.mode", "Object mode", "1", "Select whole objects", || json!({ "mode": "object" }), |a| a.ui.mode == SelectMode::Object),
-        item!(ModeVert, "ui.mode", "Vertex mode", "2", "Select vertices", || json!({ "mode": "vert" }), |a| a.ui.mode == SelectMode::Vert),
-        item!(ModeEdge, "ui.mode", "Edge mode", "3", "Select edges", || json!({ "mode": "edge" }), |a| a.ui.mode == SelectMode::Edge),
-        item!(ModeFace, "ui.mode", "Face mode", "4", "Select faces", || json!({ "mode": "face" }), |a| a.ui.mode == SelectMode::Face),
+        item!(ModeVert, "ui.mode", "Vertex select", "1", "Select vertices", || json!({ "mode": "vert" }), |a| a.ui.mode == SelectMode::Vert),
+        item!(ModeEdge, "ui.mode", "Edge select", "2", "Select edges", || json!({ "mode": "edge" }), |a| a.ui.mode == SelectMode::Edge),
+        item!(ModeFace, "ui.mode", "Face select", "3", "Select faces", || json!({ "mode": "face" }), |a| a.ui.mode == SelectMode::Face),
     ]
 }
 
@@ -454,13 +498,16 @@ pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
 }
 
 /// The tool rail on the left: icon pills with small labels under them, in
-/// groups. Right-click hides or shows the labels.
+/// groups; in Edit Mode the mesh tools follow the transform tools. It
+/// scrolls when it is taller than the window. Right-click hides or shows
+/// the labels.
 pub fn tool_sidebar(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
     let labels = app.ui.rail_labels;
     let width = if labels { RAIL } else { RAIL_ICONS };
     let item_h = if labels { 48.0 } else { 36.0 };
     let has_selection = !app.selected_targets().is_empty();
+    let edit = app.ui.mode.is_edit();
     egui::Panel::left("p3d_tools").exact_size(width).resizable(false).frame(egui::Frame::NONE.fill(tk.chrome)).show(ui, |ui| {
         let r = ui.max_rect();
         ui.painter().vline(r.right() - 0.5, r.y_range(), Stroke::new(1.0, tk.border));
@@ -472,34 +519,45 @@ pub fn tool_sidebar(app: &mut PixelApp, ui: &mut egui::Ui) {
                 ui.close();
             }
         });
-        let mut y = r.top() + 8.0;
         let mut clicked = None;
-        for (gi, group) in sidebar_groups().iter().enumerate() {
-            if gi > 0 {
-                y += 4.0;
-                ui.painter().hline(r.center().x - 12.0..=r.center().x + 12.0, y, Stroke::new(1.0, tk.control));
-                y += 7.0;
-            }
-            for it in group {
-                let enabled = !it.needs_selection || has_selection;
-                let rect = Rect::from_min_size(pos2(r.left() + 2.0, y), vec2(width - 4.0, item_h));
-                let resp = ui
-                    .add_enabled_ui(enabled, |ui| {
-                        crate::widgets::rail_item(ui, rect, it.icon, labels.then(|| t(it.label)), it.tip(), (it.selected)(app))
-                    })
-                    .inner;
-                if resp.clicked() {
-                    clicked = Some((it.command, it.needs_selection, (it.params)()));
+        egui::ScrollArea::vertical().id_salt("rail").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 2.0;
+            ui.add_space(6.0);
+            for (gi, group) in sidebar_groups(edit).iter().enumerate() {
+                if gi > 0 {
+                    let (sep, _) = ui.allocate_exact_size(vec2(width, 9.0), Sense::hover());
+                    ui.painter().hline(sep.center().x - 12.0..=sep.center().x + 12.0, sep.center().y, Stroke::new(1.0, tk.control));
                 }
-                y += item_h + 2.0;
+                for it in group {
+                    // Element ops say why they cannot run yet.
+                    let state = (it.command == "edit.element_op")
+                        .then(|| (it.params)().get("op").and_then(Value::as_str).map(|op| app.element_op_state(op).map(|_| ())))
+                        .flatten();
+                    let reason = state.as_ref().and_then(|s| s.as_ref().err().cloned());
+                    let enabled = (!it.needs_selection || has_selection) && reason.is_none();
+                    let (rect, _) = ui.allocate_exact_size(vec2(width, item_h), Sense::hover());
+                    let rect = rect.shrink2(vec2(2.0, 0.0));
+                    let tip = Tip::new(t(it.label)).desc(reason.as_deref().unwrap_or(t(it.desc))).keys(it.keys);
+                    let resp = ui
+                        .add_enabled_ui(enabled, |ui| {
+                            crate::widgets::rail_item(ui, rect, it.icon, labels.then(|| t(it.label)), tip, (it.selected)(app))
+                        })
+                        .inner;
+                    if resp.clicked() {
+                        clicked = Some((it.command, it.needs_selection, (it.params)()));
+                    }
+                }
             }
-        }
+            ui.add_space(8.0);
+        });
         if let Some((command, needs_selection, params)) = clicked {
             let params = match (needs_selection, app.selected_targets().first()) {
                 (true, Some(id)) => json!({ "target": id }),
                 _ => params,
             };
-            let _ = app.run(command, params);
+            if let Err(e) = app.run(command, params) {
+                app.set_status(e);
+            }
         }
     });
 }
@@ -512,10 +570,11 @@ pub fn viewport_header(app: &mut PixelApp, ui: &mut egui::Ui, rect: Rect) -> Rec
     ui.painter().rect_filled(header, 0.0, tk.chrome);
     ui.painter().hline(header.x_range(), header.bottom() - 0.5, Stroke::new(1.0, tk.border));
     let cy = header.center().y;
-    let modes = header_modes();
-    let mut clicked = segment(ui, app, &modes, header.left() + 8.0, cy);
-    let label_x = header.left() + 8.0 + segment_width(modes.len()) + 10.0;
-    ui.painter().text(pos2(label_x, cy), Align2::LEFT_CENTER, app.ui.mode.label(), theme::small(), tk.text_dim);
+    let (right, mut clicked) = mode_menu(app, ui, header.left() + 8.0, cy);
+    if app.ui.mode.is_edit() {
+        let modes = header_modes();
+        clicked = segment(ui, app, &modes, right + 8.0, cy).or(clicked);
+    }
     let mut rx = header.right() - 8.0;
     for group in header_view().iter().rev() {
         rx -= segment_width(group.len());
@@ -526,6 +585,64 @@ pub fn viewport_header(app: &mut PixelApp, ui: &mut egui::Ui, rect: Rect) -> Rec
         let _ = app.run(cmd, params);
     }
     Rect::from_min_max(pos2(rect.left(), header.bottom()), rect.max)
+}
+
+/// The interaction mode menu (Object Mode or Edit Mode, Tab toggles) from
+/// `left`; returns its right edge and a chosen command.
+fn mode_menu(app: &PixelApp, ui: &mut egui::Ui, left: f32, cy: f32) -> (f32, Option<(&'static str, Value)>) {
+    let tk = Tokens::get();
+    let edit = app.ui.mode.is_edit();
+    let label = if edit { t("Edit Mode") } else { t("Object Mode") };
+    let g = ui.painter().layout_no_wrap(label.to_owned(), theme::body(), tk.text);
+    let rect = Rect::from_min_size(pos2(left, cy - 13.0), vec2(8.0 + 16.0 + 7.0 + g.size().x + 8.0 + 12.0 + 8.0, 26.0));
+    let resp = ui.interact(rect, ui.id().with("mode-menu"), Sense::click());
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&resp));
+    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered() || open, 0.1);
+    let p = ui.painter();
+    p.rect_filled(rect, 8.0, crate::widgets::mix(tk.chrome_dark, tk.control, hot));
+    let icon = if edit { app.ui.mode_icon() } else { Icon::ModeObject };
+    icons::paint_colored(p, Rect::from_min_size(pos2(rect.left() + 8.0, cy - 8.0), vec2(16.0, 16.0)), icon, tk.icon, tk.accent);
+    p.galley(pos2(rect.left() + 31.0, cy - g.size().y / 2.0), g, tk.text);
+    crate::widgets::chevron(p, pos2(rect.right() - 14.0, cy), 1.0, tk.text_dim);
+    icons::describe_control(ui, &resp, label, Some(open));
+    crate::widgets::tooltip(
+        &resp,
+        Tip::new(t("Interaction mode")).desc(t("Object Mode works on whole objects; Edit Mode on vertices, edges and faces")).keys("Tab"),
+        egui::RectAlign::BOTTOM,
+    );
+    let mut chosen = None;
+    let frame = egui::Frame::NONE
+        .fill(tk.popup)
+        .stroke(Stroke::new(1.0, tk.popup_border))
+        .corner_radius(10)
+        .inner_margin(egui::Margin::same(5))
+        .shadow(ui.visuals().popup_shadow);
+    egui::Popup::menu(&resp).frame(frame).gap(4.0).align(egui::RectAlign::BOTTOM_START).width(200.0).show(|ui| {
+        let entries = [
+            crate::menus::MenuItem {
+                label: "Object Mode",
+                command: "ui.mode",
+                params: || json!({ "mode": "object" }),
+                shortcut: None,
+                icon: Some(Icon::ModeObject),
+                checked: Some(|a| !a.ui.mode.is_edit()),
+            },
+            crate::menus::MenuItem {
+                label: "Edit Mode",
+                command: "ui.mode",
+                params: || json!({ "mode": "edit" }),
+                shortcut: Some(KeyboardShortcut::new(Modifiers::NONE, Key::Tab)),
+                icon: Some(Icon::ModeVert),
+                checked: Some(|a| a.ui.mode.is_edit()),
+            },
+        ];
+        for it in &entries {
+            if menu_item(ui, app, it, true).clicked() {
+                chosen = Some((it.command, (it.params)()));
+            }
+        }
+    });
+    (rect.right(), chosen)
 }
 
 /// Status bar: mode and selection, the last message, triangles against the
@@ -783,15 +900,35 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(Modifiers::NONE, Key::W), "ui.tool", || json!({ "tool": "move" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::E), "ui.tool", || json!({ "tool": "rotate" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::R), "ui.tool", || json!({ "tool": "scale" })),
-        (KeyboardShortcut::new(Modifiers::NONE, Key::Num1), "ui.mode", || json!({ "mode": "object" })),
-        (KeyboardShortcut::new(Modifiers::NONE, Key::Num2), "ui.mode", || json!({ "mode": "vert" })),
-        (KeyboardShortcut::new(Modifiers::NONE, Key::Num3), "ui.mode", || json!({ "mode": "edge" })),
-        (KeyboardShortcut::new(Modifiers::NONE, Key::Num4), "ui.mode", || json!({ "mode": "face" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::Tab), "ui.edit", || Value::Null),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::Num1), "ui.mode", || json!({ "mode": "vert" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::Num2), "ui.mode", || json!({ "mode": "edge" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::Num3), "ui.mode", || json!({ "mode": "face" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num5), "view.ortho", || Value::Null),
         (KeyboardShortcut::new(Modifiers::ALT, Key::Z), "view.xray", || Value::Null),
         (KeyboardShortcut::new(cmd, Key::K), "ui.palette", || Value::Null),
         (KeyboardShortcut::new(Modifiers::NONE, Key::F3), "ui.palette", || Value::Null),
     ];
+    // Edit Mode keys come first (E extrudes there, as in Blender).
+    if app.ui.mode.is_edit() {
+        let edit: &[(KeyboardShortcut, &str)] = &[
+            (KeyboardShortcut::new(Modifiers::NONE, Key::E), "edit.extrude"),
+            (KeyboardShortcut::new(Modifiers::NONE, Key::I), "edit.inset"),
+            (KeyboardShortcut::new(cmd, Key::B), "edit.bevel"),
+            (KeyboardShortcut::new(cmd, Key::R), "edit.loop_cut"),
+            (KeyboardShortcut::new(Modifiers::NONE, Key::K), "edit.knife"),
+            (KeyboardShortcut::new(Modifiers::ALT, Key::S), "edit.shrink_fatten"),
+            (KeyboardShortcut::new(Modifiers::NONE, Key::V), "edit.rip"),
+            (KeyboardShortcut::new(Modifiers::NONE, Key::M), "edit.merge"),
+            (KeyboardShortcut::new(cmd, Key::T), "edit.triangulate"),
+            (KeyboardShortcut::new(Modifiers::NONE, Key::Y), "edit.split"),
+        ];
+        for (shortcut, op) in edit {
+            if ctx.input_mut(|i| i.consume_shortcut(shortcut)) {
+                let _ = app.run("edit.element_op", json!({ "op": op }));
+            }
+        }
+    }
     for (shortcut, command, params) in table {
         if ctx.input_mut(|i| i.consume_shortcut(shortcut)) {
             let _ = app.run(command, params());
@@ -814,8 +951,9 @@ mod tests {
     fn every_chrome_command_is_known() {
         let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
         app.run("prim.box", Value::Null).unwrap();
-        let items: Vec<Item> = sidebar_groups()
+        let items: Vec<Item> = sidebar_groups(true)
             .into_iter()
+            .chain(sidebar_groups(false))
             .flatten()
             .chain(header_modes())
             .chain(header_view().into_iter().flatten())
