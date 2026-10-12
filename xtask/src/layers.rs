@@ -375,13 +375,32 @@ pub fn from_metadata(meta: &Value) -> Result<Graph, String> {
     Ok(graph)
 }
 
-/// Prints the table of workspace crates and their workspace dependencies,
-/// then the violations.
-pub fn report(g: &Graph) -> Result<(), String> {
+/// Prints the violations, preceded by the table of workspace crates and
+/// their workspace dependencies when `table` is set.
+///
+/// Complexity: O(W * E) for W workspace crates and E edges.
+pub fn report(g: &Graph, table: bool) -> Result<(), String> {
     let mut members: Vec<(usize, &Package)> = g.packages.iter().enumerate().filter(|(_, p)| p.workspace).collect();
     members.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+    if table {
+        print_table(g, &members);
+    }
+    let violations = check(g);
+    if violations.is_empty() {
+        println!("layers: OK, {} crates, no violations.", members.len());
+        Ok(())
+    } else {
+        for v in &violations {
+            println!("  - {v}");
+        }
+        Err(format!("{} layering violation(s)", violations.len()))
+    }
+}
+
+/// Complexity: O(W * E) for W workspace crates and E edges.
+fn print_table(g: &Graph, members: &[(usize, &Package)]) {
     println!("{:<16} {:<20} workspace dependencies", "crate", "layer");
-    for (i, p) in &members {
+    for (i, p) in members {
         let mut deps: Vec<String> = g
             .edges
             .iter()
@@ -396,17 +415,7 @@ pub fn report(g: &Graph) -> Result<(), String> {
         let class = classify(&p.name).map_or_else(|| "UNREGISTERED".to_owned(), |c| c.to_string());
         println!("{:<16} {:<20} {}", short_name(&p.name), class, deps.join(", "));
     }
-    let violations = check(g);
     println!();
-    if violations.is_empty() {
-        println!("layers: OK, {} crates, no violations.", members.len());
-        Ok(())
-    } else {
-        for v in &violations {
-            println!("  - {v}");
-        }
-        Err(format!("{} layering violation(s)", violations.len()))
-    }
 }
 
 #[cfg(test)]
