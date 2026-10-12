@@ -43,7 +43,7 @@ fn sample() -> Document {
             part: ObjectRef { name: "lid".into(), id: 2 },
             to: ObjectRef { name: "crate".into(), id: 1 },
             max_gap: 0.002,
-            max_penetration: 0.0,
+            max_penetration: Some(0.0),
         },
     });
     d.expectations_mut().push(Expectation {

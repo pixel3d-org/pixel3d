@@ -2,7 +2,7 @@
 //! parts inside others, and floating parts.
 
 use glam::Vec3;
-use p3d_geo::bvh::box_pairs;
+use p3d_geo::bvh::{Nearest, box_pairs};
 use serde::Serialize;
 
 use crate::fmt::{mm, point};
@@ -120,6 +120,62 @@ fn deepest_inside(view: &View, a: usize, b: usize) -> Option<(f32, Vec3, Vec3)> 
     best
 }
 
+/// How parts `i` and `j` relate: their closest points (within `search`)
+/// and the relation, if they are within `near` of each other. Distance 0 is
+/// also plain contact (faces lying on each other): only triangles passing
+/// through each other make a penetration, and only when deeper than `tol`.
+///
+/// Complexity: O(log n + leaf pairs near the contact), plus sampled depth
+/// queries when the surfaces cross.
+pub fn relate(view: &View, i: usize, j: usize, tol: f32, near: f32, search: f32) -> Option<(Nearest, Option<PairRelation>)> {
+    let (pi, pj) = (&view.parts[i], &view.parts[j]);
+    let n = pi.bvh().nearest(pj.bvh(), search)?;
+    let mut crossing = None;
+    if n.dist <= tol {
+        pi.bvh().crossing_pairs(pj.bvh(), |t, _| {
+            crossing = Some(pi.bvh().triangle(t)[0]);
+            false
+        });
+    }
+    if let Some(cross_at) = crossing {
+        let di = deepest_inside(view, i, j);
+        let dj = deepest_inside(view, j, i);
+        let (depth, at, to, sinks) = match (di, dj) {
+            (Some((x, p, c)), Some((y, q, e))) => {
+                if x >= y {
+                    (x, p, c, Some(i))
+                } else {
+                    (y, q, e, Some(j))
+                }
+            }
+            (Some((x, p, c)), None) => (x, p, c, Some(i)),
+            (None, Some((y, q, e))) => (y, q, e, Some(j)),
+            (None, None) => (0.0, cross_at, cross_at, None),
+        };
+        if sinks.is_none() || depth > tol {
+            let r = PairRelation { a: i, b: j, kind: RelationKind::Penetrating, dist: depth, sinks, at, to, approximate: n.approximate };
+            return Some((n, Some(r)));
+        }
+    }
+    // Not crossing: in contact, or one part wholly inside the other.
+    let inside = |x: usize, y: usize| {
+        let (px, py) = (&view.parts[x], &view.parts[y]);
+        px.lo.cmpge(py.lo).all() && px.hi.cmple(py.hi).all() && py.topology().is_closed() && py.bvh().contains(n_point(px))
+    };
+    let kind = if n.dist <= tol {
+        RelationKind::Touching
+    } else if inside(i, j) || inside(j, i) {
+        let (a, b) = if inside(i, j) { (i, j) } else { (j, i) };
+        let c = view.parts[a].center();
+        return Some((n, Some(PairRelation { a, b, kind: RelationKind::Inside, dist: 0.0, sinks: None, at: c, to: c, approximate: false })));
+    } else if n.dist <= near {
+        RelationKind::Gap
+    } else {
+        return Some((n, None));
+    };
+    Some((n, Some(PairRelation { a: i, b: j, kind, dist: n.dist, sinks: None, at: n.a, to: n.b, approximate: n.approximate })))
+}
+
 /// The contact graph: every pair of parts within 5% of the view's size is
 /// classified; parts touching nothing are reported with their nearest
 /// neighbour within a quarter of the view's size.
@@ -136,61 +192,13 @@ pub fn relations(view: &View) -> Relations {
     let mut pairs = Vec::new();
     let mut nearest: Vec<Option<Near>> = vec![None; view.parts.len()];
     for (i, j) in candidates {
-        let (pi, pj) = (&view.parts[i], &view.parts[j]);
-        let Some(n) = pi.bvh().nearest(pj.bvh(), search) else { continue };
+        let Some((n, rel)) = relate(view, i, j, tol, near, search) else { continue };
         for (x, y, from, to) in [(i, j, n.a, n.b), (j, i, n.b, n.a)] {
             if nearest[x].as_ref().is_none_or(|e| n.dist < e.gap) {
                 nearest[x] = Some(Near { part: y, gap: n.dist, from, to });
             }
         }
-        // Distance 0 is also plain contact (faces lying on each other): only
-        // triangles passing through each other make a penetration.
-        let mut crossing = None;
-        if n.dist <= tol {
-            pi.bvh().crossing_pairs(pj.bvh(), |t, _| {
-                crossing = Some(pi.bvh().triangle(t)[0]);
-                false
-            });
-        }
-        if let Some(cross_at) = crossing {
-            let di = deepest_inside(view, i, j);
-            let dj = deepest_inside(view, j, i);
-            let (depth, at, to, sinks) = match (di, dj) {
-                (Some((x, p, c)), Some((y, q, e))) => {
-                    if x >= y {
-                        (x, p, c, Some(i))
-                    } else {
-                        (y, q, e, Some(j))
-                    }
-                }
-                (Some((x, p, c)), None) => (x, p, c, Some(i)),
-                (None, Some((y, q, e))) => (y, q, e, Some(j)),
-                (None, None) => (0.0, cross_at, cross_at, None),
-            };
-            // Crossing by less than the tolerance is contact.
-            if sinks.is_none() || depth > tol {
-                pairs.push(PairRelation { a: i, b: j, kind: RelationKind::Penetrating, dist: depth, sinks, at, to, approximate: n.approximate });
-                continue;
-            }
-        }
-        // Not crossing: in contact, or one part wholly inside the other.
-        let inside = |x: usize, y: usize| {
-            let (px, py) = (&view.parts[x], &view.parts[y]);
-            px.lo.cmpge(py.lo).all() && px.hi.cmple(py.hi).all() && py.topology().is_closed() && py.bvh().contains(n_point(px))
-        };
-        let kind = if n.dist <= tol {
-            RelationKind::Touching
-        } else if inside(i, j) || inside(j, i) {
-            let (a, b) = if inside(i, j) { (i, j) } else { (j, i) };
-            let c = view.parts[a].center();
-            pairs.push(PairRelation { a, b, kind: RelationKind::Inside, dist: 0.0, sinks: None, at: c, to: c, approximate: false });
-            continue;
-        } else if n.dist <= near {
-            RelationKind::Gap
-        } else {
-            continue;
-        };
-        pairs.push(PairRelation { a: i, b: j, kind, dist: n.dist, sinks: None, at: n.a, to: n.b, approximate: n.approximate });
+        pairs.extend(rel);
     }
     pairs.sort_by_key(|r| (r.a.min(r.b), r.a.max(r.b)));
 

@@ -46,7 +46,7 @@ Blobs smaller than 64 KiB are stored uncompressed; larger ones use deflate at le
     }
   ],
   "expectations": [
-    { "name": "E1", "check": { "attached": { "part": { "name": "lid", "id": 2 }, "to": { "name": "crate", "id": 1 }, "max_gap": 0.002, "max_penetration": 0.0 } } }
+    { "name": "E1", "check": { "attached": { "part": { "name": "lid", "id": 2 }, "to": { "name": "crate", "id": 1 }, "max_gap": 0.002, "max_penetration": null } } }
   ]
 }
 ```

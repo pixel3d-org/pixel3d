@@ -1,0 +1,6 @@
+---
+source: crates/perceive/tests/expect.rs
+expression: report(&doc).text
+---
+FAIL E1 attached(lid, crate): lid (o:2) no longer exists
+tests 0/1 pass; failing: E1 attached(lid, crate)

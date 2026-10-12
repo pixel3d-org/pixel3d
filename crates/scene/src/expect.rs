@@ -36,9 +36,9 @@ pub enum Check {
     /// `a` mirrors `b` across the plane `axis = at` (world), or a single
     /// target mirrors itself across its own center plane when `b` is none.
     Symmetric { a: ObjectRef, b: Option<ObjectRef>, axis: char, at: Option<f64>, tolerance: f64 },
-    /// `part` touches `to`: gap at most `max_gap`, sinking in at most
-    /// `max_penetration`, meters.
-    Attached { part: ObjectRef, to: ObjectRef, max_gap: f64, max_penetration: f64 },
+    /// `part` touches `to`: gap at most `max_gap` and, when given, sinking in
+    /// at most `max_penetration`, meters.
+    Attached { part: ObjectRef, to: ObjectRef, max_gap: f64, max_penetration: Option<f64> },
     /// No two of the parts pass through each other or sit inside each other.
     NotIntersecting { parts: Vec<ObjectRef> },
     /// Triangles of the target (or the whole scene) within a range.

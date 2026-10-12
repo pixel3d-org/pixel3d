@@ -1,0 +1,20 @@
+---
+source: crates/perceive/tests/expect.rs
+expression: text
+---
+pass dims_ok dims(lid): 620 x 40 x 620 mm
+FAIL dims_bad dims(lid): 620 x 40 x 620 mm; height 40 mm, want at most 30 mm
+pass sym_pair symmetric(handle_l, handle_r): mirror across x=0 mm deviates 0 mm (tolerance 1 mm)
+FAIL sym_pair_bad symmetric(handle_l, lid): mirror across x=0 mm deviates over 112 mm (tolerance 1 mm)
+pass sym_self symmetric(crate, x): mirror across x=0 mm deviates 0 mm (tolerance 1 mm)
+FAIL sym_self_bad symmetric(bin, y): mirror across y=150 mm deviates over 65 mm (tolerance 1 mm)
+pass attached attached(lid, crate): gap 0 mm
+FAIL attached_gap attached(hat, head): gap 20 mm > 1 mm
+FAIL attached_deep attached(ear_l, head): sinks 19 mm > 10 mm
+pass attached_ear attached(ear_l, head): sinks 19 mm
+pass apart not_intersecting(handle_l, handle_r, lid): 3 parts, none pass through each other
+FAIL apart_bad not_intersecting(ear_l, head): ear_l and head cross by 19 mm
+pass budget budget(scene): 144 tris, want at most 1,000
+FAIL budget_bad budget(crate): 144 tris, want 200 to 1,000
+pass closed watertight(crate): 4 parts closed and facing out
+FAIL closed_bad watertight(bin): bin has 1 hole

@@ -13,6 +13,7 @@
 pub mod diagnose;
 pub mod diff;
 pub mod error;
+pub mod expect;
 pub mod fmt;
 pub mod probe;
 pub mod relations;
