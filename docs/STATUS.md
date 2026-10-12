@@ -19,7 +19,7 @@ Progress checklist for the roadmap. Tick a box in the commit that completes it; 
 - [x] Licenses: `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md`
 - [x] `README.md` (product description)
 - [x] `docs/STATUS.md` with every phase as checkboxes
-- [ ] `docs/architecture.md`
+- [x] `docs/architecture.md`
 
 Acceptance:
 
