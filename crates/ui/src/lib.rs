@@ -453,6 +453,25 @@ impl PixelApp {
         }
     }
 
+    /// Runs an op that takes a `target` on every selected object, as one
+    /// transaction (one undo step).
+    ///
+    /// Complexity: O(selected objects) calls.
+    pub fn run_on_selection(&mut self, op: &str) -> Result<Value, String> {
+        let targets = self.selected_targets();
+        if targets.is_empty() {
+            let e = t("nothing selected").to_owned();
+            self.set_status(e.clone());
+            return Err(e);
+        }
+        let calls: Vec<OpCall> = targets.iter().map(|id| OpCall::new(op, json!({ "target": id }))).collect();
+        let r = self.execute(&calls);
+        if let Err(e) = &r {
+            self.set_status(e.clone());
+        }
+        r
+    }
+
     /// Runs op calls as one transaction; created objects become the selection.
     pub fn execute(&mut self, calls: &[OpCall]) -> Result<Value, String> {
         self.execute_labeled(calls, None)

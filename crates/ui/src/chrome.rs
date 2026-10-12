@@ -76,11 +76,18 @@ fn sidebar_groups() -> Vec<Vec<Item>> {
             item!(Plane, "prim.plane", "Plane", "Add a flat grid at the origin"),
             item!(Empty, "scene.create_empty", "Empty", "Add an empty (a transform only)"),
         ],
-        vec![
-            on_selection(item!(Frame, "scene.apply_transform", "Apply transform", "Bake the object's transform into its mesh")),
-            on_selection(item!(Mesh, "edit.fill", "Fill holes", "Close holes with one face each")),
-            on_selection(item!(Health, "edit.recalc_normals", "Recalculate normals", "Make faces point outward")),
-        ],
+    ]
+}
+
+/// Actions on the selected objects, shown in the tool settings row while
+/// something is selected (the contextual toolbar).
+fn object_actions() -> Vec<Item> {
+    vec![
+        on_selection(item!(Frame, "scene.apply_transform", "Apply transform", "Bake the object's transform into its mesh")),
+        on_selection(item!(Mesh, "edit.fill", "Fill holes", "Close holes with one face each")),
+        on_selection(item!(Health, "edit.recalc_normals", "Recalculate normals", "Make faces point outward")),
+        item!(Plus, "edit.duplicate", "Duplicate", "Ctrl+D: copy the selected objects"),
+        item!(Close, "edit.delete", "Delete", "Delete: remove the selected objects"),
     ]
 }
 
@@ -240,9 +247,40 @@ pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
         let g = ui.painter().layout_no_wrap(name.to_owned(), egui::FontId::proportional(13.0), tk.text);
         let w = g.size().x;
         ui.painter().galley(pos2(x, r.center().y - g.size().y / 2.0), g, tk.text);
-        ui.painter().text(pos2(x + w + 12.0, r.center().y), Align2::LEFT_CENTER, what, theme::small(), tk.text_dim);
+        x += w + 14.0;
+        let mut action = None;
+        if app.selected_targets().is_empty() {
+            ui.painter().text(pos2(x, r.center().y), Align2::LEFT_CENTER, what, theme::small(), tk.text_dim);
+        } else {
+            // The contextual toolbar: actions on the selection.
+            for it in object_actions() {
+                let label = t(it.label);
+                let text_w = ui.painter().layout_no_wrap(label.to_owned(), theme::body(), tk.text).size().x;
+                let rect = Rect::from_min_size(pos2(x, r.center().y - 11.0), vec2(16.0 + 6.0 + text_w + 14.0, 22.0));
+                if rect.right() > r.right() - 8.0 {
+                    break;
+                }
+                let resp = ui.interact(rect, ui.id().with(("action", it.command)), Sense::click());
+                let fill = if resp.hovered() { tk.control_hover } else { tk.control.gamma_multiply(0.55) };
+                ui.painter().rect_filled(rect, 4.0, fill);
+                icons::paint(ui.painter(), Rect::from_min_size(pos2(rect.left() + 6.0, rect.center().y - 8.0), vec2(16.0, 16.0)), it.icon, false);
+                ui.painter().text(pos2(rect.left() + 28.0, rect.center().y), Align2::LEFT_CENTER, label, theme::body(), tk.text);
+                icons::describe_control(ui, &resp, label, None);
+                if resp.on_hover_text(t(it.hint)).clicked() {
+                    action = Some(it);
+                }
+                x = rect.right() + 6.0;
+            }
+        }
         if let Some((cmd, params)) = clicked {
             let _ = app.run(cmd, params);
+        }
+        if let Some(it) = action {
+            if it.needs_selection {
+                let _ = app.run_on_selection(it.command);
+            } else {
+                let _ = app.run(it.command, (it.params)());
+            }
         }
     });
 }
@@ -561,6 +599,7 @@ mod tests {
             .chain(header_modes())
             .chain(header_view().into_iter().flatten())
             .chain(settings_items().into_iter().filter(|it| !it.command.starts_with("file.")))
+            .chain(object_actions())
             .collect();
         for it in items {
             let params = if it.needs_selection { json!({ "target": app.selected_targets()[0] }) } else { (it.params)() };

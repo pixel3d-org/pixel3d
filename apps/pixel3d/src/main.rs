@@ -21,6 +21,7 @@ options:
       --sample             open the sample scene
       --screenshot <png>   save a screenshot of the window, then quit
       --light              use the light theme for this run
+      --command <id>       run a command after start (repeatable), e.g. edit.select_all
   -V, --version            print the version
   -h, --help               print this help
 ";
@@ -32,6 +33,7 @@ struct Args {
     files: Vec<PathBuf>,
     screenshot: Option<PathBuf>,
     light: bool,
+    commands: Vec<String>,
 }
 
 struct App {
@@ -133,6 +135,13 @@ fn main() -> ExitCode {
             }
             "--sample" => args.sample = true,
             "--light" => args.light = true,
+            "--command" => match it.next() {
+                Some(c) => args.commands.push(c),
+                None => {
+                    eprintln!("error: --command needs a command id\n\n{USAGE}");
+                    return ExitCode::FAILURE;
+                }
+            },
             "--screenshot" => match it.next() {
                 Some(p) => args.screenshot = Some(PathBuf::from(p)),
                 None => {
@@ -203,6 +212,11 @@ fn run(args: Args) -> anyhow::Result<()> {
             }
             if args.sample {
                 let _ = app.run("file.sample", serde_json::Value::Null);
+            }
+            for c in &args.commands {
+                if let Err(e) = app.run(c, serde_json::Value::Null) {
+                    tracing::warn!(command = %c, error = %e, "start-up command failed");
+                }
             }
             if args.light {
                 app.ui.theme = p3d_ui::theme::ThemePref::Light;
