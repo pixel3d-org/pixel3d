@@ -1,6 +1,6 @@
 //! `edit.*`: mesh edits addressed by selectors and groups.
 
-use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, QuadSpec, extrude, inset};
+use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, MergeMode, QuadSpec, extrude, inset};
 use p3d_mesh::{ElementKind, Mesh};
 use p3d_query::{Filter, Selector, select as evaluate};
 use p3d_scene::{Document, ObjectKey};
@@ -1043,6 +1043,338 @@ impl Op for Bridge {
             OpOutput::summary(format!("{}: bridged 2 holes with {} faces; group {}", label(tx.doc(), key), thousands(r.faces.len()), g.name));
         out.changed.push(key);
         out.groups = vec![g];
+        Ok(out)
+    }
+}
+
+/// Vertices picked by a selector: selected vertices, or the vertices of
+/// selected edges or faces.
+///
+/// Complexity: O(n) plus the selected elements' vertices.
+fn selected_verts(mesh: &Mesh, select: &Selector) -> Result<Vec<u32>, OpError> {
+    let sel = evaluate(mesh, select).map_err(|e| OpError::from_query(e, "/select"))?;
+    let mut out: Vec<u32> = match sel.kind {
+        ElementKind::Vert => sel.iter().collect(),
+        ElementKind::Edge => sel.iter().flat_map(|e| mesh.edge_verts(e)).collect(),
+        ElementKind::Face => sel.iter().flat_map(|f| mesh.face_verts(f).collect::<Vec<_>>()).collect(),
+    };
+    out.sort_unstable();
+    out.dedup();
+    if out.is_empty() {
+        return Err(empty_selection("the selector matched nothing", "query shows what a selector picks"));
+    }
+    Ok(out)
+}
+
+// ---- edit.merge --------------------------------------------------------------------------
+
+/// How `edit.merge` groups vertices.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MergeModeParam {
+    /// Every selected vertex becomes one, at their center.
+    #[default]
+    Center,
+    /// Each connected run of selected vertices becomes one, at its own center.
+    Collapse,
+}
+
+/// Parameters of `edit.merge`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MergeParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Vertices to merge (edges and faces select their vertices).
+    pub select: Selector,
+    /// `center` (default) or `collapse`.
+    #[serde(default)]
+    pub mode: MergeModeParam,
+}
+
+impl Default for MergeParams {
+    fn default() -> Self {
+        MergeParams { target: String::new(), select: Selector::Verts(Filter::default()), mode: MergeModeParam::Center }
+    }
+}
+
+/// `edit.merge`.
+pub struct Merge;
+
+impl Op for Merge {
+    const ID: &'static str = "edit.merge";
+    type Params = MergeParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Merge",
+            category: Category::Edit,
+            summary: "Merges selected vertices into one point (center) or each connected run into its own point (collapse).",
+            docs: "`center` merges every selected vertex into one at their average position; `collapse` merges each run of selected \
+                   vertices joined by edges separately (collapse a ring of edges into points, a face into its center). Faces that \
+                   lose corners shrink, faces left with fewer than three corners disappear, faces pinched at the merged point split \
+                   there.\n\n\
+                   **Use for** closing the tip of a cone-like shape, collapsing an edge loop to a point, removing a thin face. To \
+                   weld seams of mirrored or joined parts use `edit.merge_by_distance`.",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "select": {"faces": {"group": "top"}}, "mode": "collapse"}"#,
+                result: "crate (o:1): merged 4 vertices into 1 point; 1 face collapsed",
+            }],
+            aliases: &["merge", "m", "merge at center", "collapse", "polyMergeVertex", "weld"],
+            complexity: "O(k + c log c) for k vertices and the c corners of their faces, plus the selector",
+            flags: EDIT,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &MergeParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target).map(|_| ())
+    }
+
+    fn apply(tx: &mut Tx, p: &MergeParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let verts = selected_verts(tx.mesh(key, "/target")?, &p.select)?;
+        let mode = match p.mode {
+            MergeModeParam::Center => MergeMode::Center,
+            MergeModeParam::Collapse => MergeMode::Collapse,
+        };
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::merge(mesh, &verts, mode).map_err(kernel_error)?;
+        let collapsed = match r.faces_removed {
+            0 => String::new(),
+            1 => "; 1 face collapsed".into(),
+            n => format!("; {} faces collapsed", thousands(n)),
+        };
+        let mut out = OpOutput::summary(format!(
+            "{}: merged {} vertices into {} point{}{collapsed}",
+            label(tx.doc(), key),
+            thousands(r.merged + r.clusters),
+            thousands(r.clusters),
+            plural(r.clusters)
+        ));
+        out.changed.push(key);
+        Ok(out)
+    }
+}
+
+// ---- edit.merge_by_distance --------------------------------------------------------------
+
+/// Parameters of `edit.merge_by_distance`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MergeByDistanceParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Vertices that may weld (edges and faces select their vertices); all when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+    /// Vertices closer than this weld together.
+    #[serde(default = "weld_distance")]
+    pub distance: Length,
+}
+
+fn weld_distance() -> Length {
+    Length(1e-4)
+}
+
+impl Default for MergeByDistanceParams {
+    fn default() -> Self {
+        MergeByDistanceParams { target: String::new(), select: None, distance: weld_distance() }
+    }
+}
+
+/// `edit.merge_by_distance`.
+pub struct MergeByDistance;
+
+impl Op for MergeByDistance {
+    const ID: &'static str = "edit.merge_by_distance";
+    type Params = MergeByDistanceParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Merge by distance",
+            category: Category::Edit,
+            summary: "Welds vertices that lie closer together than a distance, closing seams between joined or mirrored parts.",
+            docs: "Each cluster of nearby vertices (chains weld together) becomes one vertex at the cluster's center, so open borders \
+                   lying on each other zip into shared edges. The default distance (0.1 mm) welds only coincident vertices.\n\n\
+                   **Use for** after `scene.join` of parts that touch along open borders, after mirroring, and on imported meshes \
+                   with split vertices (`diagnose` reports open boundaries). Keep the distance well below the smallest edge, or \
+                   detail collapses.",
+            examples: &[OpExample { args: r#"{"target": "panels"}"#, result: "panels (o:9): welded 2 vertices into 2 others (0 faces collapsed)" }],
+            aliases: &["merge by distance", "remove doubles", "weld vertices", "polyMergeVertex distance", "weld"],
+            complexity: "O(n log n) for the n vertices taking part (sorted uniform grid), plus the corners of affected faces",
+            flags: EDIT,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &MergeByDistanceParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        crate::common::check_length("/distance", p.distance, 1e-9, p3d_geo::prim::MAX_SIZE)
+    }
+
+    fn apply(tx: &mut Tx, p: &MergeByDistanceParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let only = match &p.select {
+            Some(s) => Some(selected_verts(tx.mesh(key, "/target")?, s)?),
+            None => None,
+        };
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::merge_by_distance(mesh, only.as_deref(), p.distance.0 as f32).map_err(kernel_error)?;
+        let mut out = OpOutput::default();
+        if r.merged == 0 {
+            out.summary = format!("{}: no vertices within {} of each other", label(tx.doc(), key), p3d_math::format_length(p.distance.0));
+            return Ok(out);
+        }
+        out.summary = format!(
+            "{}: welded {} vertices into {} others ({} faces collapsed)",
+            label(tx.doc(), key),
+            thousands(r.merged),
+            thousands(r.clusters),
+            thousands(r.faces_removed)
+        );
+        out.changed.push(key);
+        Ok(out)
+    }
+}
+
+// ---- edit.dissolve -----------------------------------------------------------------------
+
+/// What `edit.dissolve` removes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DissolveModeParam {
+    /// Follows the selector: vertices, edges or faces.
+    #[default]
+    Auto,
+    /// Merges faces across edges flatter than `angle`, then drops vertices on straight lines.
+    Limited,
+}
+
+/// Parameters of `edit.dissolve`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DissolveParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Vertices, edges or faces to dissolve; for `limited`, the faces to
+    /// simplify (all when omitted).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+    /// `auto` (by the selector's element kind) or `limited`.
+    #[serde(default)]
+    pub mode: DissolveModeParam,
+    /// For `limited`: faces meeting flatter than this merge (degrees).
+    #[serde(default = "five_deg")]
+    pub angle: Angle,
+}
+
+fn five_deg() -> Angle {
+    Angle::from_degrees(5.0)
+}
+
+impl Default for DissolveParams {
+    fn default() -> Self {
+        DissolveParams { target: String::new(), select: None, mode: DissolveModeParam::Auto, angle: five_deg() }
+    }
+}
+
+/// `edit.dissolve`.
+pub struct Dissolve;
+
+impl Op for Dissolve {
+    const ID: &'static str = "edit.dissolve";
+    type Params = DissolveParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Dissolve",
+            category: Category::Edit,
+            summary: "Removes vertices, edges or faces while keeping the surface closed, merging the faces around them into polygons.",
+            docs: "By the selector's kind: **vertices** with two edges are taken out of their faces, others disappear with their fan \
+                   of faces merged into one polygon; **edges** merge their two faces (end vertices left on a straight line go too); \
+                   **faces** merge each connected region into one polygon over its border. `mode: \"limited\"` merges faces across \
+                   edges flatter than `angle` (not across sharp edges, seams or material borders) and drops vertices on straight \
+                   lines. Merged polygons keep groups and are `<label>.faces`. Regions that would need a hole are skipped.\n\n\
+                   **Use for** reducing flat areas of hard-surface models (limited, 1 to 5 degrees), removing extra edge loops \
+                   (select the loop's edges), and simplifying after booleans.",
+            examples: &[OpExample {
+                args: r#"{"target": "tiles", "mode": "limited"}"#,
+                result: "tiles (o:6): dissolved into 1 polygon (21 vertices and 52 edges fewer); group dissolve_1.faces",
+            }],
+            aliases: &["dissolve", "limited dissolve", "dissolve edges", "dissolve vertices", "dissolve faces", "delete edge loop", "polyDelEdge"],
+            complexity: "O(c log c) for the c corners of the touched faces, plus the selector",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &DissolveParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        if p.mode == DissolveModeParam::Auto && p.select.is_none() {
+            return Err(OpError::invalid("/select", "dissolve needs a selection, or mode \"limited\" to simplify the whole mesh")
+                .with_hint("for example {\"edges\": {\"group\": \"loop_cut_1.edges\"}}"));
+        }
+        if !(0.0..=180.0).contains(&p.angle.degrees()) {
+            return Err(OpError::out_of_range("/angle", format!("{} degrees is outside 0 to 180", p.angle.degrees())));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &DissolveParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let mesh = tx.mesh(key, "/target")?;
+        let glabel = group_label(mesh, ctx, "dissolve");
+        let (verts_before, edges_before) = (mesh.vert_count(), mesh.edge_count());
+        let r = match (p.mode, &p.select) {
+            (DissolveModeParam::Limited, s) => {
+                let faces = faces_or_all(mesh, s.as_ref(), "edit.dissolve")?;
+                let mesh = tx.mesh_mut(key, "/target")?;
+                p3d_geo::edit::dissolve_limited(mesh, &faces, p.angle.degrees() as f32)
+            }
+            (DissolveModeParam::Auto, Some(s)) => {
+                let sel = evaluate(mesh, s).map_err(|e| OpError::from_query(e, "/select"))?;
+                if sel.is_empty() {
+                    return Err(empty_selection("the selector matched nothing", "query shows what a selector picks"));
+                }
+                let items: Vec<u32> = sel.iter().collect();
+                let mesh = tx.mesh_mut(key, "/target")?;
+                match sel.kind {
+                    ElementKind::Vert => p3d_geo::edit::dissolve_verts(mesh, &items),
+                    ElementKind::Edge => p3d_geo::edit::dissolve_edges(mesh, &items, true),
+                    ElementKind::Face => p3d_geo::edit::dissolve_faces(mesh, &items),
+                }
+            }
+            (DissolveModeParam::Auto, None) => return Err(OpError::invalid("/select", "dissolve needs a selection")),
+        }
+        .map_err(kernel_error)?;
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let mut out = OpOutput::default();
+        let mut faces = r.faces.clone();
+        faces.retain(|&f| mesh.is_face_alive(f));
+        let (gone_v, gone_e) = (verts_before.saturating_sub(mesh.vert_count()), edges_before.saturating_sub(mesh.edge_count()));
+        if gone_v == 0 && gone_e == 0 {
+            out.summary = format!("{}: nothing could be dissolved ({} skipped)", label(tx.doc(), key), r.skipped);
+            return Ok(out);
+        }
+        let g = face_group(mesh, key, format!("{glabel}.faces"), &faces)?;
+        out.summary = format!(
+            "{}: dissolved into {} polygon{} ({} vertices and {} edges fewer); group {}",
+            label(tx.doc(), key),
+            thousands(faces.len()),
+            plural(faces.len()),
+            thousands(gone_v),
+            thousands(gone_e),
+            g.name
+        );
+        out.changed.push(key);
+        out.groups = vec![g];
+        if r.skipped > 0 {
+            out.warnings.push(Warning {
+                message: format!("{} selected element(s) were left alone (on the boundary, or a merge would need a hole)", r.skipped),
+                fix: None,
+            });
+        }
         Ok(out)
     }
 }

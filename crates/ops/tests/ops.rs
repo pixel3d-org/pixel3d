@@ -55,7 +55,8 @@ fn expect_fixture() -> Tx {
 
 /// The fixture plus bin (o:5), an open box without its top, tiles (o:6), a
 /// triangulated 4 x 4 grid, and duct (o:7), two open tubes one above the
-/// other, for `edit.*` examples.
+/// other, and panels (o:9), two touching 1 m planes joined but not welded,
+/// for `edit.*` examples.
 fn edit_fixture() -> Tx {
     let mut tx = fixture();
     ok(&mut tx, "prim.box", json!({ "name": "bin", "width": 0.4, "height": 0.3, "depth": 0.4, "position": [-2, 0, 0] }));
@@ -66,6 +67,9 @@ fn edit_fixture() -> Tx {
     ok(&mut tx, "prim.cylinder", tube("duct", 0.0));
     ok(&mut tx, "prim.cylinder", tube("duct_top", 0.6));
     ok(&mut tx, "scene.join", json!({ "targets": ["duct", "duct_top"] }));
+    ok(&mut tx, "prim.plane", json!({ "name": "panels", "position": [5, 0, 0] }));
+    ok(&mut tx, "prim.plane", json!({ "name": "panel_r", "position": [6, 0, 0] }));
+    ok(&mut tx, "scene.join", json!({ "targets": ["panels", "panel_r"] }));
     tx
 }
 
@@ -515,6 +519,29 @@ fn loop_cut_and_bridge_refuse_bad_selections() {
     );
     assert_eq!(topo(&tx, "duct").boundary_loops, 2);
     assert_eq!(topo(&tx, "duct").parts, 1);
+}
+
+#[test]
+fn merge_weld_and_dissolve() {
+    let mut tx = edit_fixture();
+    let s = ok(&mut tx, "edit.merge_by_distance", json!({ "target": "panels" }));
+    assert!(s.contains("welded 2 vertices"), "{s}");
+    assert_eq!(topo(&tx, "panels").boundary_loops, 1, "one sheet now");
+    let s = ok(&mut tx, "edit.merge_by_distance", json!({ "target": "panels" }));
+    assert!(s.contains("no vertices within"), "{s}");
+    // Dissolving the shared seam edge makes one 6-corner polygon.
+    let s = ok(&mut tx, "edit.dissolve", json!({ "target": "panels", "select": { "edges": { "boundary": false } } }));
+    assert!(s.contains("dissolved into 1 polygon"), "{s}");
+    let e = err(&mut tx, "edit.dissolve", json!({ "target": "panels" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select")));
+    let e = err(&mut tx, "edit.merge", json!({ "target": "crate", "select": { "verts": { "in_box": { "min": [9, 9, 9], "max": [9, 9, 9] } } } }));
+    assert_eq!(e.code, ErrorCode::EmptySelection);
+    let e = err(&mut tx, "edit.merge_by_distance", json!({ "target": "crate", "distance": 0 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/distance")));
+    // Collapsing the crate's top face to a point makes a pyramid roof.
+    ok(&mut tx, "edit.merge", json!({ "target": "crate", "select": { "faces": { "group": "top" } }, "mode": "collapse" }));
+    let t = topo(&tx, "crate");
+    assert!(t.is_watertight() && t.faces == 5, "{t:?}");
 }
 
 #[test]

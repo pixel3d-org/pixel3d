@@ -2,8 +2,8 @@
 //! always a valid mesh, and a refused edit changes nothing.
 
 use p3d_geo::edit::{
-    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, QuadSpec, bridge, extrude, inset, loop_cut, poke, split, subdivide, triangulate,
-    tris_to_quads,
+    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, MergeMode, QuadSpec, bridge, dissolve_edges, dissolve_limited, dissolve_verts,
+    extrude, inset, loop_cut, merge, merge_by_distance, poke, split, subdivide, triangulate, tris_to_quads,
 };
 use p3d_mesh::Mesh;
 use p3d_testdata::strategy;
@@ -153,5 +153,33 @@ proptest! {
         prop_assert_eq!(m.validate(), Ok(()));
         prop_assert_eq!(m.face_components().1, 1);
         prop_assert_eq!(r.faces.len(), (sa.max(sb) * segments) as usize);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+
+    #[test]
+    fn merges_and_dissolves_stay_valid_or_change_nothing(m in strategy::mesh(), picks in prop::collection::vec(any::<u32>(), 1..8), kind in 0usize..6) {
+        let mut n = m.clone();
+        let verts: Vec<u32> = { let live: Vec<u32> = m.verts().collect(); picks.iter().map(|&p| live[p as usize % live.len().max(1)]).collect() };
+        let edges: Vec<u32> = { let live: Vec<u32> = m.edges().collect(); picks.iter().map(|&p| live[p as usize % live.len().max(1)]).collect() };
+        let faces = pick_faces(&m, &picks);
+        let r: Result<(), KernelError> = match kind {
+            0 => merge(&mut n, &verts, MergeMode::Center).map(|_| ()),
+            1 => merge(&mut n, &verts, MergeMode::Collapse).map(|_| ()),
+            2 => merge_by_distance(&mut n, None, 0.05).map(|_| ()),
+            3 => dissolve_verts(&mut n, &verts).map(|_| ()),
+            4 => dissolve_edges(&mut n, &edges, true).map(|_| ()),
+            _ => dissolve_limited(&mut n, &faces, 10.0).map(|_| ()),
+        };
+        match r {
+            Ok(()) => prop_assert_eq!(n.validate(), Ok(())),
+            // Sequential dissolves may stop part way; single patches change nothing.
+            Err(e) => {
+                prop_assert_eq!(n.validate(), Ok(()));
+                if kind <= 2 { prop_assert_eq!(&n, &m, "{}", e); }
+            }
+        }
     }
 }

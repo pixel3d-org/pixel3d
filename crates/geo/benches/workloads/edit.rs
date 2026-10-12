@@ -1,7 +1,8 @@
 //! Edit workloads shared by the `edit` and `scale` benches.
 
 use p3d_geo::edit::{
-    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, QuadSpec, extrude, inset, loop_cut, poke, split, subdivide, triangulate, tris_to_quads,
+    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, QuadSpec, dissolve_limited, dissolve_verts, extrude, inset, loop_cut, merge_by_distance, poke,
+    split, subdivide, triangulate, tris_to_quads,
 };
 use p3d_mesh::Mesh;
 use p3d_testdata::grid;
@@ -27,6 +28,9 @@ pub fn workloads(tris: usize) -> Vec<(&'static str, Mesh, Vec<u32>)> {
         ("split_half", grid(tris), half_again(tris)),
         ("subdivide_quarter", grid(tris), quarter_again(tris)),
         ("loop_cut_rows", grid(tris), left_column_edges(tris)),
+        ("weld_checkerboard_split", split_checkerboard(tris), Vec::new()),
+        ("dissolve_limited_all", grid(tris), grid(tris).faces().collect()),
+        ("dissolve_inner_verts", grid(tris), inner_verts(tris)),
     ]
 }
 
@@ -46,7 +50,10 @@ pub fn run(name: &str, mut m: Mesh, faces: &[u32]) -> usize {
         "tris_to_quads_all" => tris_to_quads(&mut m, faces, &QuadSpec::default()).map_or(0, |q| q.len()),
         "split_half" => split(&mut m, faces).map_or(0, |r| r.duplicated),
         "subdivide_quarter" => subdivide(&mut m, faces, 1).map_or(0, |r| r.faces.len()),
-        _ => loop_cut(&mut m, faces, 1, 0.0).map_or(0, |r| r.faces.len()),
+        "loop_cut_rows" => loop_cut(&mut m, faces, 1, 0.0).map_or(0, |r| r.faces.len()),
+        "weld_checkerboard_split" => merge_by_distance(&mut m, None, 1e-5).map_or(0, |r| r.merged),
+        "dissolve_limited_all" => dissolve_limited(&mut m, faces, 5.0).map_or(0, |r| r.removed_verts),
+        _ => dissolve_verts(&mut m, faces).map_or(0, |r| r.removed_verts),
     }
 }
 
@@ -66,4 +73,18 @@ fn quarter_again(tris: usize) -> Vec<u32> {
 fn left_column_edges(tris: usize) -> Vec<u32> {
     let g = grid(tris);
     g.edges().filter(|&e| g.edge_verts(e).iter().all(|&v| g.positions[v as usize].x < -0.4999)).collect()
+}
+
+/// A grid with every other face split off: duplicated vertices to weld back.
+fn split_checkerboard(tris: usize) -> Mesh {
+    let mut g = grid(tris);
+    let every_other: Vec<u32> = g.faces().step_by(2).collect();
+    let _ = split(&mut g, &every_other);
+    g
+}
+
+/// Every other inner vertex of a grid (in id order).
+fn inner_verts(tris: usize) -> Vec<u32> {
+    let g = grid(tris);
+    g.verts().filter(|&v| !g.is_boundary_vert(v)).step_by(2).collect()
 }

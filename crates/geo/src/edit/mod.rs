@@ -2,16 +2,20 @@
 //! what, then applies a single [`p3d_mesh::Patch`] (ADR 0003), so its cost
 //! depends on the edited region, not on the mesh size.
 
+mod dissolve;
 mod extrude;
 mod faces;
 mod inset;
 mod loops;
+mod merge;
 mod split;
 
+pub use dissolve::{DissolveResult, STRAIGHT_DEG, dissolve_edges, dissolve_faces, dissolve_limited, dissolve_verts};
 pub use extrude::{ExtrudeMode, ExtrudeResult, ExtrudeSpec, extrude};
 pub use faces::{QuadSpec, poke, triangulate, tris_to_quads};
 pub use inset::{InsetMode, InsetResult, InsetSpec, inset};
 pub use loops::{BridgeResult, LoopCutResult, MAX_BRIDGE_LOOP, MAX_CUTS, bridge, loop_cut};
+pub use merge::{MergeMode, MergeResult, merge, merge_by_distance};
 pub use split::{MAX_SUBDIVIDE_LEVELS, SplitResult, SubdivideResult, split, subdivide};
 
 use glam::Vec3;

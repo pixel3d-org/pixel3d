@@ -48,6 +48,9 @@ export type CylinderAdvanced = {
   height_segments?: number;
 };
 
+/** What `edit.dissolve` removes. */
+export type DissolveModeParam = "auto" | "limited";
+
 /** Copy or instance. */
 export type DuplicateMode = "copy" | "instance";
 
@@ -149,6 +152,9 @@ export type LengthRange = {
   max?: Length | null;
   min?: Length | null;
 };
+
+/** How `edit.merge` groups vertices. */
+export type MergeModeParam = "center" | "collapse";
 
 /** A mirror axis. */
 export type MirrorAxis = "x" | "y" | "z";
@@ -743,6 +749,41 @@ export type EditBridgeParams = {
   target: string;
 };
 
+/** `edit.merge`: Merges selected vertices into one point (center) or each connected run into its own point (collapse). */
+export type EditMergeParams = {
+  /** `center` (default) or `collapse`. */
+  mode?: MergeModeParam;
+  /** Vertices to merge (edges and faces select their vertices). */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.merge_by_distance`: Welds vertices that lie closer together than a distance, closing seams between joined or mirrored parts. */
+export type EditMergeByDistanceParams = {
+  /** Vertices closer than this weld together. */
+  distance?: Length;
+  /** Vertices that may weld (edges and faces select their vertices); all when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.dissolve`: Removes vertices, edges or faces while keeping the surface closed, merging the faces around them into polygons. */
+export type EditDissolveParams = {
+  /** For `limited`: faces meeting flatter than this merge (degrees). */
+  angle?: Angle;
+  /** `auto` (by the selector's element kind) or `limited`. */
+  mode?: DissolveModeParam;
+  /**
+   * Vertices, edges or faces to dissolve; for `limited`, the faces to
+   * simplify (all when omitted).
+   */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
 /** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
 export type EditFillParams = {
   /**
@@ -828,6 +869,9 @@ export interface OpParams {
   "edit.subdivide": EditSubdivideParams;
   "edit.loop_cut": EditLoopCutParams;
   "edit.bridge": EditBridgeParams;
+  "edit.merge": EditMergeParams;
+  "edit.merge_by_distance": EditMergeByDistanceParams;
+  "edit.dissolve": EditDissolveParams;
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;
