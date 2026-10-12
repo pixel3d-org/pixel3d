@@ -1,0 +1,10 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+probe crate ray from +z at (290, 300, 300) mm
+  part crate (o:1), normal (0, 0, 1)
+  face quad in front; corner valences 4 4 4 4; edges about 584 mm
+  face bends up to 22.5 deg into its neighbours (soft), 4 sharp-marked edges
+  thickness 600 mm; material slot 0; no UVs
+  nearest other part: handle_r at 242 mm

@@ -1,0 +1,39 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.data
+---
+{
+  "corner_valences": [
+    4,
+    4,
+    4,
+    4
+  ],
+  "face_corners": 4,
+  "face_groups": [
+    "top"
+  ],
+  "id": 1,
+  "material": 0,
+  "max_bend": 22.50018,
+  "mean_edge": 0.584,
+  "nearest_part": [
+    "lid",
+    0.0
+  ],
+  "normal": [
+    0.0,
+    1.0,
+    0.0
+  ],
+  "on_boundary": false,
+  "part": "crate",
+  "point": [
+    0.0,
+    0.6,
+    0.0
+  ],
+  "sharp_edges": 4,
+  "thickness": 0.6,
+  "uv_layers": 0
+}

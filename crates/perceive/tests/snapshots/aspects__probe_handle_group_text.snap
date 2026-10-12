@@ -1,0 +1,10 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+probe handle_r group front at (315, 420, 80) mm
+  part handle_r (o:4), normal (0, 0, 1)
+  face quad in front; corner valences 3 3 3 3; edges about 35 mm
+  face bends up to 90 deg into its neighbours (hard edge), 4 sharp-marked edges
+  thickness 160 mm; material slot 0; no UVs
+  nearest other part: crate at 15 mm

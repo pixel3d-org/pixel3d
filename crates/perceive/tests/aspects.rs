@@ -108,3 +108,31 @@ fn section_holes_and_walls() {
     let wall = r.data["loops"][1]["wall"].as_f64().unwrap();
     assert!((wall - 0.02).abs() < 1e-4, "{wall}");
 }
+
+#[test]
+fn probe_reports() {
+    use p3d_perceive::probe::{RayFrom, SurfacePoint, report};
+    let doc = scenes::crate_scene();
+    let view = View::new(&doc, None).unwrap();
+    let at = |on: &str| SurfacePoint { on: on.into(), ..SurfacePoint::default() };
+    let r = report(&view, &SurfacePoint { landmark: Some("top".into()), ..at("crate") }).unwrap();
+    check("probe_crate_top", &r);
+    assert_eq!(r.data["nearest_part"][0], "lid");
+    let r = report(&view, &SurfacePoint { landmark: Some("left".into()), ..at("crate") }).unwrap();
+    check("probe_crate_left", &r);
+    let r = report(&view, &SurfacePoint { ray: Some(RayFrom { from: "+z".into(), at: Some([0.29, 0.3]) }), ..at("crate") }).unwrap();
+    check("probe_crate_bevel", &r);
+    let r = report(&view, &SurfacePoint { group: Some("front".into()), ..at("handle_r") }).unwrap();
+    check("probe_handle_group", &r);
+    let doc = scenes::head_scene();
+    let view = View::new(&doc, None).unwrap();
+    let r = report(&view, &SurfacePoint { nearest: Some([0.0, 0.3, 0.2]), ..at("head") }).unwrap();
+    check("probe_head_nearest", &r);
+
+    let e = report(&view, &SurfacePoint { landmark: Some("tpo".into()), ..at("head") }).unwrap_err();
+    assert_eq!((e.code, e.suggestions.first().map(String::as_str)), ("NOT_FOUND", Some("top")));
+    let e = report(&view, &SurfacePoint { landmark: Some("top".into()), group: Some("x".into()), ..at("head") }).unwrap_err();
+    assert_eq!(e.code, "INVALID_PARAM");
+    let e = report(&view, &SurfacePoint { ray: Some(RayFrom { from: "up".into(), at: None }), ..at("head") }).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/at/ray/from"));
+}

@@ -1,0 +1,10 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+probe head nearest (0, 300, 200) at (0, 206, 83) mm
+  part head (o:1), normal (-0.09, 0.47, 0.88)
+  face quad; corner valences 4 4 4 4; edges about 18 mm
+  face bends up to 11.2 deg into its neighbours (soft)
+  thickness 198 mm; material slot 0; no UVs
+  nearest other part: hat at 68 mm
