@@ -78,9 +78,11 @@ impl eframe::App for App {
         self.app.ui(ui);
     }
 
-    /// Screenshot runs ignore the user's mouse and keyboard so the picture
-    /// shows the requested state.
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+    /// Keys the app takes before egui (Tab toggles Edit Mode). Screenshot
+    /// runs ignore the user's mouse and keyboard so the picture shows the
+    /// requested state.
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.app.filter_input(ctx, raw);
         if self.app.quit_after_shot {
             raw.events.retain(|e| matches!(e, egui::Event::Screenshot { .. }));
             if let Some(at) = self.hover {

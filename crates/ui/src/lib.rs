@@ -969,6 +969,27 @@ impl PixelApp {
 
     // ---- frame ------------------------------------------------------------------------------
 
+    /// Takes keys egui would otherwise use for focus before egui sees them:
+    /// Tab toggles Edit Mode (as in Blender) instead of moving the keyboard
+    /// focus through the menus, unless a text field is being edited. Call
+    /// from the host's raw input hook.
+    pub fn filter_input(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        if ctx.egui_wants_keyboard_input() {
+            return;
+        }
+        let mut toggle = false;
+        raw.events.retain(|e| match e {
+            egui::Event::Key { key: egui::Key::Tab, pressed, modifiers, .. } if modifiers.is_none() => {
+                toggle |= *pressed;
+                false
+            }
+            _ => true,
+        });
+        if toggle {
+            let _ = self.run("ui.edit", Value::Null);
+        }
+    }
+
     /// Per-frame logic before layout: theme, shortcuts, screenshots, dropped files.
     pub fn logic(&mut self, ctx: &egui::Context) {
         let shown = self.ui.theme.resolve(ctx.system_theme());
@@ -1100,6 +1121,21 @@ mod tests {
 
     fn app() -> PixelApp {
         PixelApp::new(Session::new(), Services::default())
+    }
+
+    #[test]
+    fn tab_toggles_edit_mode_instead_of_moving_focus() {
+        let mut a = app();
+        a.run("prim.box", json!({ "name": "crate" })).unwrap();
+        let ctx = egui::Context::default();
+        let tab = |pressed| egui::Event::Key { key: egui::Key::Tab, physical_key: None, pressed, repeat: false, modifiers: egui::Modifiers::NONE };
+        let mut raw = egui::RawInput { events: vec![tab(true), tab(false), egui::Event::Text("a".into())], ..Default::default() };
+        a.filter_input(&ctx, &mut raw);
+        assert_eq!(raw.events, vec![egui::Event::Text("a".into())], "egui never sees Tab");
+        assert!(a.ui.mode.is_edit());
+        let mut raw = egui::RawInput { events: vec![tab(true)], ..Default::default() };
+        a.filter_input(&ctx, &mut raw);
+        assert_eq!(a.ui.mode, SelectMode::Object);
     }
 
     #[test]
