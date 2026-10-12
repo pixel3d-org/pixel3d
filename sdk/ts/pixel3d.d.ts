@@ -715,6 +715,34 @@ export type EditSubdivideParams = {
   target: string;
 };
 
+/** `edit.loop_cut`: Cuts new edge loops across the ring of quads that runs through the selected edges. */
+export type EditLoopCutParams = {
+  /** Parallel loops per ring (1 to 64). */
+  cuts?: number;
+  /** Slides a single cut toward either side, from -1 to 1 (0 is the middle). */
+  offset?: number;
+  /**
+   * Edges that the cut crosses: each picks the ring of quads running
+   * across it (several edges of one ring cut it once).
+   */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.bridge`: Joins two holes (boundary loops) with a band of quads. */
+export type EditBridgeParams = {
+  /** Rings of quads along the bridge (1 to 64). */
+  segments?: number;
+  /**
+   * Boundary edges (or vertices, or faces next to them) of exactly two
+   * holes; when omitted the mesh must have exactly two holes.
+   */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
 /** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
 export type EditFillParams = {
   /**
@@ -798,6 +826,8 @@ export interface OpParams {
   "edit.split": EditSplitParams;
   "edit.flip": EditFlipParams;
   "edit.subdivide": EditSubdivideParams;
+  "edit.loop_cut": EditLoopCutParams;
+  "edit.bridge": EditBridgeParams;
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;

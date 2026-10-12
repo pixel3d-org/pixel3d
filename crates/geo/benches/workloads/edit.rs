@@ -1,10 +1,12 @@
 //! Edit workloads shared by the `edit` and `scale` benches.
 
-use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, QuadSpec, extrude, inset, poke, split, subdivide, triangulate, tris_to_quads};
+use p3d_geo::edit::{
+    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, QuadSpec, extrude, inset, loop_cut, poke, split, subdivide, triangulate, tris_to_quads,
+};
 use p3d_mesh::Mesh;
 use p3d_testdata::grid;
 
-/// Workload names with their mesh and selected faces, for a grid of about `tris` triangles.
+/// Workload names with their mesh and selected faces (edges for loop cuts), for a grid of about `tris` triangles.
 pub fn workloads(tris: usize) -> Vec<(&'static str, Mesh, Vec<u32>)> {
     let g = grid(tris);
     let n = g.face_count();
@@ -24,6 +26,7 @@ pub fn workloads(tris: usize) -> Vec<(&'static str, Mesh, Vec<u32>)> {
         ("tris_to_quads_all", tri_grid, all_tris),
         ("split_half", grid(tris), half_again(tris)),
         ("subdivide_quarter", grid(tris), quarter_again(tris)),
+        ("loop_cut_rows", grid(tris), left_column_edges(tris)),
     ]
 }
 
@@ -42,7 +45,8 @@ pub fn run(name: &str, mut m: Mesh, faces: &[u32]) -> usize {
         "triangulate_all" => triangulate(&mut m, faces).map_or(0, |t| t.0.len()),
         "tris_to_quads_all" => tris_to_quads(&mut m, faces, &QuadSpec::default()).map_or(0, |q| q.len()),
         "split_half" => split(&mut m, faces).map_or(0, |r| r.duplicated),
-        _ => subdivide(&mut m, faces, 1).map_or(0, |r| r.faces.len()),
+        "subdivide_quarter" => subdivide(&mut m, faces, 1).map_or(0, |r| r.faces.len()),
+        _ => loop_cut(&mut m, faces, 1, 0.0).map_or(0, |r| r.faces.len()),
     }
 }
 
@@ -55,4 +59,11 @@ fn half_again(tris: usize) -> Vec<u32> {
 /// Every fourth face of a grid.
 fn quarter_again(tris: usize) -> Vec<u32> {
     grid(tris).faces().step_by(4).collect()
+}
+
+/// The edges along the left side of a grid: one per row of quads, each
+/// starting its own ring.
+fn left_column_edges(tris: usize) -> Vec<u32> {
+    let g = grid(tris);
+    g.edges().filter(|&e| g.edge_verts(e).iter().all(|&v| g.positions[v as usize].x < -0.4999)).collect()
 }

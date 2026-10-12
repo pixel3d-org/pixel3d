@@ -53,14 +53,19 @@ fn expect_fixture() -> Tx {
     tx
 }
 
-/// The fixture plus bin (o:5), an open box without its top, and tiles (o:6),
-/// a triangulated 4 x 4 grid, for `edit.*` examples.
+/// The fixture plus bin (o:5), an open box without its top, tiles (o:6), a
+/// triangulated 4 x 4 grid, and duct (o:7), two open tubes one above the
+/// other, for `edit.*` examples.
 fn edit_fixture() -> Tx {
     let mut tx = fixture();
     ok(&mut tx, "prim.box", json!({ "name": "bin", "width": 0.4, "height": 0.3, "depth": 0.4, "position": [-2, 0, 0] }));
     ok(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": { "group": "top" } } }));
     ok(&mut tx, "prim.plane", json!({ "name": "tiles", "width": 2, "depth": 2, "position": [0, 0, 3], "advanced": { "segments": [4, 4] } }));
     ok(&mut tx, "edit.triangulate", json!({ "target": "tiles" }));
+    let tube = |name: &str, y: f64| json!({ "name": name, "radius": 0.1, "height": 0.4, "segments": 8, "cap": "none", "position": [3, y, 0] });
+    ok(&mut tx, "prim.cylinder", tube("duct", 0.0));
+    ok(&mut tx, "prim.cylinder", tube("duct_top", 0.6));
+    ok(&mut tx, "scene.join", json!({ "targets": ["duct", "duct_top"] }));
     tx
 }
 
@@ -490,6 +495,26 @@ fn split_flip_and_subdivide() {
     assert!(topo(&tx, "post").is_watertight());
     let e = err(&mut tx, "edit.subdivide", json!({ "target": "post", "levels": 7 }));
     assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/levels")));
+}
+
+#[test]
+fn loop_cut_and_bridge_refuse_bad_selections() {
+    let mut tx = edit_fixture();
+    let e = err(&mut tx, "edit.loop_cut", json!({ "target": "crate", "select": { "faces": { "group": "top" } } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select")));
+    let e = err(&mut tx, "edit.loop_cut", json!({ "target": "crate", "select": { "edges": {} }, "offset": 2 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/offset")));
+    let e = err(&mut tx, "edit.bridge", json!({ "target": "bin" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::EmptySelection, Some("/select")));
+    assert!(e.message.contains("1 hole"), "{e}");
+    // Bridging the duct's inner holes leaves one long tube open at both ends.
+    ok(
+        &mut tx,
+        "edit.bridge",
+        json!({ "target": "duct", "select": { "edges": { "in_box": { "min": [-1, 0.39, -1], "max": [1, 0.61, 1] } } }, "segments": 2 }),
+    );
+    assert_eq!(topo(&tx, "duct").boundary_loops, 2);
+    assert_eq!(topo(&tx, "duct").parts, 1);
 }
 
 #[test]

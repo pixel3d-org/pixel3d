@@ -72,6 +72,8 @@ impl Registry {
             Arc::new(Typed::<edit::Split>::new()),
             Arc::new(Typed::<edit::Flip>::new()),
             Arc::new(Typed::<edit::Subdivide>::new()),
+            Arc::new(Typed::<edit::LoopCut>::new()),
+            Arc::new(Typed::<edit::Bridge>::new()),
             Arc::new(Typed::<edit::Fill>::new()),
             Arc::new(Typed::<edit::RecalcNormals>::new()),
             Arc::new(Typed::<edit::DeleteElements>::new()),

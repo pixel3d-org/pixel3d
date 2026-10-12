@@ -2,7 +2,8 @@
 //! always a valid mesh, and a refused edit changes nothing.
 
 use p3d_geo::edit::{
-    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, QuadSpec, extrude, inset, poke, split, subdivide, triangulate, tris_to_quads,
+    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, QuadSpec, bridge, extrude, inset, loop_cut, poke, split, subdivide, triangulate,
+    tris_to_quads,
 };
 use p3d_mesh::Mesh;
 use p3d_testdata::strategy;
@@ -114,5 +115,43 @@ proptest! {
         prop_assert_eq!(r.faces.len(), corners);
         let area = |x: &Mesh| x.faces().map(|f| x.face_area(f)).sum::<f32>();
         prop_assert!((area(&s) - area(&m)).abs() <= 1e-3 * area(&m).max(1e-3), "{} vs {}", area(&s), area(&m));
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+
+    #[test]
+    fn loop_cuts_stay_valid_or_change_nothing(m in strategy::mesh(), picks in prop::collection::vec(any::<u32>(), 1..3), cuts in 1u32..4, offset in -1.0f32..1.0) {
+        let live: Vec<u32> = m.edges().collect();
+        prop_assume!(!live.is_empty());
+        let edges: Vec<u32> = picks.iter().map(|&p| live[p as usize % live.len()]).collect();
+        let mut n = m.clone();
+        match loop_cut(&mut n, &edges, cuts, offset) {
+            Ok(r) => {
+                prop_assert_eq!(n.validate(), Ok(()));
+                prop_assert!(r.rings >= 1);
+                prop_assert_eq!(r.faces.len() % (cuts as usize + 1), 0);
+            }
+            Err(_) => prop_assert_eq!(&n, &m),
+        }
+    }
+
+    #[test]
+    fn bridges_join_two_tubes(sa in 3u32..24, sb in 3u32..24, segments in 1u32..4, gap in 0.1f32..2.0) {
+        use p3d_geo::prim::{CapKind, CylinderSpec, Origin, cylinder};
+        let tube = |s: u32, y: f32| {
+            let mut t = cylinder(&CylinderSpec { radius: 0.5, height: 1.0, segments: s, height_segments: 1, cap: CapKind::None }, Origin::Center).unwrap_or_default();
+            t.transform(glam::Affine3A::from_translation(glam::Vec3::new(0.0, y, 0.0)));
+            t
+        };
+        let mut m = tube(sa, 0.0);
+        m.append(&tube(sb, 1.0 + gap));
+        let hole = |m: &Mesh, y: f32| (0..m.he_slots() as u32).find(|&h| m.is_he_alive(h) && m.is_boundary_he(h) && (m.positions[m.origin(h) as usize].y - y).abs() < 1e-4);
+        let (Some(a), Some(b)) = (hole(&m, 0.5), hole(&m, 0.5 + gap)) else { return Err(TestCaseError::fail("holes not found")) };
+        let r = bridge(&mut m, a, b, segments).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(m.validate(), Ok(()));
+        prop_assert_eq!(m.face_components().1, 1);
+        prop_assert_eq!(r.faces.len(), (sa.max(sb) * segments) as usize);
     }
 }

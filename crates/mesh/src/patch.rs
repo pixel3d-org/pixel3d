@@ -105,6 +105,11 @@ impl Patch {
         v >= self.base
     }
 
+    /// Index of a new vertex in [`PatchResult::verts`] (0 for an old vertex).
+    pub fn new_vert_index(&self, v: u32) -> usize {
+        v.saturating_sub(self.base) as usize
+    }
+
     /// Adds a polygon over existing or new vertices in winding order (the
     /// normal follows the right-hand rule). `src` gives each corner's
     /// attribute source (missing entries mean [`CornerSrc::NONE`]). The face

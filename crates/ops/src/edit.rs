@@ -844,6 +844,209 @@ impl Op for Subdivide {
     }
 }
 
+// ---- edit.loop_cut -----------------------------------------------------------------------
+
+/// Parameters of `edit.loop_cut`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoopCutParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Edges that the cut crosses: each picks the ring of quads running
+    /// across it (several edges of one ring cut it once).
+    pub select: Selector,
+    /// Parallel loops per ring (1 to 64).
+    #[serde(default = "one_cut")]
+    pub cuts: u32,
+    /// Slides a single cut toward either side, from -1 to 1 (0 is the middle).
+    #[serde(default)]
+    pub offset: f32,
+}
+
+fn one_cut() -> u32 {
+    1
+}
+
+impl Default for LoopCutParams {
+    fn default() -> Self {
+        LoopCutParams { target: String::new(), select: Selector::Edges(Filter::default()), cuts: 1, offset: 0.0 }
+    }
+}
+
+/// `edit.loop_cut`.
+pub struct LoopCut;
+
+impl Op for LoopCut {
+    const ID: &'static str = "edit.loop_cut";
+    type Params = LoopCutParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Loop cut",
+            category: Category::Edit,
+            summary: "Cuts new edge loops across the ring of quads that runs through the selected edges.",
+            docs: "From each selected edge the ring of quads across it is followed in both directions until it closes, reaches the \
+                   boundary or meets a face that is not a quad (that face gains the cut points as corners). Every ring edge is split \
+                   evenly `cuts` times and every ring quad becomes `cuts + 1` quads; `offset` slides a single cut toward one side. \
+                   New edges are `<label>.edges`, the split quads `<label>.faces` (they keep their groups); sharp edges and seams \
+                   stay on every piece.\n\n\
+                   **Use for** support loops next to hard edges before subdivision, extra rows for bending (`deform.bend`), and \
+                   splitting a face to extrude only part of it. Select one edge across the ring, for example a vertical side edge \
+                   of a cylinder to cut around it.",
+            examples: &[OpExample {
+                args: r#"{"target": "post", "select": {"edges": {"in_box": {"min": [0.045, 0.2, -0.01], "max": [0.055, 0.8, 0.01]}}}}"#,
+                result: "post (o:3): cut 1 ring with 1 loop: +8 faces; groups loop_cut_1.edges (8), loop_cut_1.faces (16)",
+            }],
+            aliases: &["loop cut", "ctrl r", "insert edge loop", "loop cut and slide", "polySplitRing", "swift loop"],
+            complexity: "O(ring length x cuts) plus O(c log c) for the corners touched, plus the selector",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &LoopCutParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        crate::common::check_count("/cuts", p.cuts, 1, p3d_geo::edit::MAX_CUTS)?;
+        if !(p.offset.is_finite() && (-1.0..=1.0).contains(&p.offset)) {
+            return Err(OpError::out_of_range("/offset", format!("offset {} is outside -1 to 1", p.offset)));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &LoopCutParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let mesh = tx.mesh(key, "/target")?;
+        let sel = evaluate(mesh, &p.select).map_err(|e| OpError::from_query(e, "/select"))?;
+        if sel.kind != ElementKind::Edge {
+            return Err(OpError::invalid(
+                "/select",
+                format!("edit.loop_cut needs edges across the ring, but the selector picks {}", sel.kind.as_str()),
+            )
+            .with_hint("select an edge the cut should cross, for example {\"edges\": {\"in_box\": ...}}"));
+        }
+        if sel.is_empty() {
+            return Err(empty_selection("the selector matched no edges", "query shows what a selector picks"));
+        }
+        let edges: Vec<u32> = sel.iter().collect();
+        let glabel = group_label(mesh, ctx, "loop_cut");
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::loop_cut(mesh, &edges, p.cuts, p.offset).map_err(kernel_error)?;
+        let en =
+            mesh.set_group(&format!("{glabel}.edges"), ElementKind::Edge, r.edges.iter().copied()).map_err(|e| OpError::internal(e.to_string()))?;
+        let eg = GroupInfo { object: key, name: format!("{glabel}.edges"), kind: ElementKind::Edge, count: en as u32 };
+        let fg = face_group(mesh, key, format!("{glabel}.faces"), &r.faces)?;
+        let mut out = OpOutput::summary(format!(
+            "{}: cut {} ring{} with {} loop{}: +{} faces; groups {} ({}), {} ({})",
+            label(tx.doc(), key),
+            r.rings,
+            plural(r.rings),
+            p.cuts,
+            plural(p.cuts as usize),
+            thousands(r.faces.len() - r.faces.len() / (p.cuts as usize + 1)),
+            eg.name,
+            eg.count,
+            fg.name,
+            fg.count
+        ));
+        out.changed.push(key);
+        out.groups = vec![eg, fg];
+        Ok(out)
+    }
+}
+
+// ---- edit.bridge ----------------------------------------------------------------------
+
+/// Parameters of `edit.bridge`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BridgeParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Boundary edges (or vertices, or faces next to them) of exactly two
+    /// holes; when omitted the mesh must have exactly two holes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+    /// Rings of quads along the bridge (1 to 64).
+    #[serde(default = "one_cut")]
+    pub segments: u32,
+}
+
+impl Default for BridgeParams {
+    fn default() -> Self {
+        BridgeParams { target: String::new(), select: None, segments: 1 }
+    }
+}
+
+/// `edit.bridge`.
+pub struct Bridge;
+
+impl Op for Bridge {
+    const ID: &'static str = "edit.bridge";
+    type Params = BridgeParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Bridge",
+            category: Category::Edit,
+            summary: "Joins two holes (boundary loops) with a band of quads.",
+            docs: "The two holes are matched vertex to vertex at the rotation with the shortest total connection; the band follows \
+                   the surface's facing. Holes with different vertex counts get a few triangles. `segments` adds straight rings \
+                   along the band. New faces are `<label>.faces`.\n\n\
+                   **Use for** connecting two open tube ends (pipes, limbs), closing a gap between two parts after `scene.join`, \
+                   and making a hole through a solid (delete two facing faces, then bridge). Bridge holes that face each other; \
+                   far-apart or twisted holes give a stretched band.",
+            examples: &[OpExample {
+                args: r#"{"target": "duct", "select": {"edges": {"in_box": {"min": [-1, 0.39, -1], "max": [1, 0.61, 1]}}}}"#,
+                result: "duct (o:7): bridged 2 holes with 8 faces; group bridge_1.faces",
+            }],
+            aliases: &["bridge edge loops", "bridge", "connect loops", "polyBridgeEdge", "loft holes"],
+            complexity: "O(a x b) to align holes of a and b vertices, plus the patch",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &BridgeParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        crate::common::check_count("/segments", p.segments, 1, p3d_geo::edit::MAX_CUTS)
+    }
+
+    fn apply(tx: &mut Tx, p: &BridgeParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let mesh = tx.mesh(key, "/target")?;
+        let starts = boundary_starts(mesh, p.select.as_ref())?;
+        // One boundary half-edge per hole, in order of first appearance.
+        let mut seen = p3d_mesh::FixedBitSet::with_capacity(mesh.he_slots());
+        let mut holes: Vec<u32> = Vec::new();
+        for h in starts {
+            if seen.contains(h as usize) {
+                continue;
+            }
+            for x in mesh.boundary_loop(h).map_err(|e| OpError::internal(e.to_string()))? {
+                seen.insert(x as usize);
+            }
+            holes.push(h);
+        }
+        if holes.len() != 2 {
+            return Err(OpError::new(
+                ErrorCode::EmptySelection,
+                format!("the selection touches {} hole{}, bridge needs 2", holes.len(), plural(holes.len())),
+            )
+            .at("/select")
+            .with_hint("select boundary edges of exactly two holes; diagnose lists open boundaries"));
+        }
+        let glabel = group_label(mesh, ctx, "bridge");
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::bridge(mesh, holes[0], holes[1], p.segments).map_err(kernel_error)?;
+        let g = face_group(mesh, key, format!("{glabel}.faces"), &r.faces)?;
+        let mut out =
+            OpOutput::summary(format!("{}: bridged 2 holes with {} faces; group {}", label(tx.doc(), key), thousands(r.faces.len()), g.name));
+        out.changed.push(key);
+        out.groups = vec![g];
+        Ok(out)
+    }
+}
+
 // ---- edit.fill -------------------------------------------------------------------------
 
 /// Parameters of `edit.fill`.

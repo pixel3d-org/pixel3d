@@ -5,11 +5,13 @@
 mod extrude;
 mod faces;
 mod inset;
+mod loops;
 mod split;
 
 pub use extrude::{ExtrudeMode, ExtrudeResult, ExtrudeSpec, extrude};
 pub use faces::{QuadSpec, poke, triangulate, tris_to_quads};
 pub use inset::{InsetMode, InsetResult, InsetSpec, inset};
+pub use loops::{BridgeResult, LoopCutResult, MAX_BRIDGE_LOOP, MAX_CUTS, bridge, loop_cut};
 pub use split::{MAX_SUBDIVIDE_LEVELS, SplitResult, SubdivideResult, split, subdivide};
 
 use glam::Vec3;
