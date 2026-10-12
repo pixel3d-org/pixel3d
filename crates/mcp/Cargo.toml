@@ -18,6 +18,7 @@ p3d-mesh = { workspace = true }
 p3d-ops = { workspace = true }
 p3d-perceive = { workspace = true }
 p3d-query = { workspace = true }
+p3d-render = { workspace = true }
 p3d-scene = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }

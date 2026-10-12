@@ -27,7 +27,7 @@ async fn tools_resources_and_calls() {
     assert_eq!(info.server_info.as_ref().map(|i| i.name.as_str()), Some("pixel3d"));
     let tools = client.list_all_tools().await.unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
-    assert_eq!(names.len(), 12, "{names:?}");
+    assert_eq!(names.len(), 13, "{names:?}");
     assert!(names.contains(&"run") && names.contains(&"perceive"));
     let run = tools.iter().find(|t| t.name == "run").unwrap();
     assert_eq!(run.input_schema.get("additionalProperties"), Some(&json!(false)));

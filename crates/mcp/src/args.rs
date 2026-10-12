@@ -243,3 +243,58 @@ pub struct AnalyzeArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
 }
+
+/// A camera view.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderView {
+    /// From +Z (the asset's front).
+    Front,
+    Back,
+    /// From +X.
+    Right,
+    Left,
+    /// From above, front at the bottom.
+    Top,
+    Bottom,
+    /// From the front, right and above.
+    ThreeQuarter,
+}
+
+/// How surfaces look.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderMode {
+    /// Lit, one color per part; inside-out faces show red.
+    #[default]
+    Shaded,
+    /// Hidden-line wireframe of the polygon edges.
+    Wire,
+    /// Shaded with polygon edges.
+    ShadedWire,
+    /// Gray clay: reads form and smoothness.
+    Matcap,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RenderArgs {
+    /// Object with its children; the whole scene when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    /// Views (default front, right, top, three_quarter).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub views: Option<Vec<RenderView>>,
+    /// `shaded` (default), `wire`, `shaded_wire` or `matcap`.
+    #[serde(default)]
+    pub mode: RenderMode,
+    /// Pixels per view side, 64 to 2048 (default 512).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u32>,
+    /// One contact sheet image instead of one image per view (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<bool>,
+    /// Draw part names next to the parts (default true).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub labels: Option<bool>,
+}

@@ -134,3 +134,31 @@ fn scrub(text: &str) -> String {
         .map(|l| l + "\n")
         .collect()
 }
+
+#[test]
+fn render_returns_a_contact_sheet() {
+    let mut a = Agent::new(Session::new());
+    let r = a.call(
+        "run",
+        json!({ "ops": [
+            { "op": "prim.box", "args": { "name": "crate", "width": 0.6, "height": 0.6, "depth": 0.6, "bevel": { "width": "8mm", "segments": 2 } } },
+            { "op": "prim.cylinder", "args": { "name": "post", "radius": 0.05, "height": 0.8, "position": [0.5, 0, 0] } }
+        ] }),
+    );
+    assert!(!r.is_error, "{}", r.text);
+    let out = a.call("render", json!({ "size": 128 }));
+    assert!(!out.is_error, "{}", out.text);
+    assert_eq!(out.images.len(), 1);
+    assert_eq!(&out.images[0][1..4], b"PNG");
+    assert!(out.text.starts_with("render front, right, top, three_quarter of scene: shaded, 128 px per view; sheet 258 x 258 px"), "{}", out.text);
+    let out = a.call("render", json!({ "target": "post", "views": ["front", "top"], "mode": "wire", "sheet": false, "size": 64 }));
+    assert_eq!(out.images.len(), 2, "{}", out.text);
+    let e = a.call("render", json!({ "size": 9999 }));
+    assert!(e.is_error && e.text.contains("OUT_OF_RANGE"), "{}", e.text);
+    let e = a.call("render", json!({ "views": ["frnot"] }));
+    assert!(e.is_error && e.text.contains("did you mean"), "{}", e.text);
+    if let Ok(dir) = std::env::var("P3D_DUMP_DIR") {
+        let out = a.call("render", json!({ "size": 256, "mode": "shaded_wire" }));
+        std::fs::write(format!("{dir}/sheet.png"), &out.images[0]).unwrap();
+    }
+}

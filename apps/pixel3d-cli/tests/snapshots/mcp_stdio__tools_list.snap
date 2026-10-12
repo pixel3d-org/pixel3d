@@ -1174,6 +1174,127 @@ expression: tools
       {
         "annotations": {
           "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Optional pictures to confirm what text already says: views tiled into one PNG with part names drawn on.",
+        "inputSchema": {
+          "$defs": {
+            "RenderMode": {
+              "description": "How surfaces look.",
+              "oneOf": [
+                {
+                  "const": "shaded",
+                  "description": "Lit, one color per part; inside-out faces show red.",
+                  "type": "string"
+                },
+                {
+                  "const": "wire",
+                  "description": "Hidden-line wireframe of the polygon edges.",
+                  "type": "string"
+                },
+                {
+                  "const": "shaded_wire",
+                  "description": "Shaded with polygon edges.",
+                  "type": "string"
+                },
+                {
+                  "const": "matcap",
+                  "description": "Gray clay: reads form and smoothness.",
+                  "type": "string"
+                }
+              ]
+            },
+            "RenderView": {
+              "description": "A camera view.",
+              "oneOf": [
+                {
+                  "enum": [
+                    "back",
+                    "left",
+                    "bottom"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "front",
+                  "description": "From +Z (the asset's front).",
+                  "type": "string"
+                },
+                {
+                  "const": "right",
+                  "description": "From +X.",
+                  "type": "string"
+                },
+                {
+                  "const": "top",
+                  "description": "From above, front at the bottom.",
+                  "type": "string"
+                },
+                {
+                  "const": "three_quarter",
+                  "description": "From the front, right and above.",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "labels": {
+              "description": "Draw part names next to the parts (default true).",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "mode": {
+              "$ref": "#/$defs/RenderMode",
+              "default": "shaded",
+              "description": "`shaded` (default), `wire`, `shaded_wire` or `matcap`."
+            },
+            "sheet": {
+              "description": "One contact sheet image instead of one image per view (default true).",
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "size": {
+              "description": "Pixels per view side, 64 to 2048 (default 512).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "target": {
+              "description": "Object with its children; the whole scene when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "views": {
+              "description": "Views (default front, right, top, three_quarter).",
+              "items": {
+                "$ref": "#/$defs/RenderView"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            }
+          },
+          "title": "RenderArgs",
+          "type": "object"
+        },
+        "name": "render"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
           "readOnlyHint": true
         },
         "description": "List ops with one-line summaries; search matches ids, labels, summaries and Blender or Maya names.",

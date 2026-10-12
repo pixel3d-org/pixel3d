@@ -100,6 +100,11 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<AnalyzeArgs>(),
         },
         ToolInfo {
+            name: "render",
+            description: "Optional pictures to confirm what text already says: views tiled into one PNG with part names drawn on.",
+            schema: schema::<RenderArgs>(),
+        },
+        ToolInfo {
             name: "list_ops",
             description: "List ops with one-line summaries; search matches ids, labels, summaries and Blender or Maya names.",
             schema: schema::<ListOpsArgs>(),
@@ -130,11 +135,13 @@ struct FindingsCache {
 pub struct Agent {
     session: Session,
     cache: Option<FindingsCache>,
+    /// Created on the first render (it takes the GPU), kept after.
+    renderer: Option<Result<p3d_render::Renderer, p3d_render::RenderError>>,
 }
 
 impl Agent {
     pub fn new(session: Session) -> Agent {
-        Agent { session, cache: None }
+        Agent { session, cache: None, renderer: None }
     }
 
     pub fn session(&self) -> &Session {
@@ -161,6 +168,7 @@ impl Agent {
             "list_ops" => parse_params(&args).and_then(|a| self.list_ops(&a)),
             "describe_op" => parse_params(&args).and_then(|a| self.describe_op(&a)),
             "history" => parse_params(&args).and_then(|a| self.history(&a)),
+            "render" => parse_params(&args).and_then(|a| self.render(&a)),
             "docs" => parse_params(&args).and_then(|a| docs::tool(&a)),
             other => Err(OpError::new(ErrorCode::UnknownOp, format!("no tool `{other}`")).with_suggestions(p3d_scene::name::suggest(
                 other,
@@ -568,6 +576,79 @@ impl Agent {
             t.push_str(&format!("example: {} -> {}\n", ex.args, ex.result));
         }
         Ok(ToolOutput::ok(t, entry))
+    }
+
+    fn render(&mut self, a: &RenderArgs) -> Result<ToolOutput, OpError> {
+        use p3d_render::{Mode, RenderRequest, ViewKind};
+        let doc = self.doc();
+        let root = match &a.target {
+            Some(t) => Some(doc.resolve(t).map_err(|e| OpError::from_scene(e, "/target"))?),
+            None => None,
+        };
+        let size = a.size.unwrap_or(512);
+        if !(p3d_render::MIN_SIZE..=p3d_render::MAX_SIZE).contains(&size) {
+            return Err(OpError::out_of_range("/size", format!("{size} is outside {} to {}", p3d_render::MIN_SIZE, p3d_render::MAX_SIZE)));
+        }
+        let views: Vec<ViewKind> = match &a.views {
+            None => RenderRequest::default().views,
+            Some(v) if v.is_empty() => return Err(OpError::invalid("/views", "give at least one view")),
+            Some(v) => v
+                .iter()
+                .map(|v| match v {
+                    RenderView::Front => ViewKind::Front,
+                    RenderView::Back => ViewKind::Back,
+                    RenderView::Right => ViewKind::Right,
+                    RenderView::Left => ViewKind::Left,
+                    RenderView::Top => ViewKind::Top,
+                    RenderView::Bottom => ViewKind::Bottom,
+                    RenderView::ThreeQuarter => ViewKind::ThreeQuarter,
+                })
+                .collect(),
+        };
+        let mode = match a.mode {
+            RenderMode::Shaded => Mode::Shaded,
+            RenderMode::Wire => Mode::Wire,
+            RenderMode::ShadedWire => Mode::ShadedWire,
+            RenderMode::Matcap => Mode::Matcap,
+        };
+        let req = RenderRequest { views, mode, size, sheet: a.sheet.unwrap_or(true), labels: a.labels.unwrap_or(true) };
+        let scene = p3d_render::prepare(&doc, root);
+        if scene.is_empty() {
+            return Err(OpError::new(ErrorCode::EmptySelection, "nothing to render: no visible mesh").at(if a.target.is_some() {
+                "/target"
+            } else {
+                ""
+            }));
+        }
+        let renderer = self.renderer.get_or_insert_with(p3d_render::Renderer::new).as_ref().map_err(|e| {
+            OpError::new(ErrorCode::Unsupported, e.to_string()).with_hint("perceive answers the same questions as text without a GPU")
+        })?;
+        let images = renderer.render(&scene, &req).map_err(|e| OpError::new(ErrorCode::Internal, e.to_string()))?;
+        let mut pngs = Vec::new();
+        let mut sizes = Vec::new();
+        for (title, img) in &images {
+            pngs.push(img.to_png().map_err(|e| OpError::new(ErrorCode::Internal, format!("PNG encoding failed: {e}")))?);
+            sizes.push(format!("{title} {} x {} px", img.width, img.height));
+        }
+        let names: Vec<&str> = req.views.iter().map(|v| v.name()).collect();
+        let what = a.target.as_deref().unwrap_or("scene");
+        let text = format!(
+            "render {} of {what}: {}, {} px per view; {}\n{} parts, {} tris, size {} (W x H x D); GPU {}\n",
+            names.join(", "),
+            mode.name(),
+            size,
+            sizes.join(", "),
+            scene.parts.len(),
+            thousands(scene.triangle_count()),
+            dims(scene.hi - scene.lo),
+            renderer.adapter()
+        );
+        let mut out = ToolOutput::ok(
+            text,
+            json!({ "views": names, "mode": mode.name(), "size": size, "images": sizes, "parts": scene.parts.len(), "tris": scene.triangle_count() }),
+        );
+        out.images = pngs;
+        Ok(out)
     }
 
     fn history(&mut self, a: &HistoryArgs) -> Result<ToolOutput, OpError> {
