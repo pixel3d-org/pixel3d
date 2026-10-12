@@ -63,6 +63,8 @@ pub enum Tool {
     Move,
     Rotate,
     Scale,
+    /// Edit Mode: drag a line to cut the faces it crosses.
+    Knife,
 }
 
 /// Whole objects or mesh elements.
@@ -351,7 +353,7 @@ impl PixelApp {
         if picked.is_empty() || mode != Some(self.ui.mode) {
             return Err(t("Select vertices, edges or faces first.").to_owned());
         }
-        let by_id = schema.get("").and_then(Value::as_object).is_some_and(|d| d.values().any(|v| v.pointer("/properties/ids").is_some()));
+        let by_id = has_property(&schema, "ids");
         if !by_id {
             return Err(t("Waits for ops to take picked elements (selectors by element id).").to_owned());
         }
@@ -373,11 +375,79 @@ impl PixelApp {
         if let Some(s) = select {
             params["select"] = s;
         }
+        self.run_element_call(op, params)
+    }
+
+    /// Runs one element op call on the edited mesh, then selects what it
+    /// made, as Blender does: the extruded caps, the inset faces, the split
+    /// faces or the cut edges (from the groups the op created).
+    fn run_element_call(&mut self, op: &str, params: Value) -> Result<Value, String> {
+        let Some(k) = self.edit.object else { return Err(t("nothing to edit").to_owned()) };
+        let before: BTreeSet<String> = self.edit.mesh().map(|m| m.groups().map(|(n, _)| n.to_owned()).collect()).unwrap_or_default();
         let r = self.execute(&[OpCall::new(op, params)]);
-        if let Err(e) = &r {
-            self.set_status(e.clone());
+        match &r {
+            Ok(_) => self.reselect_created(k, &before),
+            Err(e) => self.set_status(e.clone()),
         }
         r
+    }
+
+    /// Selects the elements of the first new group named `*.cap`,
+    /// `*.inner`, `*.faces` or `*.edges`, converted to the current mode.
+    ///
+    /// Complexity: O(groups + group size) plus a conversion as
+    /// [`elements::flush`].
+    fn reselect_created(&mut self, k: ObjectKey, before: &BTreeSet<String>) {
+        let doc = std::sync::Arc::clone(self.session.doc());
+        let Some(mesh) = doc.object(k).and_then(|o| o.mesh_key()).and_then(|m| doc.mesh_arc(m)).cloned() else { return };
+        let mode = self.ui.mode;
+        self.edit.sync(Some(k), Some(&mesh), mode);
+        let created: Vec<(&str, &p3d_mesh::Group)> = mesh.groups().filter(|(n, _)| !before.contains(*n)).collect();
+        for suffix in [".cap", ".inner", ".faces", ".edges"] {
+            if let Some((_, g)) = created.iter().find(|(n, _)| n.ends_with(suffix)) {
+                let kind = match g.kind() {
+                    p3d_mesh::ElementKind::Face => SelectMode::Face,
+                    p3d_mesh::ElementKind::Edge => SelectMode::Edge,
+                    p3d_mesh::ElementKind::Vert => SelectMode::Vert,
+                };
+                self.edit.apply_box(g.iter().collect(), kind, elements::BoxOp::Set);
+                self.edit.sync(Some(k), Some(&mesh), mode);
+                return;
+            }
+        }
+    }
+
+    /// The knife: cuts the faces of the edited mesh that the screen line
+    /// `a`-`b` (points) crosses, along the plane through the line and the
+    /// view direction (`edit.plane_cut` on those faces). Faces turned away
+    /// are left alone unless x-ray is on.
+    ///
+    /// Complexity: O(face corners) to find the crossed faces, plus the op.
+    pub fn knife_cut(&mut self, a: egui::Pos2, b: egui::Pos2) -> Result<Value, String> {
+        let k = self.edit.object.ok_or(t("nothing to edit"))?;
+        let (_, mesh, model) = self.viewport.part_of(k).ok_or(t("nothing to edit"))?;
+        let id = self.doc().object(k).map(|o| o.public_id()).unwrap_or_default();
+        let (cam, r) = (self.viewport.camera, self.viewport.rect);
+        let (oa, da) = cam.ray(a.x - r.left(), a.y - r.top(), r.width(), r.height());
+        let (ob, db) = cam.ray(b.x - r.left(), b.y - r.top(), r.width(), r.height());
+        let normal_w = ((ob + db) - (oa + da)).cross(da).normalize_or_zero();
+        if normal_w == glam::Vec3::ZERO {
+            return Err(t("draw a longer line to cut").to_owned());
+        }
+        let inv = model.inverse();
+        let point = inv.transform_point3(oa + da);
+        let normal = model.transpose().transform_vector3(normal_w).normalize_or_zero();
+        let faces = elements::faces_crossed(&mesh, model, &cam, r, a, b, self.ui.view.xray);
+        if faces.is_empty() {
+            return Err(t("the line crosses no face").to_owned());
+        }
+        let params = json!({
+            "target": id,
+            "select": { "faces": { "ids": faces } },
+            "point": point.to_array(),
+            "normal": normal.to_array(),
+        });
+        self.run_element_call("edit.plane_cut", params)
     }
 
     /// A box selection: elements of the edited mesh in edit mode (hidden
@@ -465,6 +535,9 @@ impl PixelApp {
             self.ui.element_mode = mode;
         }
         self.ui.mode = mode;
+        if !mode.is_edit() && self.ui.tool == Tool::Knife {
+            self.ui.tool = Tool::Select;
+        }
         // Follow the edited mesh now, so commands right after see it.
         if mode.is_edit() {
             let doc = std::sync::Arc::clone(self.session.doc());
@@ -660,7 +733,12 @@ impl PixelApp {
             }
             "edit.element_op" => {
                 let op = params.get("op").and_then(Value::as_str).ok_or("op is required")?.to_owned();
-                self.run_element_op(&op)
+                let r = self.run_element_op(&op)?;
+                // Rip Region: the split part follows the pointer next.
+                if params.get("then").and_then(Value::as_str) == Some("move") {
+                    self.ui.tool = Tool::Move;
+                }
+                Ok(r)
             }
             "edit.new_collection" => {
                 let members = self.selected_targets();
@@ -792,6 +870,9 @@ impl PixelApp {
             }
             "ui.tool" => {
                 let tool = serde_json::from_value::<Tool>(params.get("tool").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
+                if tool == Tool::Knife && !self.ui.mode.is_edit() {
+                    return Err(t("The knife works in Edit Mode (Tab).").to_owned());
+                }
                 self.ui.tool = tool;
                 Ok(json!({ "tool": tool }))
             }
@@ -1014,6 +1095,11 @@ impl PixelApp {
                     (None, true) => {}
                 },
                 ViewportEvent::BoxSelect { area, op } => self.box_select(area, op),
+                ViewportEvent::KnifeCut { a, b } => {
+                    if let Err(e) = self.knife_cut(a, b) {
+                        self.set_status(e);
+                    }
+                }
                 ViewportEvent::PlaceCursor { at } => {
                     let p = self.viewport.surface_at(at).unwrap_or_else(|| self.viewport.ground_at(at));
                     self.ui.transform.cursor = p.to_array();
@@ -1146,6 +1232,7 @@ impl PixelApp {
                     _ => None,
                 };
                 self.viewport.pick_elements = element_mode && self.edit.object.is_some();
+                self.viewport.knife = element_mode && self.ui.tool == Tool::Knife;
                 let view_rect = chrome::viewport_header(self, ui, ui.max_rect());
                 viewport_events = ui
                     .scope_builder(egui::UiBuilder::new().max_rect(view_rect), |ui| {
@@ -1184,9 +1271,71 @@ impl PixelApp {
     }
 }
 
+/// Whether some object schema in `schema` (at any depth, `$defs` included)
+/// has a property named `name`.
+///
+/// Complexity: O(schema size).
+fn has_property(schema: &Value, name: &str) -> bool {
+    match schema {
+        Value::Object(map) => {
+            map.get("properties").and_then(Value::as_object).is_some_and(|p| p.contains_key(name)) || map.values().any(|v| has_property(v, name))
+        }
+        Value::Array(items) => items.iter().any(|v| has_property(v, name)),
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A box in Edit Mode, face select, with the viewport scene built.
+    fn editing_box() -> (PixelApp, ObjectKey) {
+        let mut a = PixelApp::new(Session::new(), Services::default());
+        a.run("prim.box", json!({ "name": "crate" })).unwrap();
+        let k = a.doc().resolve("crate").unwrap();
+        a.run("ui.mode", json!({ "mode": "face" })).unwrap();
+        let doc = std::sync::Arc::clone(a.session.doc());
+        a.viewport.scene(&doc, a.scene_key(), &BTreeSet::new());
+        (a, k)
+    }
+
+    #[test]
+    fn element_ops_run_on_the_picked_elements_and_select_the_result() {
+        let (mut a, k) = editing_box();
+        assert!(a.element_op_state("edit.extrude").is_err(), "nothing picked yet");
+        let face = a.doc().object_mesh(k).and_then(|m| m.faces().next()).unwrap();
+        a.edit.click(Some(face), false);
+        assert_eq!(a.element_op_state("edit.extrude"), Ok(Some(json!({ "faces": { "ids": [face] } }))));
+        let faces = a.doc().object_mesh(k).map(|m| m.face_count()).unwrap();
+        a.run("edit.element_op", json!({ "op": "edit.extrude" })).unwrap();
+        assert_eq!(a.doc().object_mesh(k).map(|m| m.face_count()), Some(faces + 4), "four side walls");
+        // The extruded cap is selected, as in Blender.
+        let (picked, mode) = a.edit.picked();
+        let cap =
+            a.doc().object_mesh(k).and_then(|m| m.groups().find(|(n, _)| n.ends_with(".cap")).map(|(_, g)| g.iter().collect::<BTreeSet<u32>>()));
+        assert_eq!((Some(picked.clone()), mode), (cap, Some(SelectMode::Face)));
+        // Rip: split the selection, then move it.
+        a.run("edit.element_op", json!({ "op": "edit.split", "then": "move" })).unwrap();
+        assert_eq!(a.ui.tool, Tool::Move);
+        assert!(!a.edit.picked().0.is_empty());
+    }
+
+    #[test]
+    fn the_knife_cuts_the_faces_its_line_crosses() {
+        let (mut a, k) = editing_box();
+        a.viewport.rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 400.0));
+        a.viewport.camera.set_view(p3d_render::ViewKind::Front);
+        let (lo, hi) = a.doc().object_mesh(k).and_then(|m| m.bounds()).unwrap();
+        a.viewport.camera.frame(lo, hi, 1.0);
+        a.run("ui.mode", json!({ "mode": "edge" })).unwrap();
+        let faces = a.doc().object_mesh(k).map(|m| m.face_count()).unwrap();
+        // A vertical line through the middle of the front face, past its edges.
+        a.knife_cut(egui::pos2(200.0, 20.0), egui::pos2(200.0, 380.0)).unwrap();
+        assert_eq!(a.doc().object_mesh(k).map(|m| m.face_count()), Some(faces + 1), "the front face is cut in two");
+        assert!(!a.edit.picked().0.is_empty(), "the cut edges are selected");
+        assert!(a.knife_cut(egui::pos2(1.0, 1.0), egui::pos2(3.0, 2.0)).is_err(), "a line that crosses nothing");
+    }
 
     fn app() -> PixelApp {
         PixelApp::new(Session::new(), Services::default())

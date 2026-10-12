@@ -108,6 +108,8 @@ pub struct ViewportState {
     pub edit_overlay: Option<(Arc<p3d_render::EditOverlay>, u64)>,
     /// Clicks pick vertices, edges or faces instead of objects.
     pub pick_elements: bool,
+    /// Drags draw a knife line instead of a selection box.
+    pub knife: bool,
     /// The box being dragged (start and current corner, points).
     marquee: Option<(egui::Pos2, egui::Pos2)>,
     /// Ray-cast structures of the meshes hit-tested so far, by mesh.
@@ -149,6 +151,7 @@ impl Default for ViewportState {
             rect: Rect::NOTHING,
             edit_overlay: None,
             pick_elements: false,
+            knife: false,
             marquee: None,
             bvhs: BTreeMap::new(),
             size_px: [0, 0],
@@ -174,6 +177,8 @@ pub enum ViewportEvent {
     BoxSelect { area: Rect, op: crate::elements::BoxOp },
     /// Shift+right-click at `at` (points): place the 3D cursor there.
     PlaceCursor { at: egui::Pos2 },
+    /// A line dragged with the knife from `a` to `b` (points).
+    KnifeCut { a: egui::Pos2, b: egui::Pos2 },
 }
 
 /// GPU resources stored in egui_wgpu's callback resources.
@@ -541,7 +546,7 @@ impl ViewportState {
             } else {
                 BoxOp::Set
             };
-            events.push(ViewportEvent::BoxSelect { area: Rect::from_two_pos(a, b), op });
+            events.push(if self.knife { ViewportEvent::KnifeCut { a, b } } else { ViewportEvent::BoxSelect { area: Rect::from_two_pos(a, b), op } });
         }
         self.poll_pick(&cache, &mut events);
 
@@ -611,8 +616,16 @@ impl ViewportState {
         }
         if let Some((a, b)) = self.marquee {
             let tk = crate::theme::Tokens::get();
-            let r = Rect::from_two_pos(a, b).intersect(rect);
-            ui.painter().rect(r, 2.0, tk.window_fill, egui::Stroke::new(1.0, tk.window_stroke), egui::StrokeKind::Inside);
+            if self.knife {
+                // The knife line, dashed, with its ends marked.
+                let p = ui.painter_at(rect);
+                p.extend(egui::Shape::dashed_line(&[a, b], egui::Stroke::new(1.5, tk.element_selected), 6.0, 4.0));
+                p.circle_filled(a, 3.0, tk.element_selected);
+                p.circle_filled(b, 3.0, tk.element_selected);
+            } else {
+                let r = Rect::from_two_pos(a, b).intersect(rect);
+                ui.painter().rect(r, 2.0, tk.window_fill, egui::Stroke::new(1.0, tk.window_stroke), egui::StrokeKind::Inside);
+            }
         }
         let now = std::time::Instant::now();
         if let Some(prev) = self.last_frame.replace(now) {

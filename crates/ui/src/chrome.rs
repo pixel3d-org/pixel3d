@@ -55,6 +55,18 @@ fn never(_: &PixelApp) -> bool {
 }
 
 macro_rules! item {
+    (op $icon:ident, $op:literal, $label:literal, $keys:literal, $desc:literal, then $then:literal) => {
+        Item {
+            icon: Icon::$icon,
+            command: "edit.element_op",
+            label: $label,
+            keys: $keys,
+            desc: $desc,
+            params: || json!({ "op": $op, "then": $then }),
+            selected: never,
+            needs_selection: false,
+        }
+    };
     (op $icon:ident, $op:literal, $label:literal, $keys:literal, $desc:literal) => {
         Item {
             icon: Icon::$icon,
@@ -120,11 +132,19 @@ fn edit_tools() -> Vec<Item> {
         item!(op Inset, "edit.inset", "Inset", "I", "Shrink the selected faces inward, with a ring of new faces"),
         item!(op Bevel, "edit.bevel", "Bevel", "Ctrl+B", "Round off the selected edges or vertices"),
         item!(op LoopCut, "edit.loop_cut", "Loop Cut", "Ctrl+R", "Cut a loop across the ring of quads of each selected edge"),
-        item!(op Knife, "edit.knife", "Knife", "K", "Cut new edges across faces"),
+        item!(
+            Knife,
+            "ui.tool",
+            "Knife",
+            "K",
+            "Drag a line across faces to cut them (x-ray cuts through to the back)",
+            || json!({ "tool": "knife" }),
+            |a| a.ui.tool == Tool::Knife
+        ),
         item!(op Smooth, "edit.smooth", "Smooth", "", "Relax the selected vertices (the whole mesh when none)"),
         item!(op EdgeSlide, "edit.edge_slide", "Edge Slide", "", "Slide the selected edges along their neighbors"),
         item!(op ShrinkFatten, "edit.shrink_fatten", "Shrink/Fatten", "Alt+S", "Move the selected vertices along their normals"),
-        item!(op Rip, "edit.rip", "Rip Region", "V", "Tear the selection free from the faces around it"),
+        item!(op Rip, "edit.split", "Rip Region", "V", "Tear the selected faces free, then move them with the gizmo", then "move"),
     ]
 }
 
@@ -428,6 +448,7 @@ pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
             Tool::Move => (t("Move"), t("Drag the gizmo arrows to move the selection.")),
             Tool::Rotate => (t("Rotate"), t("Drag the gizmo rings to rotate the selection.")),
             Tool::Scale => (t("Scale"), t("Drag the gizmo handles to scale the selection.")),
+            Tool::Knife => (t("Knife"), t("Drag a line across faces to cut them; with x-ray the cut goes through to the back.")),
         };
         let g = ui.painter().layout_no_wrap(name.to_owned(), egui::FontId::proportional(13.0), tk.text);
         let w = g.size().x;
@@ -914,9 +935,8 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
             (KeyboardShortcut::new(Modifiers::NONE, Key::I), "edit.inset"),
             (KeyboardShortcut::new(cmd, Key::B), "edit.bevel"),
             (KeyboardShortcut::new(cmd, Key::R), "edit.loop_cut"),
-            (KeyboardShortcut::new(Modifiers::NONE, Key::K), "edit.knife"),
             (KeyboardShortcut::new(Modifiers::ALT, Key::S), "edit.shrink_fatten"),
-            (KeyboardShortcut::new(Modifiers::NONE, Key::V), "edit.rip"),
+            (KeyboardShortcut::new(Modifiers::NONE, Key::V), "edit.split"),
             (KeyboardShortcut::new(Modifiers::NONE, Key::M), "edit.merge"),
             (KeyboardShortcut::new(cmd, Key::T), "edit.triangulate"),
             (KeyboardShortcut::new(Modifiers::NONE, Key::Y), "edit.split"),
@@ -925,6 +945,9 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
             if ctx.input_mut(|i| i.consume_shortcut(shortcut)) {
                 let _ = app.run("edit.element_op", json!({ "op": op }));
             }
+        }
+        if ctx.input_mut(|i| i.consume_shortcut(&KeyboardShortcut::new(Modifiers::NONE, Key::K))) {
+            let _ = app.run("ui.tool", json!({ "tool": "knife" }));
         }
     }
     for (shortcut, command, params) in table {

@@ -300,6 +300,49 @@ pub fn box_pick(mesh: &Mesh, bvh: &TriBvh, model: Mat4, camera: &OrbitCamera, re
     }
 }
 
+/// Whether the screen segments `a`-`b` and `c`-`d` cross.
+fn segments_cross(a: Pos2, b: Pos2, c: Pos2, d: Pos2) -> bool {
+    let side = |p: Pos2, q: Pos2, r: Pos2| (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    let (d1, d2) = (side(a, b, c), side(a, b, d));
+    let (d3, d4) = (side(c, d, a), side(c, d, b));
+    d1 * d2 < 0.0 && d3 * d4 < 0.0
+}
+
+/// Faces whose outline on screen the segment `a`-`b` (points) crosses;
+/// unless `through`, only faces turned toward the camera.
+///
+/// Complexity: O(face corners).
+#[allow(clippy::too_many_arguments)] // the picking context, like `pick`
+pub fn faces_crossed(mesh: &Mesh, model: Mat4, camera: &OrbitCamera, rect: Rect, a: Pos2, b: Pos2, through: bool) -> Vec<u32> {
+    let vp = camera.view_proj(rect.width() / rect.height().max(1.0));
+    let inv = model.inverse();
+    let eye = inv.transform_point3(camera.eye());
+    let toward = inv.transform_vector3(camera.toward());
+    let normals = mesh.face_normals();
+    let mut corners: Vec<Pos2> = Vec::new();
+    mesh.faces()
+        .filter(|&f| {
+            let pos = |v: u32| mesh.positions.get(v as usize).copied().unwrap_or(Vec3::ZERO);
+            if !through {
+                let n = normals.get(f as usize).copied().unwrap_or(Vec3::ZERO);
+                let to_eye = if camera.ortho { toward } else { eye - mesh.face_verts(f).next().map_or(Vec3::ZERO, pos) };
+                if n.dot(to_eye) <= 0.0 {
+                    return false;
+                }
+            }
+            corners.clear();
+            for v in mesh.face_verts(f) {
+                match project(vp, rect, model.transform_point3(pos(v))) {
+                    Some(p) => corners.push(p),
+                    None => return false,
+                }
+            }
+            let n = corners.len();
+            n >= 3 && (0..n).any(|i| segments_cross(a, b, corners[i], corners[(i + 1) % n]))
+        })
+        .collect()
+}
+
 /// The element of `mode` under `at` (points) on `mesh` drawn with `model`.
 /// The ray picks the face under the pointer; vertex and edge modes take
 /// that face's nearest vertex or edge on screen. When the ray misses, the

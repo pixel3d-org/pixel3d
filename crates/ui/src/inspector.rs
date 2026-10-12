@@ -108,6 +108,7 @@ fn tool_tab(app: &mut PixelApp, ui: &mut egui::Ui) {
             crate::Tool::Move => t("Move"),
             crate::Tool::Rotate => t("Rotate"),
             crate::Tool::Scale => t("Scale"),
+            crate::Tool::Knife => t("Knife"),
         };
         info(ui, t("Tool"), name);
         info(ui, t("Mode"), app.ui.mode.label());
