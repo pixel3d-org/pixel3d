@@ -622,6 +622,50 @@ fn catmull_clark_subdivides_and_guards_the_budget() {
 }
 
 #[test]
+fn deformers_move_vertices() {
+    let mut tx = edit_fixture();
+    let key = tx.doc().resolve("post").unwrap();
+    let before = tx.doc().object_mesh(key).unwrap().positions.clone();
+    ok(&mut tx, "deform.twist", json!({ "target": "post", "angle": 90 }));
+    ok(&mut tx, "deform.taper", json!({ "target": "post", "factor": 0.5 }));
+    ok(&mut tx, "deform.bend", json!({ "target": "post", "angle": 30, "toward": "z" }));
+    ok(&mut tx, "deform.displace", json!({ "target": "post", "strength": "5mm", "seed": 3 }));
+    assert_ne!(tx.doc().object_mesh(key).unwrap().positions, before);
+    assert!(topo(&tx, "post").is_watertight());
+    let e = err(&mut tx, "deform.bend", json!({ "target": "post", "axis": "x", "toward": "x" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/toward")));
+    let e = err(&mut tx, "deform.displace", json!({ "target": "post", "octaves": 9 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/octaves")));
+}
+
+#[test]
+fn element_transforms_by_ids_with_proportional_editing() {
+    let mut tx = edit_fixture();
+    let key = tx.doc().resolve("tiles").unwrap();
+    let center = {
+        let m = tx.doc().object_mesh(key).unwrap();
+        m.verts().find(|&v| m.positions[v as usize].length() < 1e-6).unwrap()
+    };
+    let a = run(
+        &mut tx,
+        "edit.transform",
+        json!({ "target": "tiles", "select": { "verts": { "ids": [center] } }, "translate": [0, 0.5, 0], "proportional": { "radius": 0.8, "falloff": "sphere" } }),
+    )
+    .unwrap();
+    assert!(a.output.summary.contains("+8 by proportional editing"), "{}", a.output.summary);
+    let m = tx.doc().object_mesh(key).unwrap();
+    assert_eq!(m.positions[center as usize].y, 0.5);
+    let e = err(&mut tx, "edit.transform", json!({ "target": "tiles", "select": { "verts": { "ids": [9999] } } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select/verts/ids/0")));
+    let e = err(&mut tx, "edit.transform", json!({ "target": "tiles", "select": { "verts": {} }, "axes": [[1, 0, 0], [2, 0, 0], [0, 0, 1]] }));
+    assert_eq!(e.path.as_deref(), Some("/axes"));
+    // A knife cut through the crate's front face only: the sides gain the cut points.
+    ok(&mut tx, "edit.plane_cut", json!({ "target": "crate", "point": [0, "30cm", 0], "select": { "faces": { "group": "front" } } }));
+    assert!(topo(&tx, "crate").is_watertight());
+    ok(&mut tx, "edit.shrink_fatten", json!({ "target": "crate", "select": { "faces": { "group": "top" } }, "distance": "1cm" }));
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

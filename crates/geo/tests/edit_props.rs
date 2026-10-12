@@ -195,7 +195,7 @@ proptest! {
         let center = m.bounds().map_or(glam::Vec3::ZERO, |(lo, hi)| (lo + hi) / 2.0);
         let keep = [Keep::Both, Keep::Above, Keep::Below][keep];
         let mut c = m.clone();
-        let r = plane_cut(&mut c, &PlaneCutSpec { point: center, normal, keep, fill });
+        let r = plane_cut(&mut c, &PlaneCutSpec { point: center, normal, keep, fill }, None);
         prop_assert!(r.is_ok(), "{:?}", r);
         prop_assert_eq!(c.validate(), Ok(()));
         if keep != Keep::Both {
@@ -262,5 +262,48 @@ proptest! {
         prop_assert!(s.faces().all(|f| s.face_len(f) == 4));
         let euler = |x: &Mesh| x.vert_count() as i64 - x.edge_count() as i64 + x.face_count() as i64;
         prop_assert_eq!(euler(&s), euler(&m), "topology type is kept");
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn deformers_keep_topology(m in strategy::mesh(), angle in -3.0f32..3.0, factor in 0.0f32..2.0, seed in any::<u64>()) {
+        use p3d_geo::deform::{DeformAxis, DisplaceSpec, bend, displace, taper, twist};
+        let all: Vec<u32> = m.verts().collect();
+        let mut n = m.clone();
+        twist(&mut n, &all, DeformAxis::Y, angle).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        taper(&mut n, &all, DeformAxis::X, factor).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        bend(&mut n, &all, DeformAxis::Z, DeformAxis::Y, angle).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        displace(&mut n, &all, &DisplaceSpec { strength: 0.01, scale: 0.1, seed, octaves: 2 }).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(n.validate(), Ok(()));
+        prop_assert_eq!((n.vert_count(), n.edge_count(), n.face_count()), (m.vert_count(), m.edge_count(), m.face_count()));
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn element_transforms_keep_topology(m in strategy::mesh(), picks in prop::collection::vec(any::<u32>(), 1..10), radius in 0.01f32..1.0, connected in any::<bool>(), factor in -1.0f32..1.0) {
+        use p3d_geo::edit::{Falloff, Pivot, Proportional, TransformSpec, edge_slide, shrink_fatten, transform_verts};
+        let live: Vec<u32> = m.verts().collect();
+        let verts: Vec<u32> = picks.iter().map(|&p| live[p as usize % live.len()]).collect();
+        let mut n = m.clone();
+        let spec = TransformSpec {
+            translate: glam::Vec3::new(0.1, 0.2, -0.1),
+            rotate: glam::Quat::from_rotation_y(0.4),
+            scale: glam::Vec3::splat(0.8),
+            pivot: Pivot::Individual,
+            proportional: Some(Proportional { radius, falloff: Falloff::Smooth, connected_only: connected, seed: 1 }),
+            ..TransformSpec::default()
+        };
+        transform_verts(&mut n, &verts, &spec).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        shrink_fatten(&mut n, &verts, 0.01, true).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        let edges: Vec<u32> = { let le: Vec<u32> = n.edges().collect(); picks.iter().map(|&p| le[p as usize % le.len()]).collect() };
+        edge_slide(&mut n, &edges, factor).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(n.validate(), Ok(()));
+        prop_assert_eq!((n.vert_count(), n.edge_count(), n.face_count()), (m.vert_count(), m.edge_count(), m.face_count()));
     }
 }

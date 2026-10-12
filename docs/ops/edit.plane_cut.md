@@ -7,9 +7,9 @@ Cuts the mesh along a plane, optionally removing one side and capping the openin
 - Version: 1
 - Complexity: O(V + F + C) to classify, plus O(c log c) for the corners of cut and removed faces
 - Flags: undoable, creates_groups
-- Also known as: bisect, plane cut, slice, knife project plane, polyCut, cut in half
+- Also known as: bisect, plane cut, slice, knife, knife project, polyCut, cut in half
 
-Every face crossing the plane is split along it (new vertices where edges cross; concave faces are triangulated first). With `keep: "above"` or `"below"` the other side is deleted, and `fill` closes the resulting holes with flat caps. The cut edges are `<label>.edges`, caps `<label>.cap`.
+Every face crossing the plane is split along it (new vertices where edges cross; concave faces are triangulated first). With `keep: "above"` or `"below"` the other side is deleted, and `fill` closes the resulting holes with flat caps. With `select` only those faces are cut and their neighbours gain the crossing points (a knife cut through part of the surface). The cut edges are `<label>.edges`, caps `<label>.cap`.
 
 **Use for** cutting a shape in half (then `edit.symmetrize` or mirror), flattening a base so a prop stands, adding an edge loop at an exact height, trimming terrain or architecture at a level.
 
@@ -21,6 +21,7 @@ Every face crossing the plane is split along it (new vertices where edges cross;
 | `keep` | `KeepParam` | `"both"` | `both` (default), `above` (the side the normal points to) or `below`. |
 | `normal` | `[number, number, number]` | `[0.0,1.0,0.0]` | Plane normal in object space; [0, 1, 0] cuts horizontally. |
 | `point` | `[Length, Length, Length]` | `[0.0,0.0,0.0]` | A point on the plane, in object space. |
+| `select` | `Selector \| null` | - | Cut only these faces (a knife cut); neighbours gain the crossing points. All faces when omitted. |
 | `target` | `string` | required | Mesh object (name, path or id). |
 
 ## Examples

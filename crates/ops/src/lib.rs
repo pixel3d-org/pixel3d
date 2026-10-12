@@ -7,8 +7,10 @@
 
 pub mod catalog;
 mod common;
+pub mod deform;
 mod dynop;
 pub mod edit;
+pub mod element;
 mod error;
 pub mod expect;
 mod op;

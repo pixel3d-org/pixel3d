@@ -61,11 +61,13 @@ fn side(d: f32, eps: f32) -> i8 {
 /// Cuts every face that crosses the plane in two along it, with new vertices
 /// where edges cross (shared by the faces on both sides). Faces that cross
 /// it more than once (concave faces) are triangulated first. Optionally
-/// deletes one side and caps the holes left on the plane.
+/// deletes one side and caps the holes left on the plane. With `only`, just
+/// those faces are cut (a knife cut); neighbours sharing a cut edge gain the
+/// crossing point as a corner so no crack opens.
 ///
 /// Complexity: O(V + F + C) to classify, plus O(c log c) for the c corners
 /// of the faces cut or removed.
-pub fn plane_cut(mesh: &mut Mesh, spec: &PlaneCutSpec) -> Result<PlaneCutResult, KernelError> {
+pub fn plane_cut(mesh: &mut Mesh, spec: &PlaneCutSpec, only: Option<&[u32]>) -> Result<PlaneCutResult, KernelError> {
     let n = spec.normal;
     if !(n.is_finite() && n.length_squared() > 1e-12 && spec.point.is_finite()) {
         return Err(KernelError::OutOfRange {
@@ -83,8 +85,17 @@ pub fn plane_cut(mesh: &mut Mesh, spec: &PlaneCutSpec) -> Result<PlaneCutResult,
     let mut cross: FxHashMap<u64, u32> = FxHashMap::default();
     let mut result = PlaneCutResult::default();
     let mut chords: Vec<(u32, u32)> = Vec::new();
-    let faces: Vec<u32> = mesh.faces().collect();
-    for f in faces {
+    let faces: Vec<u32> = match only {
+        Some(list) => {
+            let mut l: Vec<u32> = list.iter().copied().filter(|&f| mesh.is_face_alive(f)).collect();
+            l.sort_unstable();
+            l.dedup();
+            l
+        }
+        None => mesh.faces().collect(),
+    };
+    let considered = super::face_bits(mesh, &faces);
+    for &f in &faces {
         let sides: Vec<i8> = mesh.face_verts(f).map(|v| side(dist(v), eps)).collect();
         let (has_pos, has_neg) = (sides.contains(&1), sides.contains(&-1));
         let removed_side = match spec.keep {
@@ -180,6 +191,35 @@ pub fn plane_cut(mesh: &mut Mesh, spec: &PlaneCutSpec) -> Result<PlaneCutResult,
             chords.push((ring[i].0, ring[j].0));
         }
     }
+    // Faces left out of a restricted cut gain the crossing points on the
+    // edges they share with cut faces.
+    if only.is_some() {
+        let mut touched: Vec<u32> = cross
+            .keys()
+            .filter_map(|&k| mesh.find_halfedge((k >> 32) as u32, k as u32))
+            .flat_map(|h| mesh.edge_faces(h >> 1))
+            .flatten()
+            .filter(|&g| !considered.contains(g as usize))
+            .collect();
+        touched.sort_unstable();
+        touched.dedup();
+        for g in touched {
+            let mut vs = Vec::new();
+            let mut src = Vec::new();
+            for h in mesh.face_halfedges(g) {
+                let (a, b) = (mesh.origin(h), mesh.dest(h));
+                vs.push(a);
+                src.push(CornerSrc::copy(h));
+                if let Some(&v) = cross.get(&((u64::from(a.min(b)) << 32) | u64::from(a.max(b)))) {
+                    let (da, db) = (dist(a), dist(b));
+                    vs.push(v);
+                    src.push(CornerSrc::lerp(h, mesh.next(h), da / (da - db)));
+                }
+            }
+            p.remove_face(g);
+            p.add_face(&vs, &src, mesh.face_material(g), Some(g));
+        }
+    }
     let r = mesh.apply_patch(&p)?;
     let id = |v: u32| if p.is_new_vert(v) { r.verts[p.new_vert_index(v)] } else { v };
     let mut edges: Vec<u32> = chords.iter().filter_map(|&(a, b)| mesh.find_halfedge(id(a), id(b)).map(|h| h >> 1)).collect();
@@ -245,7 +285,7 @@ pub struct SymmetrizeResult {
 /// Complexity: O(V + F + C) plus the weld's O(n log n) on the seam.
 pub fn symmetrize(mesh: &mut Mesh, axis: Axis, keep_positive: bool, weld: f32) -> Result<SymmetrizeResult, KernelError> {
     let n = axis.unit() * if keep_positive { 1.0 } else { -1.0 };
-    plane_cut(mesh, &PlaneCutSpec { point: Vec3::ZERO, normal: n, keep: Keep::Above, fill: false })?;
+    plane_cut(mesh, &PlaneCutSpec { point: Vec3::ZERO, normal: n, keep: Keep::Above, fill: false }, None)?;
     mesh.compact();
     if mesh.face_count() == 0 {
         return Err(KernelError::Empty("nothing lies on the kept side of the mirror plane".into()));
@@ -291,12 +331,12 @@ mod tests {
     #[test]
     fn cutting_a_box_in_half() {
         let mut m = cuboid(&BoxSpec { size: DVec3::ONE, ..BoxSpec::default() }, Origin::Center).unwrap();
-        let r = plane_cut(&mut m, &PlaneCutSpec { point: Vec3::ZERO, normal: Vec3::Y, keep: Keep::Both, fill: false }).unwrap();
+        let r = plane_cut(&mut m, &PlaneCutSpec { point: Vec3::ZERO, normal: Vec3::Y, keep: Keep::Both, fill: false }, None).unwrap();
         m.validate().unwrap();
         assert_eq!((r.faces_cut, r.edges.len(), m.face_count()), (4, 4, 10));
         assert!(m.edges().all(|e| !m.is_boundary_edge(e)));
         // Keep the top half and cap it.
-        let r = plane_cut(&mut m, &PlaneCutSpec { point: Vec3::ZERO, normal: Vec3::Y, keep: Keep::Above, fill: true }).unwrap();
+        let r = plane_cut(&mut m, &PlaneCutSpec { point: Vec3::ZERO, normal: Vec3::Y, keep: Keep::Above, fill: true }, None).unwrap();
         m.validate().unwrap();
         assert_eq!((r.faces_removed, r.caps.len()), (5, 1));
         let (lo, hi) = m.bounds().unwrap();
@@ -306,10 +346,25 @@ mod tests {
     }
 
     #[test]
+    fn knife_cut_of_selected_faces_only() {
+        use crate::prim::{PlaneSpec, plane};
+        // Two quads side by side; cut only the left one along z = 0.
+        let mut m = plane(&PlaneSpec { size_x: 2.0, size_z: 1.0, segments_x: 2, segments_z: 1 }).unwrap();
+        let left = m.faces().find(|&f| m.face_centroid(f).x < 0.0).unwrap();
+        let r = plane_cut(&mut m, &PlaneCutSpec { point: Vec3::ZERO, normal: Vec3::Z, keep: Keep::Both, fill: false }, Some(&[left])).unwrap();
+        m.validate().unwrap();
+        assert_eq!((r.faces_cut, r.edges.len(), m.face_count()), (1, 1, 3));
+        // The right quad shares the middle edge: it gained the crossing point.
+        assert_eq!(m.faces().filter(|&f| m.face_len(f) == 5).count(), 1);
+        // Six border edges, plus one where the cut splits the left border.
+        assert_eq!(m.edges().filter(|&e| m.is_boundary_edge(e)).count(), 7, "no crack");
+    }
+
+    #[test]
     fn slanted_cut_through_a_sphere() {
         let mut m = quad_sphere(&QuadSphereSpec { radius: 1.0, segments: 6 }, Origin::Center).unwrap();
         let normal = Vec3::new(1.0, 2.0, 0.5);
-        let r = plane_cut(&mut m, &PlaneCutSpec { point: Vec3::new(0.0, 0.1, 0.0), normal, keep: Keep::Below, fill: true }).unwrap();
+        let r = plane_cut(&mut m, &PlaneCutSpec { point: Vec3::new(0.0, 0.1, 0.0), normal, keep: Keep::Below, fill: true }, None).unwrap();
         m.validate().unwrap();
         assert_eq!(r.caps.len(), 1);
         assert!(m.edges().all(|e| !m.is_boundary_edge(e)));

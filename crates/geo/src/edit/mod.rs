@@ -12,6 +12,7 @@ mod merge;
 mod plane;
 mod shell;
 mod split;
+mod transform;
 
 pub use bevel::{BevelResult, BevelSpec, MAX_BEVEL_SEGMENTS, bevel};
 pub use dissolve::{DissolveResult, STRAIGHT_DEG, dissolve_edges, dissolve_faces, dissolve_limited, dissolve_verts};
@@ -23,6 +24,7 @@ pub use merge::{MergeMode, MergeResult, merge, merge_by_distance};
 pub use plane::{Axis, Keep, PlaneCutResult, PlaneCutSpec, SymmetrizeResult, plane_cut, symmetrize};
 pub use shell::{MAX_SMOOTH_ITERATIONS, SmoothSpec, ThickenResult, ThickenSpec, smooth, thicken};
 pub use split::{MAX_SUBDIVIDE_LEVELS, SplitResult, SubdivideResult, split, subdivide};
+pub use transform::{Falloff, Pivot, Proportional, TransformResult, TransformSpec, edge_slide, shrink_fatten, transform_verts};
 
 use glam::Vec3;
 use p3d_mesh::{EdgeFlags, EditError, FixedBitSet, Mesh, Patch};

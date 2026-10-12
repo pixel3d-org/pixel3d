@@ -891,6 +891,18 @@ expression: tools
                     "null"
                   ]
                 },
+                "ids": {
+                  "description": "Element indices, valid only at the mesh revision they were read at\n(interactive selections in the app; prefer groups and filters).",
+                  "items": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
                 "in_box": {
                   "anyOf": [
                     {

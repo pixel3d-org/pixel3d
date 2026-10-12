@@ -105,6 +105,53 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Deformers over every vertex.
+    let mut g = c.benchmark_group("scale_deform_bend");
+    for (t, m) in &spheres {
+        let all: Vec<u32> = m.verts().collect();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &all, |b, all| {
+            b.iter_batched(
+                || m.clone(),
+                |mut x| p3d_geo::deform::bend(&mut x, all, p3d_geo::deform::DeformAxis::Y, p3d_geo::deform::DeformAxis::X, 1.0),
+                BatchSize::LargeInput,
+            )
+        });
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_deform_displace");
+    for (t, m) in &spheres {
+        let all: Vec<u32> = m.verts().collect();
+        let spec = p3d_geo::deform::DisplaceSpec { strength: 0.01, scale: 0.1, seed: 1, octaves: 3 };
+        g.bench_with_input(BenchmarkId::from_parameter(t), &all, |b, all| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::deform::displace(&mut x, all, &spec), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
+    // Element transform with proportional editing: a tenth of the vertices
+    // selected, the rest within reach follow (straight distances, k-d tree).
+    let mut g = c.benchmark_group("scale_edit_transform_proportional");
+    for (t, m) in &spheres {
+        let sel: Vec<u32> = m.verts().step_by(10).collect();
+        let spec = p3d_geo::edit::TransformSpec {
+            translate: Vec3::Y * 0.01,
+            proportional: Some(p3d_geo::edit::Proportional { radius: 0.05, falloff: p3d_geo::edit::Falloff::Smooth, connected_only: false, seed: 0 }),
+            ..p3d_geo::edit::TransformSpec::default()
+        };
+        g.bench_with_input(BenchmarkId::from_parameter(t), &sel, |b, sel| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::edit::transform_verts(&mut x, sel, &spec), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_edit_edge_slide");
+    for (t, m) in &spheres {
+        let edges: Vec<u32> = m.edges().step_by(7).collect();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &edges, |b, edges| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::edit::edge_slide(&mut x, edges, 0.3), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
     // One level of Catmull-Clark subdivision.
     let mut g = c.benchmark_group("scale_subd_catmull_clark");
     for (t, m) in &spheres {

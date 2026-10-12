@@ -69,6 +69,9 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`edit.thicken`](edit.thicken.md) | Gives surfaces a wall thickness: an offset back side joined to the front along open borders. |
 | [`edit.smooth`](edit.smooth.md) | Smooths vertex positions without shrinking the shape (Taubin smoothing). |
 | [`edit.bevel`](edit.bevel.md) | Rounds or chamfers edges: each edge becomes a strip of faces `width` wide, with caps where strips meet or end. |
+| [`edit.transform`](edit.transform.md) | Moves, rotates and scales selected vertices, edges or faces of a mesh, optionally with proportional editing. |
+| [`edit.shrink_fatten`](edit.shrink_fatten.md) | Moves vertices along their normals: positive fattens (outward), negative shrinks. |
+| [`edit.edge_slide`](edit.edge_slide.md) | Slides edges (an edge loop) along the surface toward the neighbouring edges on one side. |
 | [`edit.fill`](edit.fill.md) | Closes holes (loops of boundary edges) with one face each. |
 | [`edit.recalc_normals`](edit.recalc_normals.md) | Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way. |
 | [`edit.delete_elements`](edit.delete_elements.md) | Deletes the selected faces (or every face using the selected edges or vertices) and anything left unused. |
@@ -90,6 +93,15 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | Op | Summary |
 |---|---|
 | [`subd.catmull_clark`](subd.catmull_clark.md) | Smooths the whole mesh by Catmull-Clark subdivision, keeping creased edges sharp. |
+
+## deform
+
+| Op | Summary |
+|---|---|
+| [`deform.bend`](deform.bend.md) | Curls a shape along an axis onto a circular arc, turning by an angle over its length. |
+| [`deform.twist`](deform.twist.md) | Twists a shape around an axis, from no turn at its low end to `angle` at its high end. |
+| [`deform.taper`](deform.taper.md) | Scales a shape toward its axis progressively, from full size at its low end to `factor` at its high end. |
+| [`deform.displace`](deform.displace.md) | Moves vertices along their normals by seeded fractal noise (bumps, rocks, terrain, organic variation). |
 
 ## expect
 
