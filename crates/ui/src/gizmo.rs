@@ -670,6 +670,36 @@ fn cancel(app: &mut PixelApp) {
     app.gizmo.hot = None;
 }
 
+/// A long line through the pivot along axis `i` (the drag constraint).
+#[allow(clippy::too_many_arguments)] // the drawing context and the axis
+fn guide(p: &egui::Painter, f: &Frame, cam: &OrbitCamera, rect: Rect, i: usize, len: f32, color: Color32) {
+    let vp = cam.view_proj(rect.width() / rect.height().max(1.0));
+    let Some(c) = project(vp, rect, f.pivot) else { return };
+    for sign in [1.0, -1.0] {
+        // The farthest point in front of the camera.
+        let end = [400.0, 60.0, 12.0, 3.0].iter().find_map(|k| project(vp, rect, f.pivot + f.axes[i] * (sign * k * len)));
+        if let Some(e) = end {
+            p.line_segment([c, e], Stroke::new(1.2, color.gamma_multiply(0.85)));
+        }
+    }
+}
+
+/// The whole rotation ring `i` as screen segments, each marked front or back.
+fn full_ring(f: &Frame, cam: &OrbitCamera, rect: Rect, i: usize, len: f32) -> Vec<(Pos2, Pos2, bool)> {
+    let vp = cam.view_proj(rect.width() / rect.height().max(1.0));
+    let (u, v) = (f.axes[(i + 1) % 3], f.axes[(i + 2) % 3]);
+    let to_eye = if cam.ortho { cam.toward() } else { (cam.eye() - f.pivot).normalize_or(cam.toward()) };
+    let r = len * 0.9;
+    let pts: Vec<(Vec3, Option<Pos2>)> = (0..=RING)
+        .map(|k| {
+            let a = k as f32 / RING as f32 * std::f32::consts::TAU;
+            let off = (u * a.cos() + v * a.sin()) * r;
+            (off, project(vp, rect, f.pivot + off))
+        })
+        .collect();
+    pts.windows(2).filter_map(|w| Some((w[0].1?, w[1].1?, (w[0].0 + w[1].0).dot(to_eye) >= 0.0))).collect()
+}
+
 /// Paints the handles; the dragged or hovered one lights up.
 fn draw(app: &PixelApp, ui: &egui::Ui, rect: Rect, tool: Tool, cam: &OrbitCamera) {
     let tk = Tokens::get();
@@ -683,10 +713,23 @@ fn draw(app: &PixelApp, ui: &egui::Ui, rect: Rect, tool: Tool, cam: &OrbitCamera
     let colors = [tk.axis_x, tk.axis_y, tk.axis_z];
     let lit = |c: Color32, on: bool| if on { c.lerp_to_gamma(Color32::WHITE, 0.45) } else { c };
     let width = |on: bool| if on { 3.0 } else { 2.0 };
+    let dragged = app.gizmo.drag.as_ref().map(|d| d.handle);
+    // While dragging only the grabbed direction shows, as in Blender.
+    let shown = |h: Handle| dragged.is_none_or(|d| d == h);
+    let len = SIZE * meters_per_point(cam, rect, f.pivot);
+    match dragged {
+        Some(Handle::Axis(i)) => guide(&p, &f, cam, rect, i, len, colors[i]),
+        Some(Handle::Plane(i)) => {
+            for j in [(i + 1) % 3, (i + 2) % 3] {
+                guide(&p, &f, cam, rect, j, len, colors[j]);
+            }
+        }
+        _ => {}
+    }
     match tool {
         Tool::Move | Tool::Scale => {
-            for (i, (&(a, b, shown), color)) in s.axes.iter().zip(colors).enumerate() {
-                if !shown {
+            for (i, (&(a, b, visible), color)) in s.axes.iter().zip(colors).enumerate() {
+                if !visible || !shown(Handle::Axis(i)) {
                     continue;
                 }
                 let on = active == Some(Handle::Axis(i));
@@ -702,27 +745,50 @@ fn draw(app: &PixelApp, ui: &egui::Ui, rect: Rect, tool: Tool, cam: &OrbitCamera
             }
             if tool == Tool::Move {
                 for (i, (plane, color)) in s.planes.iter().zip(colors).enumerate() {
-                    if let Some(q) = plane {
+                    if let (Some(q), true) = (plane, shown(Handle::Plane(i))) {
                         let on = active == Some(Handle::Plane(i));
                         p.add(egui::Shape::convex_polygon(q.to_vec(), lit(color, on).gamma_multiply(if on { 0.8 } else { 0.45 }), Stroke::NONE));
                     }
                 }
-                let on = active == Some(Handle::Free);
-                p.circle_stroke(s.center, 6.0, Stroke::new(width(on), lit(Color32::from_gray(225), on)));
-            } else {
+                if shown(Handle::Free) {
+                    let on = active == Some(Handle::Free);
+                    p.circle_stroke(s.center, 6.0, Stroke::new(width(on), lit(Color32::from_gray(225), on)));
+                }
+            } else if shown(Handle::Uniform) {
                 let on = active == Some(Handle::Uniform);
                 p.circle_stroke(s.center, s.outer, Stroke::new(width(on), lit(Color32::from_gray(200), on)));
             }
         }
         Tool::Rotate => {
             for (i, (ring, color)) in s.rings.iter().zip(colors).enumerate() {
+                if !shown(Handle::Ring(i)) {
+                    continue;
+                }
                 let on = active == Some(Handle::Ring(i));
-                for (a, b) in ring {
-                    p.line_segment([*a, *b], Stroke::new(width(on) + 0.5, lit(color, on)));
+                if dragged == Some(Handle::Ring(i)) {
+                    // The whole ring while turning, the back half dimmer.
+                    for (a, b, front) in full_ring(&f, cam, rect, i, len) {
+                        p.line_segment(
+                            [a, b],
+                            Stroke::new(if front { 3.0 } else { 1.5 }, lit(color, front).gamma_multiply(if front { 1.0 } else { 0.5 })),
+                        );
+                    }
+                } else {
+                    for (a, b) in ring {
+                        p.line_segment([*a, *b], Stroke::new(width(on) + 0.5, lit(color, on)));
+                    }
                 }
             }
-            let on = active == Some(Handle::ViewRing);
-            p.circle_stroke(s.center, s.outer, Stroke::new(width(on), lit(Color32::from_gray(200), on)));
+            if shown(Handle::ViewRing) {
+                let on = active == Some(Handle::ViewRing);
+                p.circle_stroke(s.center, s.outer, Stroke::new(width(on), lit(Color32::from_gray(200), on)));
+            }
+            // A line from the center to the pointer while turning.
+            if dragged.is_some()
+                && let Some(at) = ui.input(|i| i.pointer.hover_pos())
+            {
+                p.extend(egui::Shape::dashed_line(&[s.center, at], Stroke::new(1.0, Color32::from_gray(210)), 5.0, 4.0));
+            }
         }
         _ => {}
     }

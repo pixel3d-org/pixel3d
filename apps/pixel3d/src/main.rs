@@ -22,6 +22,7 @@ options:
       --screenshot <png>   save a screenshot of the window, then quit
       --light              use the light theme for this run
       --control <port>     let agents and tests drive the app (127.0.0.1, 0 picks a port)
+      --fresh              start with default preferences and do not save them
       --command <line>     run a command after start (repeatable), e.g. 'ui.mode mode=face'
       --hover <x,y>        with --screenshot: rest the pointer there (points) first
       --click              with --hover: click there once before the screenshot
@@ -40,11 +41,14 @@ struct Args {
     hover: Option<egui::Pos2>,
     click: bool,
     control: Option<u16>,
+    fresh: bool,
 }
 
 struct App {
     app: PixelApp,
     title: String,
+    /// Keep the preferences on quit (not for `--fresh` or screenshot runs).
+    save_prefs: bool,
     /// Screenshot runs: where the pointer rests, whether it clicks there
     /// and the frames seen so far.
     hover: Option<egui::Pos2>,
@@ -109,7 +113,7 @@ impl eframe::App for App {
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         // Screenshot runs use defaults and must not change the user's preferences.
-        if !self.app.quit_after_shot {
+        if self.save_prefs && !self.app.quit_after_shot {
             storage.set_string(p3d_ui::PREFS_KEY, self.app.prefs_json());
         }
     }
@@ -173,6 +177,7 @@ fn main() -> ExitCode {
                 }
             },
             "--click" => args.click = true,
+            "--fresh" => args.fresh = true,
             "--control" => match it.next().and_then(|s| s.parse().ok()) {
                 Some(p) => args.control = Some(p),
                 None => {
@@ -250,6 +255,7 @@ fn run(args: Args) -> anyhow::Result<()> {
         Box::new(move |cc| {
             let mut app = PixelApp::new(p3d_engine::Session::new(), services());
             if args.screenshot.is_none()
+                && !args.fresh
                 && let Some(prefs) = cc.storage.and_then(|s| s.get_string(p3d_ui::PREFS_KEY))
             {
                 app.load_prefs(&prefs);
@@ -291,6 +297,7 @@ fn run(args: Args) -> anyhow::Result<()> {
             Ok(Box::new(App {
                 app,
                 title: String::new(),
+                save_prefs: !args.fresh,
                 hover: args.hover.filter(|_| args.screenshot.is_some()),
                 click: args.click,
                 frames: 0,

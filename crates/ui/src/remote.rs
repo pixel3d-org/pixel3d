@@ -31,6 +31,8 @@ pub struct Remote {
     shots: VecDeque<(Request, PathBuf, Option<egui::Rect>)>,
     waiting: Option<(Request, PathBuf)>,
     next_shot: u64,
+    /// The server wakes this app's UI thread.
+    waker_set: bool,
 }
 
 impl Remote {
@@ -93,6 +95,7 @@ impl PixelApp {
         let server = Server::start(port).map_err(|e| e.to_string())?;
         let addr = server.addr();
         self.remote.server = Some(server);
+        self.remote.waker_set = false;
         self.set_status(format!("{} {addr}", t("Agents can connect at")));
         Ok(addr)
     }
@@ -114,6 +117,13 @@ impl PixelApp {
     ///
     /// Complexity: O(requests this frame x their work).
     pub(crate) fn drain_control(&mut self, ctx: &egui::Context) {
+        if !self.remote.waker_set
+            && let Some(server) = &self.remote.server
+        {
+            let ctx = ctx.clone();
+            server.set_waker(move || ctx.request_repaint());
+            self.remote.waker_set = true;
+        }
         if !self.remote.input.is_empty() || self.remote.waiting.is_some() || !self.remote.shots.is_empty() {
             ctx.request_repaint();
         }
@@ -194,7 +204,10 @@ impl PixelApp {
                 for i in 1..=steps {
                     self.remote.input.push_back(vec![Event::PointerMoved(from + (to - from) * (i as f32 / steps as f32))]);
                 }
-                self.remote.input.push_back(vec![Event::PointerButton { pos: to, button: b, pressed: false, modifiers: m }]);
+                // `hold` keeps the button down (to look at a drag in progress).
+                if !params.get("hold").and_then(Value::as_bool).unwrap_or(false) {
+                    self.remote.input.push_back(vec![Event::PointerButton { pos: to, button: b, pressed: false, modifiers: m }]);
+                }
                 Ok(json!({ "from": [from.x, from.y], "to": [to.x, to.y], "frames": steps + 3 }))
             }
             "ui.key" => {
@@ -246,6 +259,9 @@ impl PixelApp {
             "palette": self.palette.is_some(),
             "status": self.status_message(),
             "gizmoDragging": self.gizmo.dragging(),
+            "frameMs": self.frame_ms,
+            "fps": self.viewport.fps,
+            "benchmark": self.bench_result,
             "gizmo": crate::gizmo::handles_json(self),
             "activeTransform": self.active_object().and_then(|k| doc.object(k)).map(|o| json!({
                 "position": o.transform.translation.to_array(),

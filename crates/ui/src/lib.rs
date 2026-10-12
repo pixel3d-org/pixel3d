@@ -291,6 +291,10 @@ pub struct PixelApp {
     pub cmdline: cmdline::CmdLine,
     /// Quit once the pending screenshot is saved (`--screenshot`).
     pub quit_after_shot: bool,
+    /// A running `view.benchmark`: start, end and frames drawn so far; and
+    /// the last result.
+    pub bench: Option<(std::time::Instant, std::time::Instant, u32)>,
+    pub bench_result: Option<Value>,
     /// Snapshot tests: no frame rate and no timed status messages, so the
     /// same state always draws the same picture.
     pub stable: bool,
@@ -328,6 +332,8 @@ impl PixelApp {
             cmdline: cmdline::CmdLine::default(),
             quit_after_shot: false,
             stable: false,
+            bench: None,
+            bench_result: None,
         }
     }
 
@@ -882,6 +888,14 @@ impl PixelApp {
                 let op = str_param("op").ok_or("op is required: an op that takes a target")?;
                 self.run_on_selection(&op)
             }
+            "view.benchmark" => {
+                // Orbits the camera every frame for `seconds` and measures.
+                let secs = params.get("seconds").and_then(Value::as_f64).unwrap_or(5.0).clamp(0.5, 120.0);
+                let now = std::time::Instant::now();
+                self.bench = Some((now, now + std::time::Duration::from_secs_f64(secs), 0));
+                self.bench_result = None;
+                Ok(json!({ "seconds": secs }))
+            }
             "app.control" => {
                 let on = params.get("on").and_then(Value::as_bool).unwrap_or(self.remote.addr().is_none());
                 if on {
@@ -1195,6 +1209,20 @@ impl PixelApp {
         }
         chrome::shortcuts(self, ctx);
         self.drain_control(ctx);
+        if let Some((start, end, frames)) = self.bench {
+            let now = std::time::Instant::now();
+            if now >= end {
+                let secs = now.duration_since(start).as_secs_f64();
+                let tris: usize = self.stats().total.tris;
+                self.bench_result = Some(json!({ "frames": frames, "seconds": secs, "fps": f64::from(frames) / secs, "triangles": tris }));
+                self.bench = None;
+                self.set_status(format!("{} {:.1} fps", t("Benchmark:"), f64::from(frames) / secs));
+            } else {
+                self.viewport.camera.orbit(0.01, 0.0);
+                self.bench = Some((start, end, frames + 1));
+                ctx.request_repaint();
+            }
+        }
         self.shots.tick(ctx);
         if self.quit_after_shot
             && let Some(done) = &self.shots.done

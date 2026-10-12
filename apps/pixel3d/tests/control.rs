@@ -46,7 +46,7 @@ fn pos_x(c: &mut Client) -> f64 {
 #[ignore = "needs a display and a GPU"]
 fn open_edit_with_the_gizmo_undo_and_save() {
     let port = free_port();
-    let _app = App(Command::new(env!("CARGO_BIN_EXE_pixel3d")).args(["--sample", "--control", &port.to_string()]).spawn().unwrap());
+    let _app = App(Command::new(env!("CARGO_BIN_EXE_pixel3d")).args(["--fresh", "--sample", "--control", &port.to_string()]).spawn().unwrap());
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
     let mut c = wait_for(60, || Client::connect(addr).ok());
     // Wait for the first frames: the viewport has a size.

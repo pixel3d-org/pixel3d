@@ -62,11 +62,15 @@ impl std::fmt::Debug for Request {
 /// A request queued with the flag that tells whether the app took it.
 type Queued = (Request, Arc<AtomicBool>);
 
+/// Wakes the app's UI thread when a request arrives.
+type Waker = Arc<Mutex<Option<Box<dyn Fn() + Send>>>>;
+
 /// The running server: the address it listens on and the request queue.
 pub struct Server {
     addr: SocketAddr,
     requests: Mutex<Receiver<Queued>>,
     stop: Arc<AtomicBool>,
+    waker: Waker,
 }
 
 impl std::fmt::Debug for Server {
@@ -84,6 +88,8 @@ impl Server {
         let stop = Arc::new(AtomicBool::new(false));
         let stop2 = Arc::clone(&stop);
         let open = Arc::new(AtomicUsize::new(0));
+        let waker: Waker = Arc::new(Mutex::new(None));
+        let waker2 = Arc::clone(&waker);
         std::thread::Builder::new().name("control server".into()).spawn(move || {
             for stream in listener.incoming() {
                 if stop2.load(Ordering::Relaxed) {
@@ -96,9 +102,9 @@ impl Server {
                     continue;
                 }
                 open.fetch_add(1, Ordering::Relaxed);
-                let (tx, open) = (tx.clone(), Arc::clone(&open));
+                let (tx, open, waker) = (tx.clone(), Arc::clone(&open), Arc::clone(&waker2));
                 let spawned = std::thread::Builder::new().name("control client".into()).spawn(move || {
-                    if let Err(e) = serve(stream, &tx) {
+                    if let Err(e) = serve(stream, &tx, &waker) {
                         tracing::debug!(error = %e, "control client left");
                     }
                     open.fetch_sub(1, Ordering::Relaxed);
@@ -109,11 +115,19 @@ impl Server {
             }
         })?;
         tracing::info!(%addr, "control server listening");
-        Ok(Server { addr, requests: Mutex::new(rx), stop })
+        Ok(Server { addr, requests: Mutex::new(rx), stop, waker })
     }
 
     pub fn addr(&self) -> SocketAddr {
         self.addr
+    }
+
+    /// Sets what wakes the app when a request arrives (an idle UI does not
+    /// draw frames on its own).
+    pub fn set_waker(&self, wake: impl Fn() + Send + 'static) {
+        if let Ok(mut w) = self.waker.lock() {
+            *w = Some(Box::new(wake));
+        }
     }
 
     /// The next waiting request, if any. Call from the UI thread.
@@ -138,7 +152,7 @@ impl Drop for Server {
 }
 
 /// Serves one client: one request per line, answered in order.
-fn serve(stream: TcpStream, tx: &Sender<Queued>) -> std::io::Result<()> {
+fn serve(stream: TcpStream, tx: &Sender<Queued>, waker: &Waker) -> std::io::Result<()> {
     let mut out = stream.try_clone()?;
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -155,14 +169,14 @@ fn serve(stream: TcpStream, tx: &Sender<Queued>) -> std::io::Result<()> {
         if line.trim().is_empty() {
             continue;
         }
-        let response = answer(&line, tx);
+        let response = answer(&line, tx, waker);
         writeln!(out, "{response}")?;
         out.flush()?;
     }
 }
 
 /// Queues one request line and waits for its answer.
-fn answer(line: &str, tx: &Sender<Queued>) -> Value {
+fn answer(line: &str, tx: &Sender<Queued>, waker: &Waker) -> Value {
     let req: Value = match serde_json::from_str(line) {
         Ok(v) => v,
         Err(e) => return json!({ "id": null, "ok": false, "error": format!("not JSON: {e}"), "status": "not-run" }),
@@ -176,6 +190,11 @@ fn answer(line: &str, tx: &Sender<Queued>) -> Value {
     let request = Request { method: method.to_owned(), params: req.get("params").cloned().unwrap_or(Value::Null), reply };
     if tx.send((request, Arc::clone(&taken))).is_err() {
         return json!({ "id": id, "ok": false, "error": "the app is closing", "status": "not-run" });
+    }
+    if let Ok(w) = waker.lock()
+        && let Some(wake) = w.as_ref()
+    {
+        wake();
     }
     match wait.recv_timeout(TIMEOUT) {
         Ok(Ok(result)) => json!({ "id": id, "ok": true, "result": result }),
