@@ -9,3 +9,17 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+bytemuck = { workspace = true, features = ["derive"] }
+glam = { workspace = true }
+p3d-mesh = { workspace = true }
+p3d-scene = { workspace = true }
+png = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+wgpu = { workspace = true }
+pollster = { workspace = true }
+
+[dev-dependencies]
+p3d-testdata = { workspace = true }

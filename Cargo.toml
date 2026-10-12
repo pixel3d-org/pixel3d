@@ -54,7 +54,8 @@ egui-wgpu = "0.36.2"
 egui-winit = "0.36.2"
 epaint = "0.36.2"
 egui_kittest = "0.36.2"
-wgpu = "30.0.1"
+# Native backends only: the default `webgpu` feature (browser) pulls an async runtime.
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "gles", "vulkan", "wgsl"] }
 rfd = "0.17.2"
 arboard = { version = "3.6.1", default-features = false }
 muda = "0.21.2"
@@ -81,6 +82,7 @@ fixedbitset = "0.5.7"
 # Images and textures
 image = { version = "0.25.10", default-features = false }
 png = "0.18.1"
+pollster = "0.4.0"
 exr = "1.74.2"
 intel_tex_2 = "0.5.0"
 ktx2 = "0.5.0"

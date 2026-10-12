@@ -29,5 +29,10 @@ jobs:
         with:
           tool: cargo-deny
 
+      # Render tests need a GPU adapter: lavapipe (software Vulkan) on Linux.
+      - name: Install lavapipe
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+
       - name: cargo xtask ci
         run: cargo xtask ci

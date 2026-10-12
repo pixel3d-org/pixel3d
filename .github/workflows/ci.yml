@@ -32,6 +32,12 @@ jobs:
         with:
           tool: cargo-deny
 
+      # Render tests need a GPU adapter: lavapipe (software Vulkan) on Linux.
+      # Windows has WARP built in; macOS runners have Metal.
+      - name: Install lavapipe
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y mesa-vulkan-drivers
+
       # fmt, clippy, test, layers, emdash, deny, release build.
       - name: cargo xtask ci
         run: cargo xtask ci
