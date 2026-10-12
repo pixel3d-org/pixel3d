@@ -15,6 +15,7 @@ pub mod control;
 pub mod curves;
 pub mod docking;
 pub mod elements;
+pub mod gizmo;
 pub mod health;
 pub mod i18n;
 mod icon_data;
@@ -279,6 +280,8 @@ pub struct PixelApp {
     pub curves: curves::CurveCache,
     /// Selected vertices, edges and faces of the mesh being edited.
     pub edit: elements::EditState,
+    /// The transform gizmo: its drag and the Edit Mode preview.
+    pub gizmo: gizmo::GizmoState,
     /// The command palette while open.
     pub palette: Option<palette::Palette>,
     /// The Console's command line.
@@ -313,6 +316,7 @@ impl PixelApp {
             stats: stats::StatsCache::default(),
             curves: curves::CurveCache::default(),
             edit: elements::EditState::default(),
+            gizmo: gizmo::GizmoState::default(),
             palette: None,
             cmdline: cmdline::CmdLine::default(),
             quit_after_shot: false,
@@ -1227,8 +1231,12 @@ impl PixelApp {
         let mut nav = None;
         let actions = docking::show(ui, &workspace, |ui, panel| match panel {
             docking::Panel::Viewport => {
-                let doc = std::sync::Arc::clone(self.session.doc());
-                let key = self.scene_key();
+                // While an Edit Mode gizmo drag runs, the viewport shows its
+                // preview document.
+                let (doc, key) = match &self.gizmo.preview {
+                    Some((d, n)) => (std::sync::Arc::clone(d), *n | (1 << 63)),
+                    None => (std::sync::Arc::clone(self.session.doc()), self.scene_key()),
+                };
                 let style = theme::Tokens::get().view_style();
                 let sel = self.selection.clone();
                 self.viewport.scene(&doc, key, &self.hidden);
@@ -1238,9 +1246,13 @@ impl PixelApp {
                 let element_mode = self.ui.mode != SelectMode::Object;
                 let editing = if element_mode { self.active_object() } else { self.edit.object };
                 let part = editing.and_then(|k| self.viewport.part_of(k));
-                self.edit.sync(part.as_ref().and(editing), part.as_ref().map(|p| &p.1), self.ui.mode);
+                // The preview mesh keeps the element ids: no resync then.
+                let previewing = self.gizmo.preview.is_some();
+                if !previewing {
+                    self.edit.sync(part.as_ref().and(editing), part.as_ref().map(|p| &p.1), self.ui.mode);
+                }
                 self.viewport.edit_overlay = match (&part, element_mode) {
-                    (Some((i, _, _)), true) => self.edit.overlay(*i, self.ui.mode).map(|(o, k, _)| (o, k)),
+                    (Some((i, mesh, _)), true) => self.edit.overlay(*i, self.ui.mode, previewing.then_some(mesh)).map(|(o, k, _)| (o, k)),
                     _ => None,
                 };
                 self.viewport.pick_elements = element_mode && self.edit.object.is_some();
@@ -1252,6 +1264,8 @@ impl PixelApp {
                     })
                     .inner;
                 chrome::viewport_overlay(self, ui);
+                let gizmo_rect = self.viewport.rect;
+                gizmo::show(self, ui, gizmo_rect);
                 health::badges(self, ui);
                 nav = navgizmo::show(ui, view_rect, &mut self.viewport, self.ui.view.ortho);
             }

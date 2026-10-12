@@ -157,13 +157,23 @@ impl EditState {
     }
 
     /// The overlay for part `part` in `mode` and its key, rebuilt only
-    /// when the selection, the mesh or the mode changed.
+    /// when the selection, the mesh (or the `preview` mesh) or the mode
+    /// changed.
     ///
     /// Complexity: O(1) when cached; a rebuild is O(V + E + F) as
     /// [`flush`] and [`p3d_render::edit_overlay`].
-    pub fn overlay(&mut self, part: u32, mode: SelectMode) -> Option<(Arc<EditOverlay>, u64, &Flushed)> {
-        let mesh = self.mesh.clone()?;
-        let key = self.version.wrapping_mul(31).wrapping_add(u64::from(part)).wrapping_mul(8).wrapping_add(mode as u64);
+    pub fn overlay(&mut self, part: u32, mode: SelectMode, preview: Option<&Arc<Mesh>>) -> Option<(Arc<EditOverlay>, u64, &Flushed)> {
+        // A preview mesh (a gizmo drag) has the same ids at new positions.
+        let mesh = preview.cloned().or_else(|| self.mesh.clone())?;
+        let shape = Arc::as_ptr(&mesh) as u64;
+        let key = self
+            .version
+            .wrapping_mul(31)
+            .wrapping_add(u64::from(part))
+            .wrapping_mul(8)
+            .wrapping_add(mode as u64)
+            .wrapping_mul(1_000_003)
+            .wrapping_add(shape);
         if self.shown.as_ref().is_none_or(|(k, _, _)| *k != key) {
             let f = if self.picked_mode == Some(mode) { flush(&mesh, mode, &self.picked) } else { Flushed::default() };
             let sets = ElementSets { verts: &f.verts, edges: &f.edges, faces: &f.faces };
