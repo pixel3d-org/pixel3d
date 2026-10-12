@@ -103,6 +103,12 @@ version = "0.1.0"
 [[package]]
 name = "p3d-geo"
 version = "0.1.0"
+dependencies = [
+ "glam",
+ "p3d-mesh",
+ "rustc-hash",
+ "thiserror",
+]
 
 [[package]]
 name = "p3d-graph"
