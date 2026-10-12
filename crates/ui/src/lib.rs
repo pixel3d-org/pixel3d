@@ -28,6 +28,8 @@ pub mod schema_form;
 pub mod screenshot;
 pub mod stats;
 pub mod theme;
+pub mod transform;
+pub mod transform_bar;
 pub mod vector_icon;
 pub mod viewport;
 pub mod widgets;
@@ -163,6 +165,8 @@ pub struct UiState {
     pub mode: SelectMode,
     /// The element mode Tab returns to.
     pub element_mode: SelectMode,
+    /// Orientation, pivot, snapping, proportional editing, 3D cursor.
+    pub transform: transform::TransformSettings,
     /// Recently opened or saved files, newest first.
     pub recent: Vec<String>,
 }
@@ -185,6 +189,7 @@ impl Default for UiState {
             tool: Tool::Select,
             mode: SelectMode::Object,
             element_mode: SelectMode::Vert,
+            transform: transform::TransformSettings::default(),
             recent: Vec::new(),
         }
     }
@@ -399,6 +404,56 @@ impl PixelApp {
         }
     }
 
+    /// Moves the 3D cursor: to `position` ([x, y, z] meters), or `to` the
+    /// world origin, the selection's center (objects, or the selected
+    /// elements in Edit Mode) or the active object.
+    ///
+    /// Complexity: O(selected objects), or O(selected vertices) in Edit Mode.
+    pub fn place_cursor(&mut self, params: &Value) -> Result<Value, String> {
+        let doc = std::sync::Arc::clone(self.session.doc());
+        let at: glam::Vec3 = if let Some(p) = params.get("position") {
+            glam::Vec3::from_array(serde_json::from_value::<[f32; 3]>(p.clone()).map_err(|e| format!("position: {e}"))?)
+        } else {
+            match params.get("to").and_then(Value::as_str) {
+                Some("origin") | None => glam::Vec3::ZERO,
+                Some("active") => {
+                    let k = self.active_object().ok_or(t("nothing is active"))?;
+                    glam::Vec3::from(doc.world_affine(k).map(|a| a.translation).unwrap_or_default())
+                }
+                Some("selected") => self.selection_center(&doc).ok_or(t("nothing selected"))?,
+                Some(other) => return Err(format!("{} `{other}`: origin, selected or active", t("unknown cursor target"))),
+            }
+        };
+        self.ui.transform.cursor = at.to_array();
+        Ok(json!({ "cursor": self.ui.transform.cursor }))
+    }
+
+    /// The center of the selection in world space: the selected elements'
+    /// vertices in Edit Mode, else the selected objects' bounds.
+    ///
+    /// Complexity: O(selected objects) or O(selected vertices).
+    pub fn selection_center(&self, doc: &p3d_scene::Document) -> Option<glam::Vec3> {
+        if self.ui.mode.is_edit()
+            && let (Some(k), Some(m), Some(f)) = (self.edit.object, self.edit.mesh(), self.edit.flushed())
+            && !f.verts.is_empty()
+        {
+            let model = glam::Mat4::from(doc.world_affine(k)?);
+            let sum: glam::Vec3 = f.verts.iter().filter_map(|&v| m.positions.get(v as usize)).map(|p| model.transform_point3(*p)).sum();
+            return Some(sum / f.verts.len() as f32);
+        }
+        let (mut lo, mut hi) = (glam::Vec3::splat(f32::INFINITY), glam::Vec3::splat(f32::NEG_INFINITY));
+        for &k in &self.selection {
+            let model = glam::Mat4::from(doc.world_affine(k)?);
+            let (a, b) = match doc.object_mesh(k).and_then(|m| m.bounds()) {
+                Some((a, b)) => (model.transform_point3(a), model.transform_point3(b)),
+                None => (model.transform_point3(glam::Vec3::ZERO), model.transform_point3(glam::Vec3::ZERO)),
+            };
+            lo = lo.min(a.min(b));
+            hi = hi.max(a.max(b));
+        }
+        lo.cmple(hi).all().then(|| (lo + hi) * 0.5)
+    }
+
     /// Switches between Object mode and the element modes. Edit mode needs
     /// an active mesh object.
     pub fn set_mode(&mut self, mode: SelectMode) -> Result<Value, String> {
@@ -594,6 +649,8 @@ impl PixelApp {
                 self.set_status(format!("{} {label}", t("Redid")));
                 Ok(json!({ "redone": label }))
             }
+            "ui.transform" => self.ui.transform.apply(params),
+            "view.cursor" => self.place_cursor(params),
             "edit.select" => {
                 let target = params.get("target").and_then(Value::as_str).ok_or("target is required")?;
                 let k = self.doc().resolve(target).map_err(|e| e.to_string())?;
@@ -957,6 +1014,10 @@ impl PixelApp {
                     (None, true) => {}
                 },
                 ViewportEvent::BoxSelect { area, op } => self.box_select(area, op),
+                ViewportEvent::PlaceCursor { at } => {
+                    let p = self.viewport.surface_at(at).unwrap_or_else(|| self.viewport.ground_at(at));
+                    self.ui.transform.cursor = p.to_array();
+                }
                 ViewportEvent::ElementClick { at, add } => {
                     let Some(k) = self.edit.object else { continue };
                     let (Some((_, mesh, model)), Some(bvh)) = (self.viewport.part_of(k), self.edit.bvh()) else { continue };
@@ -977,16 +1038,24 @@ impl PixelApp {
         if ctx.egui_wants_keyboard_input() {
             return;
         }
-        let mut toggle = false;
+        let (mut toggle, mut snap) = (false, false);
         raw.events.retain(|e| match e {
             egui::Event::Key { key: egui::Key::Tab, pressed, modifiers, .. } if modifiers.is_none() => {
                 toggle |= *pressed;
+                false
+            }
+            // Shift+Tab: snapping, as in Blender (not focus backwards).
+            egui::Event::Key { key: egui::Key::Tab, pressed, modifiers, .. } if *modifiers == egui::Modifiers::SHIFT => {
+                snap |= *pressed;
                 false
             }
             _ => true,
         });
         if toggle {
             let _ = self.run("ui.edit", Value::Null);
+        }
+        if snap {
+            let _ = self.run("view.snap", Value::Null);
         }
     }
 

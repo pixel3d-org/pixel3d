@@ -334,21 +334,13 @@ fn menu_bar(app: &mut PixelApp, ui: &mut egui::Ui, left: f32, bar: Rect) -> f32 
 
 /// The items of one dropdown; returns the clicked item's command.
 fn menu_body(app: &PixelApp, ui: &mut egui::Ui, menu: &crate::menus::Menu) -> Option<(&'static str, Value)> {
-    let tk = Tokens::get();
     ui.spacing_mut().item_spacing.y = 1.0;
     let icon_column = menu.entries.iter().flatten().any(|it| it.icon.is_some());
     let mut clicked = None;
     for entry in &menu.entries {
-        let w = ui.available_width();
         match entry {
-            None => {
-                let (r, _) = ui.allocate_exact_size(vec2(w, 9.0), Sense::hover());
-                ui.painter().hline(r.left() + 8.0..=r.right() - 8.0, r.center().y, Stroke::new(1.0, tk.card_border));
-            }
-            Some(it) if it.is_header() => {
-                let (r, _) = ui.allocate_exact_size(vec2(w, 24.0), Sense::hover());
-                ui.painter().text(pos2(r.left() + 10.0, r.center().y + 2.0), Align2::LEFT_CENTER, t(it.label), theme::small(), tk.text_faint);
-            }
+            None => crate::widgets::menu_separator(ui),
+            Some(it) if it.is_header() => crate::widgets::menu_header(ui, t(it.label)),
             Some(it) => {
                 if menu_item(ui, app, it, icon_column).clicked() {
                     clicked = Some((it.command, (it.params)()));
@@ -361,36 +353,9 @@ fn menu_body(app: &PixelApp, ui: &mut egui::Ui, menu: &crate::menus::Menu) -> Op
 
 /// One dropdown row: icon, label, shortcut and a check mark when on.
 fn menu_item(ui: &mut egui::Ui, app: &PixelApp, it: &crate::menus::MenuItem, icon_column: bool) -> egui::Response {
-    let tk = Tokens::get();
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
-    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.08);
-    let p = ui.painter();
-    if hot > 0.0 {
-        p.rect_filled(rect, 6.0, tk.control.gamma_multiply(hot));
-    }
-    let on = it.checked.is_some_and(|f| f(app));
-    let mut x = rect.left() + 10.0;
-    if icon_column {
-        if let Some(icon) = it.icon {
-            let ir = Rect::from_center_size(pos2(x + 8.0, rect.center().y), vec2(16.0, 16.0));
-            let color = if on { tk.icon_accent } else { crate::widgets::mix(tk.icon, tk.text, hot) };
-            icons::paint_colored(p, ir, icon, color, tk.accent);
-        }
-        x += 28.0;
-    }
-    p.text(pos2(x, rect.center().y), Align2::LEFT_CENTER, t(it.label), theme::body(), tk.text);
-    let mut right = rect.right() - 10.0;
-    if on {
-        let c = pos2(right - 5.0, rect.center().y);
-        p.line(vec![c + vec2(-4.5, 0.0), c + vec2(-1.5, 3.0), c + vec2(4.5, -3.5)], Stroke::new(1.6, tk.icon_accent));
-        right -= 18.0;
-    }
-    if let Some(s) = &it.shortcut {
-        p.text(pos2(right, rect.center().y), Align2::RIGHT_CENTER, ui.ctx().format_shortcut(s), theme::small(), tk.text_faint);
-    }
-    icons::describe_control(ui, &resp, t(it.label), it.checked.map(|_| on));
-    crate::control::record_widget(ui, &resp, it.label, "menuitem", it.checked.map(|_| on));
-    resp
+    let on = it.checked.map(|f| f(app));
+    let keys = it.shortcut.as_ref().map(|s| ui.ctx().format_shortcut(s));
+    crate::widgets::menu_row(ui, it.icon, t(it.label), keys.as_deref(), on, icon_column)
 }
 
 /// Size of a button in a segmented group, and the group's inner padding.
@@ -570,16 +535,21 @@ pub fn viewport_header(app: &mut PixelApp, ui: &mut egui::Ui, rect: Rect) -> Rec
     ui.painter().rect_filled(header, 0.0, tk.chrome);
     ui.painter().hline(header.x_range(), header.bottom() - 0.5, Stroke::new(1.0, tk.border));
     let cy = header.center().y;
-    let (right, mut clicked) = mode_menu(app, ui, header.left() + 8.0, cy);
+    let (mut left_end, mut clicked) = mode_menu(app, ui, header.left() + 8.0, cy);
     if app.ui.mode.is_edit() {
         let modes = header_modes();
-        clicked = segment(ui, app, &modes, right + 8.0, cy).or(clicked);
+        clicked = segment(ui, app, &modes, left_end + 8.0, cy).or(clicked);
+        left_end += 8.0 + segment_width(modes.len());
     }
     let mut rx = header.right() - 8.0;
     for group in header_view().iter().rev() {
         rx -= segment_width(group.len());
         clicked = segment(ui, app, group, rx, cy).or(clicked);
         rx -= 6.0;
+    }
+    // Orientation, pivot, snapping and proportional editing in the middle.
+    if let Some(c) = crate::transform_bar::show(app, ui, header, left_end, rx) {
+        clicked = Some(c);
     }
     if let Some((cmd, params)) = clicked {
         let _ = app.run(cmd, params);
@@ -809,6 +779,33 @@ pub fn start_page(app: &mut PixelApp, ui: &mut egui::Ui) {
     }
 }
 
+/// The 3D cursor: a red and white ring with a dark crosshair, as Blender
+/// draws it.
+fn draw_cursor(app: &PixelApp, p: &egui::Painter, rect: Rect) {
+    let tk = Tokens::get();
+    let vp = app.viewport.camera.view_proj(rect.width() / rect.height().max(1.0));
+    let clip = vp * app.ui.transform.cursor().extend(1.0);
+    if clip.w <= 1e-6 {
+        return;
+    }
+    let n = clip.truncate() / clip.w;
+    let at = pos2(rect.left() + (n.x * 0.5 + 0.5) * rect.width(), rect.top() + (0.5 - n.y * 0.5) * rect.height());
+    if !rect.contains(at) {
+        return;
+    }
+    let (r, tau) = (10.0, std::f32::consts::TAU);
+    for i in 0..8 {
+        let a0 = i as f32 * tau / 8.0;
+        let pts: Vec<egui::Pos2> = (0..=6).map(|k| at + egui::Vec2::angled(a0 + tau / 8.0 * k as f32 / 6.0) * r).collect();
+        let color = if i % 2 == 0 { tk.axis_x } else { egui::Color32::WHITE };
+        p.add(egui::Shape::line(pts, Stroke::new(2.0, color)));
+    }
+    let dark = egui::Color32::from_black_alpha(210);
+    for d in [vec2(1.0, 0.0), vec2(-1.0, 0.0), vec2(0.0, 1.0), vec2(0.0, -1.0)] {
+        p.line_segment([at + d * 5.0, at + d * 17.0], Stroke::new(1.2, dark));
+    }
+}
+
 /// Overlays drawn over the viewport image: the view name and, when on,
 /// the scene statistics under it (selected against visible totals).
 pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
@@ -818,6 +815,7 @@ pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
         return;
     }
     let p = ui.painter_at(rect);
+    draw_cursor(app, &p, rect);
     if app.ui.view.stats {
         let s = app.stats();
         let any = s.selected.objects > 0;
@@ -905,6 +903,7 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num3), "ui.mode", || json!({ "mode": "face" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num5), "view.ortho", || Value::Null),
         (KeyboardShortcut::new(Modifiers::ALT, Key::Z), "view.xray", || Value::Null),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::O), "ui.transform", || json!({ "proportional": "toggle" })),
         (KeyboardShortcut::new(cmd, Key::K), "ui.palette", || Value::Null),
         (KeyboardShortcut::new(Modifiers::NONE, Key::F3), "ui.palette", || Value::Null),
     ];

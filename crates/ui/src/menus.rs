@@ -124,6 +124,11 @@ pub fn menus() -> Vec<Menu> {
                 checked(|a| a.ui.view.xray, icon(Icon::XRay, keyed("X-ray", "view.xray", key(Modifiers::ALT, Key::Z)))),
                 checked(|a| a.ui.view.stats, icon(Icon::Info, item("Statistics", "view.stats"))),
                 None,
+                header("3D Cursor"),
+                icon(Icon::Cursor, with("Cursor to World Origin", "view.cursor", || json!({ "to": "origin" }))),
+                with("Cursor to Selected", "view.cursor", || json!({ "to": "selected" })),
+                with("Cursor to Active", "view.cursor", || json!({ "to": "active" })),
+                None,
                 header("Shading"),
                 checked(|a| a.ui.view.shading == "solid", icon(Icon::ShadeSolid, with("Solid", "view.shading", || json!({ "mode": "solid" })))),
                 checked(

@@ -110,6 +110,8 @@ pub struct ViewportState {
     pub pick_elements: bool,
     /// The box being dragged (start and current corner, points).
     marquee: Option<(egui::Pos2, egui::Pos2)>,
+    /// Ray-cast structures of the meshes hit-tested so far, by mesh.
+    bvhs: BTreeMap<usize, (Arc<p3d_mesh::Mesh>, Arc<p3d_geo::bvh::TriBvh>)>,
     /// Frame the scene on the next frame (after loading a file).
     pub frame_pending: bool,
     pub gpu: bool,
@@ -148,6 +150,7 @@ impl Default for ViewportState {
             edit_overlay: None,
             pick_elements: false,
             marquee: None,
+            bvhs: BTreeMap::new(),
             size_px: [0, 0],
             frame_pending: true,
             gpu: false,
@@ -169,6 +172,8 @@ pub enum ViewportEvent {
     ElementClick { at: egui::Pos2, add: bool },
     /// A box dragged with the primary button over `area` (points).
     BoxSelect { area: Rect, op: crate::elements::BoxOp },
+    /// Shift+right-click at `at` (points): place the 3D cursor there.
+    PlaceCursor { at: egui::Pos2 },
 }
 
 /// GPU resources stored in egui_wgpu's callback resources.
@@ -176,6 +181,14 @@ struct Gpu {
     renderer: ViewportRenderer,
     selection_version: u64,
     models_version: u64,
+}
+
+/// Whether the ray from `o` along `d` passes through the box `lo`..`hi`.
+fn ray_hits_box(o: Vec3, d: Vec3, lo: Vec3, hi: Vec3) -> bool {
+    let inv = d.recip();
+    let (a, b) = ((lo - o) * inv, (hi - o) * inv);
+    let (near, far) = (a.min(b).max_element(), a.max(b).min_element());
+    far >= near.max(0.0)
 }
 
 /// Creates the viewport renderer on eframe's device. Call once at startup.
@@ -294,6 +307,56 @@ impl ViewportState {
     /// The world matrix of an object's part, if it is drawn.
     ///
     /// Complexity: O(parts).
+    /// The nearest surface point under `at` (points) in world space. A
+    /// mesh's ray-cast structure is built the first time the ray reaches
+    /// its bounds.
+    ///
+    /// Complexity: O(parts x log F) per call, plus O(F log F) for each mesh
+    /// hit-tested for the first time.
+    pub fn surface_at(&mut self, at: egui::Pos2) -> Option<Vec3> {
+        let (view, models) = {
+            let c = self.cache.as_ref()?;
+            (Arc::clone(&c.view), Arc::clone(&c.models))
+        };
+        let live: std::collections::BTreeSet<usize> = view.meshes.iter().map(|m| Arc::as_ptr(m) as usize).collect();
+        self.bvhs.retain(|k, _| live.contains(k));
+        let r = self.rect;
+        let (o, d) = self.camera.ray(at.x - r.left(), at.y - r.top(), r.width(), r.height());
+        let mut best: Option<(f32, Vec3)> = None;
+        for (i, (part, mesh)) in view.parts.iter().zip(&view.meshes).enumerate() {
+            let Some(model) = models.get(i).copied() else { continue };
+            let (lo, hi) = p3d_render::world_bounds(part, model);
+            if !ray_hits_box(o, d, lo, hi) {
+                continue;
+            }
+            let entry = self
+                .bvhs
+                .entry(Arc::as_ptr(mesh) as usize)
+                .or_insert_with(|| (Arc::clone(mesh), Arc::new(p3d_geo::bvh::TriBvh::from_mesh(mesh, glam::Affine3A::IDENTITY))));
+            let inv = model.inverse();
+            let (lo, ld) = (inv.transform_point3(o), inv.transform_vector3(d).normalize_or_zero());
+            if let Some(h) = entry.1.raycast(lo, ld, f32::INFINITY) {
+                let p = model.transform_point3(lo + ld * h.t);
+                let dist = (p - o).length();
+                if best.is_none_or(|b| dist < b.0) {
+                    best = Some((dist, p));
+                }
+            }
+        }
+        best.map(|b| b.1)
+    }
+
+    /// Where the ray under `at` meets the ground plane, else the depth of the
+    /// orbit target.
+    pub fn ground_at(&self, at: egui::Pos2) -> Vec3 {
+        let r = self.rect;
+        let (o, d) = self.camera.ray(at.x - r.left(), at.y - r.top(), r.width(), r.height());
+        if d.y.abs() > 1e-6 && -o.y / d.y > 0.0 {
+            return o + d * (-o.y / d.y);
+        }
+        o + d * (self.camera.target - o).length()
+    }
+
     /// Objects with a vertex inside `area` (points) on screen.
     ///
     /// Complexity: O(vertices of the visible meshes), stopping at the first
@@ -459,6 +522,12 @@ impl ViewportState {
             && let (Some((a, _)), Some(p)) = (self.marquee, ui.input(|i| i.pointer.latest_pos()))
         {
             self.marquee = Some((a, p));
+        }
+        if resp.secondary_clicked()
+            && mods.shift
+            && let Some(p) = resp.interact_pointer_pos()
+        {
+            events.push(ViewportEvent::PlaceCursor { at: p });
         }
         if resp.drag_stopped()
             && let Some((a, b)) = self.marquee.take()

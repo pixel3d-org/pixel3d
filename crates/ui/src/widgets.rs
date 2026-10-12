@@ -294,3 +294,70 @@ pub fn tab_strip(ui: &mut egui::Ui, rect: Rect, tabs: &[(crate::icons::Icon, &st
     }
     clicked
 }
+
+/// The frame of menus, dropdowns and popovers.
+pub fn popup_frame(ui: &egui::Ui) -> egui::Frame {
+    let tk = Tokens::get();
+    egui::Frame::NONE
+        .fill(tk.popup)
+        .stroke(Stroke::new(1.0, tk.popup_border))
+        .corner_radius(10)
+        .inner_margin(egui::Margin::same(5))
+        .shadow(ui.visuals().popup_shadow)
+}
+
+/// One dropdown row: an icon column (when `icon_column`), the label, the
+/// shortcut, and a check mark when `on` is `Some(true)`.
+pub fn menu_row(
+    ui: &mut egui::Ui,
+    icon: Option<crate::icons::Icon>,
+    label: &str,
+    shortcut: Option<&str>,
+    on: Option<bool>,
+    icon_column: bool,
+) -> egui::Response {
+    let tk = Tokens::get();
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
+    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.08);
+    let checked = on == Some(true);
+    let p = ui.painter();
+    if hot > 0.0 {
+        p.rect_filled(rect, 6.0, tk.control.gamma_multiply(hot));
+    }
+    let mut x = rect.left() + 10.0;
+    if icon_column {
+        if let Some(icon) = icon {
+            let ir = Rect::from_center_size(pos2(x + 8.0, rect.center().y), vec2(16.0, 16.0));
+            let color = if checked { tk.icon_accent } else { mix(tk.icon, tk.text, hot) };
+            crate::icons::paint_colored(p, ir, icon, color, tk.accent);
+        }
+        x += 28.0;
+    }
+    p.text(pos2(x, rect.center().y), Align2::LEFT_CENTER, label, theme::body(), tk.text);
+    let mut right = rect.right() - 10.0;
+    if checked {
+        let c = pos2(right - 5.0, rect.center().y);
+        p.line(vec![c + vec2(-4.5, 0.0), c + vec2(-1.5, 3.0), c + vec2(4.5, -3.5)], Stroke::new(1.6, tk.icon_accent));
+        right -= 18.0;
+    }
+    if let Some(s) = shortcut {
+        p.text(pos2(right, rect.center().y), Align2::RIGHT_CENTER, s, theme::small(), tk.text_faint);
+    }
+    crate::icons::describe_control(ui, &resp, label, on);
+    crate::control::record_widget(ui, &resp, label, "menuitem", on);
+    resp
+}
+
+/// A small section title inside a dropdown.
+pub fn menu_header(ui: &mut egui::Ui, label: &str) {
+    let tk = Tokens::get();
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+    ui.painter().text(pos2(r.left() + 10.0, r.center().y + 2.0), Align2::LEFT_CENTER, label, theme::small(), tk.text_faint);
+}
+
+/// A thin line between groups of dropdown rows.
+pub fn menu_separator(ui: &mut egui::Ui) {
+    let tk = Tokens::get();
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 9.0), Sense::hover());
+    ui.painter().hline(r.left() + 8.0..=r.right() - 8.0, r.center().y, Stroke::new(1.0, tk.card_border));
+}
