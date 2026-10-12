@@ -101,6 +101,14 @@ pub fn auto_handles(points: &[Vec3], closed: bool) -> Vec<[Vec3; 2]> {
 ///
 /// Complexity: O(points x resolution).
 pub fn sample_bezier(points: &[Vec3], handles: &[[Vec3; 2]], closed: bool, resolution: u32) -> Result<Vec<Vec3>, KernelError> {
+    sample_bezier_spans(points, handles, closed, resolution).map(|(pts, _)| pts)
+}
+
+/// Like [`sample_bezier`], also returning the span (index of its first
+/// control point) of every segment of the polyline.
+///
+/// Complexity: O(points x resolution).
+pub fn sample_bezier_spans(points: &[Vec3], handles: &[[Vec3; 2]], closed: bool, resolution: u32) -> Result<(Vec<Vec3>, Vec<u32>), KernelError> {
     if !(1..=MAX_RESOLUTION).contains(&resolution) {
         return Err(out_of_range("resolution", format!("{resolution} is outside 1 to {MAX_RESOLUTION}"), "12 suits most curves"));
     }
@@ -119,12 +127,14 @@ pub fn sample_bezier(points: &[Vec3], handles: &[[Vec3; 2]], closed: bool, resol
     };
     check_points(spans.saturating_mul(resolution as usize).saturating_add(1))?;
     let mut out = Vec::with_capacity(spans * resolution as usize + 1);
+    let mut span_of = Vec::with_capacity(spans * resolution as usize);
     if let Some(&p) = points.first() {
         out.push(p);
     }
     for i in 0..spans {
         let j = (i + 1) % n;
         let (p0, c0, c1, p1) = (points[i], handles[i][1], handles[j][0], points[j]);
+        let before = out.len();
         if !is_straight(p0, c0, c1, p1) {
             for k in 1..resolution {
                 out.push(bezier_point(p0, c0, c1, p1, k as f32 / resolution as f32));
@@ -133,8 +143,11 @@ pub fn sample_bezier(points: &[Vec3], handles: &[[Vec3; 2]], closed: bool, resol
         if !(closed && j == 0) {
             out.push(p1);
         }
+        // A closed spline's last span ends on point 0, which is not repeated.
+        let segs = out.len() - before + usize::from(closed && j == 0);
+        span_of.extend(std::iter::repeat_n(i as u32, segs));
     }
-    Ok(out)
+    Ok((out, span_of))
 }
 
 /// Total length of a polyline.

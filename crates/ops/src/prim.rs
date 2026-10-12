@@ -24,7 +24,7 @@ fn kernel_error(e: PrimError) -> OpError {
     }
 }
 
-fn created_summary(tx: &Tx, key: p3d_scene::ObjectKey, what: &str) -> OpOutput {
+pub(crate) fn created_summary(tx: &Tx, key: p3d_scene::ObjectKey, what: &str) -> OpOutput {
     let doc = tx.doc();
     let (dims_s, faces, tris) = doc.object_mesh(key).map_or_else(|| ("?".into(), 0, 0), |m| (dims(m), m.face_count(), m.triangle_count()));
     let budget = doc.settings.tri_budget() as usize;

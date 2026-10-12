@@ -62,6 +62,15 @@ impl Soup {
         id
     }
 
+    /// Adds a polygon as given.
+    ///
+    /// Complexity: O(polygon size).
+    pub(crate) fn poly(&mut self, verts: &[u32], tag: u16) {
+        self.sizes.push(verts.len() as u32);
+        self.corners.extend_from_slice(verts);
+        self.tags.push(tag);
+    }
+
     /// Adds a polygon, reversing it if its normal points away from `outward`.
     ///
     /// Complexity: O(polygon size).

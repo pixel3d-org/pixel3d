@@ -1,7 +1,7 @@
 //! Property tests for the curve kernels on random polylines.
 
 use glam::Vec3;
-use p3d_geo::curve::{auto_handles, fillet, length, offset, resample, sample_bezier};
+use p3d_geo::curve::{auto_handles, fillet, length, offset, resample, sample_bezier, sample_bezier_spans};
 use proptest::prelude::*;
 
 /// A star-shaped closed polyline in the ground plane: angles increase, radii
@@ -46,6 +46,11 @@ proptest! {
         for p in &pts {
             prop_assert!(s.iter().any(|q| q.distance(*p) < 1e-4), "{} is not on the samples", p);
         }
+        // One span per segment, counting up through every span.
+        let (_, of) = sample_bezier_spans(&pts, &h, closed, res).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(of.len(), if closed { s.len() } else { s.len() - 1 });
+        prop_assert!(of.windows(2).all(|w| w[1] == w[0] || w[1] == w[0] + 1));
+        prop_assert_eq!(of.last().map(|&x| x as usize + 1), Some(spans));
     }
 
     #[test]

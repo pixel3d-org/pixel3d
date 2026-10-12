@@ -8,12 +8,13 @@ mod capsule;
 mod cuboid;
 mod cylinder;
 mod plane;
-mod soup;
+pub(crate) mod soup;
 mod sphere;
 mod torus;
 
 pub use capsule::{CapsuleSpec, WedgeSpec, capsule, wedge};
 pub use cuboid::{BoxSpec, cuboid};
+pub(crate) use cylinder::quad_grid_cap;
 pub use cylinder::{CapKind, ConeSpec, CylinderSpec, cone, cylinder};
 pub use plane::{PlaneSpec, plane};
 pub use sphere::{IcoSphereSpec, MAX_ICO_SUBDIVISIONS, QuadSphereSpec, UvSphereSpec, ico_sphere, quad_sphere, uv_sphere};

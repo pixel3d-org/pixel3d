@@ -14,6 +14,7 @@ pub mod edit;
 pub mod element;
 mod error;
 pub mod expect;
+pub mod generate;
 mod op;
 pub mod params;
 pub mod prim;

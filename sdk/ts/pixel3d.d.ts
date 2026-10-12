@@ -205,6 +205,14 @@ export type PlaneAdvanced = {
 /** The plane a flat curve is drawn in. */
 export type PlaneParam = "xy" | "xz" | "yz";
 
+/** A profile: a preset name, points [radius, height] from bottom to top (either order works), or {"curve": "<curve object>"} whose X is the radius and Y the height. */
+export type Profile = ProfilePreset | [Length, Length][] | {
+  curve: string;
+};
+
+/** Built-in lathe profiles, normalized to a largest radius and a height of 1. */
+export type ProfilePreset = "barrel" | "vase" | "bottle" | "bowl" | "column";
+
 /** Proportional editing settings. */
 export type ProportionalParams = {
   /** Measure the distance along edges (only connected geometry follows). */
@@ -739,6 +747,36 @@ export type CurveFilletParams = {
   target: string;
 };
 
+/** `gen.lathe`: Revolves a profile around an axis into a round object with groups side, cap_top, cap_bottom and profile_<i>. */
+export type GenLatheParams = {
+  /** Revolution (degrees); partial turns start at the front and stay open. */
+  angle?: Angle;
+  /** Axis to revolve around; the profile's height runs along it. */
+  axis?: AxisParam;
+  /** How the open ends of a full turn are filled. */
+  cap?: CapParam;
+  /** Joins the last point back to the first (rings such as tires and washers; points only). */
+  closed?: boolean;
+  /** Height of a preset profile (presets only). */
+  height?: Length | null;
+  /** Object name; a free name such as `lathe_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** The profile to revolve. */
+  profile: Profile;
+  /** Largest radius of a preset profile (presets only). */
+  radius?: Length | null;
+  /** Segments per curved span of a smooth profile. */
+  resolution?: number;
+  /** Segments around the axis; adapts to the size and asset class when omitted. */
+  segments?: number | null;
+  /** A smooth Bezier through the points instead of straight segments (points and polyline curves). */
+  smooth?: boolean;
+};
+
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
 export type PrimPlaneParams = {
   /** Rarely needed settings. */
@@ -1270,6 +1308,7 @@ export interface OpParams {
   "curve.resample": CurveResampleParams;
   "curve.offset": CurveOffsetParams;
   "curve.fillet": CurveFilletParams;
+  "gen.lathe": GenLatheParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

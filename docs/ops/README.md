@@ -49,6 +49,12 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`curve.offset`](curve.offset.md) | Moves each spline sideways by a distance within its plane, with mitered or beveled corners. |
 | [`curve.fillet`](curve.fillet.md) | Rounds every corner of each spline with a tangent arc, or chamfers it with one segment. |
 
+## gen
+
+| Op | Summary |
+|---|---|
+| [`gen.lathe`](gen.lathe.md) | Revolves a profile around an axis into a round object with groups side, cap_top, cap_bottom and profile_<i>. |
+
 ## select
 
 | Op | Summary |

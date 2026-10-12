@@ -6,6 +6,7 @@ pub mod bvh;
 pub mod curve;
 pub mod deform;
 pub mod edit;
+pub mod generate;
 pub mod kdtree;
 pub mod prim;
 pub mod shade;

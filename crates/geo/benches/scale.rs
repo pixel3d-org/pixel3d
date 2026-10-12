@@ -160,6 +160,26 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // A wavy lathe profile around 64 segments with quad-grid caps.
+    let mut g = c.benchmark_group("scale_gen_lathe");
+    for &t in &sizes {
+        let n = (t / 128).max(2);
+        let profile: Vec<glam::DVec2> = (0..n).map(|i| glam::DVec2::new(0.3 + 0.05 * (i as f64 * 0.3).sin(), i as f64 * 0.01)).collect();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &profile, |b, profile| {
+            let spec = p3d_geo::generate::LatheSpec {
+                profile,
+                spans: &[],
+                closed: false,
+                segments: 64,
+                angle: std::f64::consts::TAU,
+                cap: CapKind::QuadGrid,
+                axis: p3d_geo::edit::Axis::Y,
+            };
+            b.iter(|| p3d_geo::generate::lathe(black_box(&spec)))
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)
