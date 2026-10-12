@@ -21,6 +21,7 @@ options:
       --sample             open the sample scene
       --screenshot <png>   save a screenshot of the window, then quit
       --light              use the light theme for this run
+      --control <port>     let agents and tests drive the app (127.0.0.1, 0 picks a port)
       --command <line>     run a command after start (repeatable), e.g. 'ui.mode mode=face'
       --hover <x,y>        with --screenshot: rest the pointer there (points) first
       --click              with --hover: click there once before the screenshot
@@ -38,6 +39,7 @@ struct Args {
     commands: Vec<String>,
     hover: Option<egui::Pos2>,
     click: bool,
+    control: Option<u16>,
 }
 
 struct App {
@@ -171,6 +173,13 @@ fn main() -> ExitCode {
                 }
             },
             "--click" => args.click = true,
+            "--control" => match it.next().and_then(|s| s.parse().ok()) {
+                Some(p) => args.control = Some(p),
+                None => {
+                    eprintln!("error: --control needs a port number\n\n{USAGE}");
+                    return ExitCode::FAILURE;
+                }
+            },
             "--hover" => match it.next().and_then(|s| parse_point(&s)) {
                 Some(p) => args.hover = Some(p),
                 None => {
@@ -264,6 +273,12 @@ fn run(args: Args) -> anyhow::Result<()> {
             }
             if args.light {
                 app.ui.theme = p3d_ui::theme::ThemePref::Light;
+            }
+            if let Some(port) = args.control {
+                match app.start_control(port) {
+                    Ok(addr) => eprintln!("control server: {addr}"),
+                    Err(e) => eprintln!("error: control server: {e}"),
+                }
             }
             if let Some(path) = &args.screenshot {
                 app.shots.request(path.clone());

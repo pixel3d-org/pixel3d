@@ -194,12 +194,12 @@ Acceptance:
 - [x] Viewport (offscreen render plus composite), camera navigation, grid, view cube (`crates/render/src/viewport.rs` and `viewport.wgsl`: 4x MSAA HDR offscreen pass with reverse-Z depth, id pass, composite into the window, x-ray and the element overlay, tested headless in `crates/render/tests/viewport.rs`; `crates/ui/src/viewport.rs` orbit, pan and zoom from mouse, wheel and trackpad, smooth view changes; the view cube is the clickable navigation gizmo of ADR 0005, `navgizmo.rs`)
 - [x] Picking, object and element selection, gizmo (GPU id picks for objects and a distance pick for curves; `elements.rs` vertex, edge and face picking with a CPU ray cast and box selection that skips hidden elements unless x-ray, tested in `elements::tests`; `gizmo.rs` Move, Rotate and Scale handles following the header's orientation, pivot and snapping, one undo step per drag through `scene.set_transform` or `edit.transform` (previewed on a working copy), tested in `gizmo::tests`)
 - [x] Outliner, schema-driven Properties, History panel (`outliner.rs`: search, tree, eye toggles, rename in place, context menu; `inspector.rs`: Tool, Scene, Object and Mesh tabs, the transform edited through `scene.set_transform` with one undo step per drag, "adjust last operation" re-running the op; `schema_form.rs`: one schema-to-widget mapping, tested on every built-in op in `schema_form::tests::forms_lay_out_every_builtin_op`; `panels.rs` History: the undo list, click to step back)
-- [ ] Control server
+- [x] Control server (`crates/control`: loopback JSON-lines server and client, at most 16 clients, 60 s timeout answering `not-run` or `may-have-run`, tested in `p3d_control::tests`; `crates/ui/src/remote.rs`: `ui.inspect`/`ui.state`, `ui.elements`, `ui.click`, `ui.drag`, `ui.key`, `ui.text` as real input events, `ui.screenshot`, `ui.render`, `ui.command`; `pixel3d --control PORT` and File > Allow agents to connect; tested in `remote::tests::agents_drive_the_app_through_the_server`)
 - [ ] kittest snapshots
 
 Acceptance:
 
-- [ ] Open, edit and save a `.p3d` with gizmo and undo
+- [x] Open, edit and save a `.p3d` with gizmo and undo (`apps/pixel3d/tests/control.rs`, run with `cargo test -p pixel3d --test control -- --ignored`: the app saves and reopens a `.p3d`, the gizmo's X arrow is dragged with real pointer events through the control server, Cmd+Z undoes, the file is saved and a screenshot taken; passed on macOS)
 - [ ] 60 fps at 10M triangles
 - [ ] UI snapshot tests green on all OSes
 

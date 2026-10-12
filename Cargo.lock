@@ -2904,6 +2904,11 @@ version = "0.1.0"
 [[package]]
 name = "p3d-control"
 version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "thiserror 2.0.21",
+ "tracing",
+]
 
 [[package]]
 name = "p3d-engine"
@@ -3152,6 +3157,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "glam",
+ "p3d-control",
  "p3d-engine",
  "p3d-geo",
  "p3d-io",
@@ -3328,6 +3334,7 @@ dependencies = [
  "eframe",
  "egui",
  "muda",
+ "p3d-control",
  "p3d-engine",
  "p3d-ui",
  "rfd",

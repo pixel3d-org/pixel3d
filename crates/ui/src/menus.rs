@@ -86,6 +86,7 @@ pub fn menus() -> Vec<Menu> {
                 keyed("Save As...", "file.save_as", key(shift_cmd, Key::S)),
                 None,
                 icon(Icon::Menu, item("Start page", "ui.start")),
+                checked(|a| a.remote.addr().is_some(), icon(Icon::Command, item("Allow agents to connect", "app.control"))),
                 None,
                 icon(Icon::Close, item("Quit", "app.quit")),
             ],

@@ -510,6 +510,21 @@ fn object_calls(app: &PixelApp, drag: &Drag, view_axis: Vec3) -> Vec<OpCall> {
         .collect()
 }
 
+/// Where the gizmo's handles are on screen (points), for agents and tests:
+/// the center and the axis ends; `null` without a gizmo.
+pub fn handles_json(app: &PixelApp) -> Value {
+    let tool = app.ui.tool;
+    let rect = app.viewport.rect;
+    if !matches!(tool, Tool::Move | Tool::Rotate | Tool::Scale) || !rect.is_positive() {
+        return Value::Null;
+    }
+    let cam = app.viewport.camera;
+    let Some(f) = frame(app, app.doc(), &cam) else { return Value::Null };
+    let Some(s) = shapes(tool, &f, &cam, rect) else { return Value::Null };
+    let at = |p: Pos2| json!([p.x, p.y]);
+    json!({ "center": at(s.center), "x": at(s.axes[0].1), "y": at(s.axes[1].1), "z": at(s.axes[2].1), "ring": s.outer })
+}
+
 /// Lays out the gizmo over the viewport `rect`: hit testing, dragging,
 /// previews, commits and drawing.
 ///

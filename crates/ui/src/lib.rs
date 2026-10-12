@@ -26,6 +26,7 @@ pub mod navgizmo;
 pub mod outliner;
 pub mod palette;
 pub mod panels;
+pub mod remote;
 pub mod schema_form;
 pub mod screenshot;
 pub mod stats;
@@ -280,6 +281,8 @@ pub struct PixelApp {
     pub curves: curves::CurveCache,
     /// Selected vertices, edges and faces of the mesh being edited.
     pub edit: elements::EditState,
+    /// The control server and the input and screenshots it asked for.
+    pub remote: remote::Remote,
     /// The transform gizmo: its drag and the Edit Mode preview.
     pub gizmo: gizmo::GizmoState,
     /// The command palette while open.
@@ -316,6 +319,7 @@ impl PixelApp {
             stats: stats::StatsCache::default(),
             curves: curves::CurveCache::default(),
             edit: elements::EditState::default(),
+            remote: remote::Remote::default(),
             gizmo: gizmo::GizmoState::default(),
             palette: None,
             cmdline: cmdline::CmdLine::default(),
@@ -871,6 +875,17 @@ impl PixelApp {
                 let op = str_param("op").ok_or("op is required: an op that takes a target")?;
                 self.run_on_selection(&op)
             }
+            "app.control" => {
+                let on = params.get("on").and_then(Value::as_bool).unwrap_or(self.remote.addr().is_none());
+                if on {
+                    let port = params.get("port").and_then(Value::as_u64).unwrap_or(0);
+                    let port = u16::try_from(port).map_err(|_| t("port must be 0 to 65535"))?;
+                    self.start_control(port).map(|a| json!({ "control": a.to_string() }))
+                } else {
+                    self.stop_control();
+                    Ok(json!({ "control": null }))
+                }
+            }
             "ui.palette" => Ok(palette::toggle(self, params.get("on").and_then(Value::as_bool))),
             "ui.rail_labels" => {
                 self.ui.rail_labels = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.rail_labels);
@@ -1137,6 +1152,7 @@ impl PixelApp {
     /// focus through the menus, unless a text field is being edited. Call
     /// from the host's raw input hook.
     pub fn filter_input(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.feed_remote_input(raw);
         if ctx.egui_wants_keyboard_input() {
             return;
         }
@@ -1171,6 +1187,7 @@ impl PixelApp {
             self.shown_theme = Some((shown, follow));
         }
         chrome::shortcuts(self, ctx);
+        self.drain_control(ctx);
         self.shots.tick(ctx);
         if self.quit_after_shot
             && let Some(done) = &self.shots.done

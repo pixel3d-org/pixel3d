@@ -17,6 +17,8 @@ pub struct Shots {
     pub done: Option<Result<PathBuf, String>>,
     /// Extra frames to wait, for example until a hover tooltip shows.
     pub extra_frames: u32,
+    /// Keep only this part of the window (points), for example the viewport.
+    pub crop: Option<egui::Rect>,
 }
 
 impl Shots {
@@ -60,9 +62,29 @@ impl Shots {
         if let Some(image) = image
             && let Some((path, _)) = self.issued.take()
         {
+            let image = match self.crop.take() {
+                Some(r) => crop(&image, r, ctx.pixels_per_point()),
+                None => (*image).clone(),
+            };
             self.done = Some(save(&image, &path).map(|()| path));
         }
     }
+}
+
+/// The part of `image` inside `rect` (points).
+///
+/// Complexity: O(pixels of the part).
+pub fn crop(image: &egui::ColorImage, rect: egui::Rect, pixels_per_point: f32) -> egui::ColorImage {
+    let [w, h] = image.size;
+    let px = |v: f32, max: usize| ((v * pixels_per_point).round().max(0.0) as usize).min(max);
+    let (x0, x1) = (px(rect.left(), w), px(rect.right(), w));
+    let (y0, y1) = (px(rect.top(), h), px(rect.bottom(), h));
+    let (cw, ch) = (x1.saturating_sub(x0), y1.saturating_sub(y0));
+    let mut pixels = Vec::with_capacity(cw * ch);
+    for y in y0..y0 + ch {
+        pixels.extend_from_slice(&image.pixels[y * w + x0..y * w + x0 + cw]);
+    }
+    egui::ColorImage::new([cw, ch], pixels)
 }
 
 /// Writes an egui screenshot as PNG.
