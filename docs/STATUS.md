@@ -30,10 +30,10 @@ Verification notes:
 
 Acceptance:
 
-- [ ] `cargo xtask ci` passes locally
-- [ ] CI passes on Windows, macOS and Linux
+- [x] `cargo xtask ci` passes locally (macOS arm64, 2026-10-12: all 7 steps; 27 xtask tests in `emdash`, `layers`, `changed`; 33 crates, no layer violations; `cargo deny check` clean)
+- [ ] CI passes on Windows, macOS and Linux (pending: no remote configured yet; the workflow runs on the first push)
 - [x] Hook tests behave as specified
-- [ ] `git log` shows only `hasan-muzak <hasanmuzak@hotmail.com>`
+- [x] `git log` shows only `hasan-muzak <hasanmuzak@hotmail.com>` (author and committer of every commit)
 
 ## Phase 1: Kernel
 
