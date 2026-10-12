@@ -492,6 +492,20 @@ dependencies = [
 [[package]]
 name = "p3d-ops"
 version = "0.1.0"
+dependencies = [
+ "glam",
+ "p3d-geo",
+ "p3d-math",
+ "p3d-mesh",
+ "p3d-query",
+ "p3d-scene",
+ "schemars",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "smallvec",
+ "thiserror",
+]
 
 [[package]]
 name = "p3d-opt"
@@ -850,6 +864,17 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
+]
+
+[[package]]
+name = "serde_path_to_error"
+version = "0.1.20"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "10a9ff822e371bb5403e391ecd83e182e0e77ba7f6fe0160b795797109d1b457"
+dependencies = [
+ "itoa",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
