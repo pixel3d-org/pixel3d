@@ -9,6 +9,9 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+#[cfg(target_os = "macos")]
+mod native_menu;
+
 use p3d_ui::{PixelApp, Services};
 
 const USAGE: &str = "\
@@ -34,10 +37,21 @@ struct Args {
 struct App {
     app: PixelApp,
     title: String,
+    #[cfg(target_os = "macos")]
+    native_menu: Option<native_menu::NativeMenu>,
 }
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        #[cfg(target_os = "macos")]
+        {
+            if self.native_menu.is_none() && std::env::var_os("P3D_NO_NATIVE_MENU").is_none() {
+                self.native_menu = Some(native_menu::NativeMenu::install());
+            }
+            if let Some(m) = &self.native_menu {
+                m.poll(&mut self.app, ctx);
+            }
+        }
         self.app.logic(ctx);
         if std::mem::take(&mut self.app.quit_requested) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
@@ -197,7 +211,12 @@ fn run(args: Args) -> anyhow::Result<()> {
                 app.shots.request(path.clone());
                 app.quit_after_shot = true;
             }
-            Ok(Box::new(App { app, title: String::new() }))
+            Ok(Box::new(App {
+                app,
+                title: String::new(),
+                #[cfg(target_os = "macos")]
+                native_menu: None,
+            }))
         }),
     )
     .map_err(|e| anyhow::anyhow!("{e}"))
