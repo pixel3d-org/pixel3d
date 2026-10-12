@@ -46,6 +46,7 @@ pixel3d makes 3D game assets. You build and check models with typed operations a
 | `query` | count and locate elements a selector picks; `save_as` a group |
 | `analyze` | topology metrics (the numbers quality is judged by) |
 | `history` | undo, redo, checkpoints, revert, diff between states |
+| `render` | optional pictures to confirm: views tiled into one PNG with part names; never needed to find problems |
 | `docs` | these guides: `quickstart`, `modeling`, `debugging`, `ops` |
 
 ## Errors

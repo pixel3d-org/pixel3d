@@ -2,7 +2,7 @@
 
 Progress checklist for the roadmap. Tick a box in the commit that completes it; acceptance items record their evidence (test names, numbers, report links). Each completed phase gets a local tag `phase-N`.
 
-**Current phase: 2 (Agent surface v0). Phases 0 and 1 are met locally; their tags wait for CI on all three OSes (no remote yet).**
+**Current phase: 3a (Modelling ops). Phases 0 to 2 are met locally; their tags wait for CI on all three OSes (no remote yet).**
 
 ## Phase 0: Bootstrap
 
@@ -62,7 +62,7 @@ Acceptance:
 - [x] Perception v0: `perceive` aspects `structure`, `shape`, `silhouette`, `section`, `relations`, `probe`, `diff` (`crates/perceive`; text and JSON snapshots in `tests/aspects.rs`; 100k triangles, uncached including BVH builds: structure 22 ms, shape 27 ms, silhouette 21 ms, section 1 ms, relations 22 ms, probe 15 ms, diff 44 ms with findings cached per revision; `cargo bench -p p3d-perceive --bench aspects`)
 - [x] Diagnostics v0: geometry and relations findings with locations and fixes (`crates/perceive/src/diagnose.rs`: 10 codes; fixes are op calls whose results the engine predicts on a copy, `crates/engine/src/predict.rs`; 100k triangles: 102 ms)
 - [x] Expectations v0: `dims`, `symmetric`, `attached`, `not_intersecting`, `budget`, `watertight` (stored in the document and `.p3d`; ops `expect.add` and `expect.remove`; checks in `crates/perceive/src/expect.rs`, every type passing and failing in `crates/perceive/tests/expect.rs`)
-- [ ] `render`: offscreen wgpu (shaded, wire, matcap, contact sheet, part-label overlays)
+- [x] `render`: offscreen wgpu (shaded, wire, matcap, contact sheet, part-label overlays) (`crates/render`: seven orthographic views, shaded, wire, shaded wire and matcap with 4x MSAA, labels only on visible parts from an ID pass; coverage within 2% of the projected area and golden images in `crates/render/tests/render.rs`; MCP `render` tool returns PNG image content)
 - [x] `analyze` v0: topology metrics (`crates/analyze`: counts, face kinds, poles, angles, holes, pieces, cavities, degenerate elements, volume; `analyze` tool; 64k triangles in 3.5 ms)
 - [x] `docs/agents/` guides v0 (`quickstart`, `modeling`, `debugging`; served by the `docs` tool and as `pixel3d://guide/*` resources)
 
