@@ -161,3 +161,19 @@ fn history_is_appended() {
     }
     assert_eq!(d.history(lid).unwrap().len(), 3);
 }
+
+#[test]
+fn flat_delete_renames_colliding_children_without_duplicates() {
+    let mut d = Document::new();
+    d.create_object("a", None, ObjectKind::Empty).unwrap();
+    let box_ = d.create_object("box", None, ObjectKind::Empty).unwrap();
+    // Children "a" and "a_1": "a" is taken at the top level, so it becomes
+    // "a_1", which forces the original "a_1" to "a_1_1".
+    d.create_object("a", Some(box_), ObjectKind::Empty).unwrap();
+    d.create_object("a_1", Some(box_), ObjectKind::Empty).unwrap();
+    d.delete(box_, false).unwrap();
+    d.check().unwrap();
+    let mut names: Vec<String> = d.objects().map(|(k, _)| d.path(k).unwrap()).collect();
+    names.sort();
+    assert_eq!(names, vec!["a", "a_1", "a_1_1"]);
+}

@@ -742,9 +742,11 @@ version = "0.1.0"
 name = "p3d-scene"
 version = "0.1.0"
 dependencies = [
+ "criterion",
  "glam",
  "p3d-math",
  "p3d-mesh",
+ "p3d-testdata",
  "serde",
  "serde_json",
  "slotmap",

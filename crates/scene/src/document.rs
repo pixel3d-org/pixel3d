@@ -394,38 +394,82 @@ impl Document {
     /// get a `_N` suffix if their name is taken there). Meshes no other
     /// object uses are deleted. Returns the ids of deleted objects.
     ///
-    /// Complexity: O(subtree x (depth + log n)) recursive; O(children x
-    /// (subtree x path length + log n)) otherwise.
+    /// Complexity: O(subtree x (depth + log n)) recursive; O(subtree x
+    /// (depth + path length + log n)) otherwise. Never O(children^2): a
+    /// parent that is deleted too is not updated child by child.
     pub fn delete(&mut self, key: ObjectKey, recursive: bool) -> Result<Vec<u32>, SceneError> {
         let o = self.object(key).ok_or(SceneError::StaleObject)?;
         let parent = o.parent;
         let children: Vec<ObjectKey> = o.children.to_vec();
-        let doomed = if recursive {
-            self.subtree(key)
-        } else {
-            for c in children {
-                let name = self.object(c).map(|o| o.name.clone()).ok_or(SceneError::StaleObject)?;
-                let free = self.unique_name(&name, parent);
-                if free != name {
-                    self.rename(c, &free)?;
-                }
-                self.set_parent(c, parent, true).or_else(|_| self.set_parent(c, parent, false))?;
+        if recursive {
+            let doomed = self.subtree(key);
+            let mut ids = Vec::with_capacity(doomed.len());
+            // Children first; only the root's parent survives and needs updating.
+            for &k in doomed.iter().rev() {
+                ids.push(self.remove_one(k, k == key));
             }
-            vec![key]
-        };
-        let mut ids = Vec::with_capacity(doomed.len());
-        for &k in doomed.iter().rev() {
-            ids.push(self.remove_one(k));
+            ids.reverse();
+            return Ok(ids);
         }
-        ids.reverse();
-        Ok(ids)
+
+        // Plan every move first (names free under the new parent, world-keeping
+        // transforms) so that nothing changes if anything fails.
+        let inverse = match parent {
+            Some(p) => {
+                let w = self.world_affine(p).ok_or(SceneError::StaleObject)?;
+                (w.matrix3.determinant().abs() >= f32::EPSILON).then(|| w.inverse())
+            }
+            None => Some(Affine3A::IDENTITY),
+        };
+        let mut taken: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        let mut plan = Vec::with_capacity(children.len());
+        for &c in &children {
+            let co = self.object(c).ok_or(SceneError::StaleObject)?;
+            let mut name = co.name.clone();
+            let mut i = 1u32;
+            loop {
+                let path = self.child_path(parent, &name).ok_or(SceneError::StaleObject)?;
+                if !self.by_path.contains_key(&path) && !taken.contains(&name) {
+                    break;
+                }
+                name = format!("{}_{i}", co.name);
+                i += 1;
+            }
+            taken.insert(name.clone());
+            let world = self.world_affine(c).ok_or(SceneError::StaleObject)?;
+            let local = inverse.and_then(|inv| Trs::from_affine(&(inv * world))).unwrap_or(co.transform);
+            plan.push((c, name, local));
+        }
+        for (c, name, local) in plan {
+            let old_prefix = self.path(c).ok_or(SceneError::StaleObject)?;
+            if let Some(co) = self.object_mut(c) {
+                co.parent = parent;
+                co.name = name.clone();
+                co.transform = local;
+            }
+            if let Some(p) = parent
+                && let Some(po) = self.object_mut(p)
+            {
+                po.children.push(c);
+            }
+            let new_prefix = self.child_path(parent, &name).ok_or(SceneError::StaleObject)?;
+            self.move_paths(c, &old_prefix, &new_prefix);
+        }
+        if let Some(o) = self.object_mut(key) {
+            o.children.clear();
+        }
+        Ok(vec![self.remove_one(key, true)])
     }
 
-    /// Removes one object that has no children left.
-    fn remove_one(&mut self, key: ObjectKey) -> u32 {
+    /// Removes one object that has no children left. `update_parent` is false
+    /// when the parent is being deleted in the same call.
+    ///
+    /// Complexity: O(depth + log n), plus O(siblings) when updating the parent.
+    fn remove_one(&mut self, key: ObjectKey, update_parent: bool) -> u32 {
         let path = self.path(key);
         let Some(o) = Arc::make_mut(&mut self.objects).remove(key) else { return 0 };
-        if let Some(p) = o.parent
+        if update_parent
+            && let Some(p) = o.parent
             && let Some(po) = self.object_mut(p)
         {
             po.children.retain(|c| *c != key);
