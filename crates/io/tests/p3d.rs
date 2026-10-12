@@ -203,3 +203,17 @@ fn manifest_is_readable_json_with_stable_order() {
     assert_eq!(keys, vec!["format", "format_version", "app_version", "settings", "next_id", "meshes", "objects", "expectations", "future_field"]);
     assert!(text.contains("\"hero_prop\""));
 }
+
+#[test]
+fn json_dump_inlines_meshes_as_polygons() {
+    let d = sample();
+    let v = p3d::to_json(&d).unwrap();
+    assert_eq!(v["format"], "pixel3d");
+    assert_eq!(v["objects"][0]["name"], "crate");
+    let lid = &v["meshes"][1]["data"];
+    assert_eq!(lid["faces"].as_array().unwrap().len(), 6);
+    assert_eq!(lid["faces"][0].as_array().unwrap().len(), 4);
+    assert_eq!(lid["positions"].as_array().unwrap().len(), 8);
+    assert!(lid["groups"].as_array().unwrap().iter().any(|g| g["name"] == "top" && g["kind"] == "faces"));
+    assert_eq!(v["expectations"][0]["name"], "E1");
+}

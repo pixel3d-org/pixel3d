@@ -74,10 +74,15 @@ fn ordered(doc: &Document) -> Vec<ObjectKey> {
     out
 }
 
-/// Serializes a document to `.p3d` bytes.
+/// A manifest, its encoded blobs by hash, and the mesh of each manifest
+/// mesh id (in id order).
+type Built = (Manifest, BTreeMap<String, Vec<u8>>, Vec<MeshKey>);
+
+/// The manifest of a document, its encoded blobs by hash, and the mesh
+/// of each manifest mesh id (in id order).
 ///
 /// Complexity: O(total mesh size + objects).
-pub fn to_bytes(doc: &Document) -> Result<(Vec<u8>, SaveReport), P3dError> {
+fn build(doc: &Document) -> Result<Built, P3dError> {
     let mut mesh_ids: BTreeMap<MeshKey, u32> = BTreeMap::new();
     let mut meshes: Vec<MeshEntry> = Vec::new();
     let mut blobs: BTreeMap<String, Vec<u8>> = BTreeMap::new();
@@ -133,6 +138,16 @@ pub fn to_bytes(doc: &Document) -> Result<(Vec<u8>, SaveReport), P3dError> {
         expectations: doc.expectations().to_vec(),
         extras: doc.extras.clone(),
     };
+    let mut keys: Vec<(u32, MeshKey)> = mesh_ids.into_iter().map(|(k, id)| (id, k)).collect();
+    keys.sort_unstable();
+    Ok((manifest, blobs, keys.into_iter().map(|(_, k)| k).collect()))
+}
+
+/// Serializes a document to `.p3d` bytes.
+///
+/// Complexity: O(total mesh size + objects).
+pub fn to_bytes(doc: &Document) -> Result<(Vec<u8>, SaveReport), P3dError> {
+    let (manifest, blobs, _) = build(doc)?;
     let json = serde_json::to_vec_pretty(&manifest).map_err(|e| P3dError::Format(e.to_string()))?;
 
     let base = SimpleFileOptions::default().last_modified_time(DateTime::DEFAULT).unix_permissions(0o644);
@@ -152,6 +167,48 @@ pub fn to_bytes(doc: &Document) -> Result<(Vec<u8>, SaveReport), P3dError> {
     let out = zip.finish().map_err(zip_err)?.into_inner();
     let report = SaveReport { blobs: blobs.keys().cloned().collect(), bytes: out.len() as u64 };
     Ok((out, report))
+}
+
+/// A mesh as readable JSON: positions, faces as vertex index lists, per-face
+/// materials, per-corner UVs (in face order) and groups, densely numbered.
+///
+/// Complexity: O(V + F + C + groups x slots).
+fn mesh_json(mesh: &p3d_mesh::Mesh) -> serde_json::Value {
+    let mut m = mesh.clone();
+    m.compact();
+    let faces: Vec<Vec<u32>> = m.faces().map(|f| m.face_verts(f).collect()).collect();
+    let uvs: Vec<Vec<Vec<[f32; 2]>>> = (0..m.uv_layer_count())
+        .map(|l| m.faces().map(|f| m.face_halfedges(f).map(|h| m.corner_uv(l, h).unwrap_or_default().to_array()).collect()).collect())
+        .collect();
+    let groups: Vec<serde_json::Value> = m
+        .groups()
+        .map(|(name, g)| serde_json::json!({ "name": name, "kind": g.kind().as_str(), "members": g.iter().collect::<Vec<u32>>() }))
+        .collect();
+    serde_json::json!({
+        "positions": m.verts().map(|v| m.positions[v as usize].to_array()).collect::<Vec<_>>(),
+        "faces": faces,
+        "face_material": m.faces().map(|f| m.face_material(f)).collect::<Vec<_>>(),
+        "corner_uv": uvs,
+        "groups": groups,
+    })
+}
+
+/// Everything in a document as one JSON value, for inspection: the
+/// manifest (as stored in `.p3d`) with each mesh entry's data inlined as
+/// `data` (see [`mesh_json`]).
+///
+/// Complexity: O(total mesh size + objects).
+pub fn to_json(doc: &Document) -> Result<serde_json::Value, P3dError> {
+    let (manifest, _, keys) = build(doc)?;
+    let mut v = serde_json::to_value(&manifest).map_err(|e| P3dError::Format(e.to_string()))?;
+    if let Some(meshes) = v.get_mut("meshes").and_then(serde_json::Value::as_array_mut) {
+        for (entry, key) in meshes.iter_mut().zip(keys) {
+            if let Some(m) = doc.mesh(key) {
+                entry["data"] = mesh_json(m);
+            }
+        }
+    }
+    Ok(v)
 }
 
 /// Saves atomically: writes a temporary file next to `path`, flushes it to
