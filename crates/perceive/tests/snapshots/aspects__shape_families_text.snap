@@ -1,0 +1,21 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+shape of scene: 4 parts, mm
+post (o:1): cylinder y 97% (then box 76%, cylinder x 0%)
+  extents Y 500, X 200, Z 200 (world axes)
+  area 0.373 m2, volume 15.3 L, fills 77% of its box, closed
+  thickness min 196, typical 196; edges 32 hard, 16 soft, 176 flat (max 90 deg); mirror x yes y yes z yes
+plank (o:2): box 100% (then cylinder a1 46%, cylinder a3 13%)
+  principal axes (0.87, 0, -0.5) 800; (0.5, 0, 0.87) 200; (0, 1, 0) 50
+  area 0.42 m2, volume 8 L, fills 100% of its box, closed
+  thickness min 50, typical 50; edges 12 hard, 0 soft, 0 flat (max 90 deg); mirror a1 yes a2 yes a3 yes
+floor (o:3): plane 100% (then box 100%, cylinder y 84%)
+  extents X 1000, Z 1000, Y 0 (world axes)
+  area 1 m2, open: 1 hole
+  edges 0 hard, 0 soft, 24 flat (max 0 deg); mirror x yes y yes z yes
+bin (o:4): box 100% (then cylinder y 49%, cylinder z 46%)
+  extents Z 400, X 400, Y 300 (world axes)
+  area 0.64 m2, open: 1 hole
+  edges 8 hard, 0 soft, 0 flat (max 90 deg); mirror x yes y no (over 69 mm) z yes

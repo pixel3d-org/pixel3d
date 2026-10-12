@@ -13,6 +13,8 @@
 pub mod error;
 pub mod fmt;
 pub mod relations;
+pub mod sample;
+pub mod shape;
 pub mod structure;
 pub mod view;
 

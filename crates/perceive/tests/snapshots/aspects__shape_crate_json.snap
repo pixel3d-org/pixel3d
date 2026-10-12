@@ -1,0 +1,350 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.data
+---
+[
+  {
+    "area": 2.13286,
+    "axes": [
+      [
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ]
+    ],
+    "closed": true,
+    "extents": [
+      0.6,
+      0.6,
+      0.6
+    ],
+    "fill": 0.99938,
+    "fits": [
+      {
+        "kind": "box",
+        "percent": 99.93886
+      },
+      {
+        "axis": "z",
+        "kind": "cylinder",
+        "percent": 57.751
+      },
+      {
+        "axis": "y",
+        "kind": "cylinder",
+        "percent": 57.73343
+      },
+      {
+        "axis": "x",
+        "kind": "cylinder",
+        "percent": 57.65094
+      },
+      {
+        "kind": "sphere",
+        "percent": 46.52911
+      }
+    ],
+    "flat_edges": 0,
+    "hard_edges": 36,
+    "holes": 0,
+    "id": 1,
+    "max_edge_angle": 46.92056,
+    "mirror": [
+      {
+        "axis": "x",
+        "capped": false,
+        "max_dev": 0.00005,
+        "symmetric": true
+      },
+      {
+        "axis": "y",
+        "capped": false,
+        "max_dev": 0.00008,
+        "symmetric": true
+      },
+      {
+        "axis": "z",
+        "capped": false,
+        "max_dev": 0.00008,
+        "symmetric": true
+      }
+    ],
+    "name": "crate",
+    "parts": 1,
+    "soft_edges": 72,
+    "thickness": [
+      0.6,
+      0.6
+    ],
+    "volume": 0.21587,
+    "world_aligned": true
+  },
+  {
+    "area": 0.868,
+    "axes": [
+      [
+        1.0,
+        0.0,
+        0.0
+      ],
+      [
+        0.0,
+        0.0,
+        1.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ]
+    ],
+    "closed": true,
+    "extents": [
+      0.62,
+      0.62,
+      0.04
+    ],
+    "fill": 1.0,
+    "fits": [
+      {
+        "kind": "box",
+        "percent": 99.99995
+      },
+      {
+        "axis": "y",
+        "kind": "cylinder",
+        "percent": 76.31396
+      },
+      {
+        "axis": "x",
+        "kind": "cylinder",
+        "percent": 0.0
+      },
+      {
+        "axis": "z",
+        "kind": "cylinder",
+        "percent": 0.0
+      },
+      {
+        "kind": "sphere",
+        "percent": 0.0
+      }
+    ],
+    "flat_edges": 0,
+    "hard_edges": 12,
+    "holes": 0,
+    "id": 2,
+    "max_edge_angle": 90.0,
+    "mirror": [
+      {
+        "axis": "x",
+        "capped": false,
+        "max_dev": 0.0,
+        "symmetric": true
+      },
+      {
+        "axis": "y",
+        "capped": false,
+        "max_dev": 0.0,
+        "symmetric": true
+      },
+      {
+        "axis": "z",
+        "capped": false,
+        "max_dev": 0.0,
+        "symmetric": true
+      }
+    ],
+    "name": "lid",
+    "parts": 1,
+    "soft_edges": 0,
+    "thickness": [
+      0.04,
+      0.04
+    ],
+    "volume": 0.01538,
+    "world_aligned": true
+  },
+  {
+    "area": 0.0248,
+    "axes": [
+      [
+        0.0,
+        0.0,
+        1.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        1.0,
+        0.0,
+        0.0
+      ]
+    ],
+    "closed": true,
+    "extents": [
+      0.16,
+      0.04,
+      0.03
+    ],
+    "fill": 1.0,
+    "fits": [
+      {
+        "kind": "box",
+        "percent": 99.99994
+      },
+      {
+        "axis": "z",
+        "kind": "cylinder",
+        "percent": 68.00279
+      },
+      {
+        "axis": "y",
+        "kind": "cylinder",
+        "percent": 0.0
+      },
+      {
+        "axis": "x",
+        "kind": "cylinder",
+        "percent": 0.0
+      },
+      {
+        "kind": "sphere",
+        "percent": 0.0
+      }
+    ],
+    "flat_edges": 0,
+    "hard_edges": 12,
+    "holes": 0,
+    "id": 3,
+    "max_edge_angle": 90.0,
+    "mirror": [
+      {
+        "axis": "x",
+        "capped": false,
+        "max_dev": 0.0,
+        "symmetric": true
+      },
+      {
+        "axis": "y",
+        "capped": false,
+        "max_dev": 0.0,
+        "symmetric": true
+      },
+      {
+        "axis": "z",
+        "capped": false,
+        "max_dev": 0.0,
+        "symmetric": true
+      }
+    ],
+    "name": "handle_l",
+    "parts": 1,
+    "soft_edges": 0,
+    "thickness": [
+      0.03,
+      0.03
+    ],
+    "volume": 0.00019,
+    "world_aligned": true
+  },
+  {
+    "area": 0.0248,
+    "axes": [
+      [
+        0.0,
+        0.0,
+        1.0
+      ],
+      [
+        0.0,
+        1.0,
+        0.0
+      ],
+      [
+        1.0,
+        0.0,
+        0.0
+      ]
+    ],
+    "closed": true,
+    "extents": [
+      0.16,
+      0.04,
+      0.03
+    ],
+    "fill": 1.0,
+    "fits": [
+      {
+        "kind": "box",
+        "percent": 99.99994
+      },
+      {
+        "axis": "z",
+        "kind": "cylinder",
+        "percent": 68.00279
+      },
+      {
+        "axis": "y",
+        "kind": "cylinder",
+        "percent": 0.0
+      },
+      {
+        "axis": "x",
+        "kind": "cylinder",
+        "percent": 0.0
+      },
+      {
+        "kind": "sphere",
+        "percent": 0.0
+      }
+    ],
+    "flat_edges": 0,
+    "hard_edges": 12,
+    "holes": 0,
+    "id": 4,
+    "max_edge_angle": 90.0,
+    "mirror": [
+      {
+        "axis": "x",
+        "capped": false,
+        "max_dev": 0.0,
+        "symmetric": true
+      },
+      {
+        "axis": "y",
+        "capped": false,
+        "max_dev": 0.0,
+        "symmetric": true
+      },
+      {
+        "axis": "z",
+        "capped": false,
+        "max_dev": 0.0,
+        "symmetric": true
+      }
+    ],
+    "name": "handle_r",
+    "parts": 1,
+    "soft_edges": 0,
+    "thickness": [
+      0.03,
+      0.03
+    ],
+    "volume": 0.00019,
+    "world_aligned": true
+  }
+]

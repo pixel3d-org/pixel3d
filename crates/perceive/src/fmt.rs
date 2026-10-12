@@ -28,6 +28,16 @@ pub fn point(p: Vec3) -> String {
     format!("({}, {}, {})", mm(p.x), mm(p.y), mm(p.z))
 }
 
+/// A direction with two decimals per component: `(0.87, 0, -0.5)`.
+pub fn unit(v: Vec3) -> String {
+    let c = |x: f32| {
+        let s = format!("{:.2}", x);
+        let s = s.trim_end_matches('0').trim_end_matches('.').to_owned();
+        if s == "-0" { "0".to_owned() } else { s }
+    };
+    format!("({}, {}, {})", c(v.x), c(v.y), c(v.z))
+}
+
 /// Degrees with at most one decimal: `35`, `12.5`.
 pub fn deg(d: f32) -> String {
     let s = format!("{:.1}", d);

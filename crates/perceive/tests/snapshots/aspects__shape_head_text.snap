@@ -1,0 +1,21 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+shape of scene: 4 parts, mm
+head (o:1): sphere 99% (then cylinder y 55%, cylinder z 55%)
+  extents X 200, Z 200, Y 200 (world axes)
+  area 0.125 m2, volume 4.12 L, fills 51% of its box, closed
+  thickness min 198, typical 198; edges 0 hard, 768 soft, 0 flat (max 11.8 deg); mirror x yes y yes z yes
+ear_l (o:2): sphere 98% (then cylinder y 50%, cylinder z 50%)
+  extents X 60, Y 60, Z 60 (world axes)
+  area 0.0109 m2, volume 0.106 L, fills 49% of its box, closed
+  thickness min 58, typical 58; edges 0 hard, 192 soft, 0 flat (max 24.1 deg); mirror x yes y yes z yes
+ear_r (o:3): sphere 98% (then cylinder y 50%, cylinder z 50%)
+  extents X 60, Y 60, Z 60 (world axes)
+  area 0.0109 m2, volume 0.106 L, fills 49% of its box, closed
+  thickness min 58, typical 58; edges 0 hard, 192 soft, 0 flat (max 24.1 deg); mirror x yes y yes z yes
+hat (o:4): box 100% (then cylinder y 59%, cylinder z 11%)
+  extents X 120, Z 120, Y 50 (world axes)
+  area 0.0528 m2, volume 0.72 L, fills 100% of its box, closed
+  thickness min 50, typical 50; edges 12 hard, 0 soft, 0 flat (max 90 deg); mirror x yes y yes z yes

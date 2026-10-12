@@ -35,3 +35,26 @@ fn unknown_targets_get_suggestions() {
     assert_eq!((e.code, e.path.as_deref()), ("NOT_FOUND", Some("/target")));
     assert_eq!(e.suggestions.first().map(String::as_str), Some("crate"));
 }
+
+#[test]
+fn shape_reports() {
+    let doc = scenes::crate_scene();
+    check("shape_crate", &p3d_perceive::shape::report(&View::new(&doc, None).unwrap()));
+    let doc = scenes::head_scene();
+    check("shape_head", &p3d_perceive::shape::report(&View::new(&doc, None).unwrap()));
+}
+
+#[test]
+fn shape_families() {
+    let doc = scenes::shapes_scene();
+    let view = View::new(&doc, None).unwrap();
+    let r = p3d_perceive::shape::report(&view);
+    check("shape_families", &r);
+    let best = |i: usize| (r.data[i]["fits"][0]["kind"].as_str().unwrap().to_owned(), r.data[i]["fits"][0]["axis"].as_str().map(str::to_owned));
+    assert_eq!(best(0), ("cylinder".into(), Some("y".into())));
+    assert_eq!(best(1).0, "box");
+    assert_eq!(r.data[1]["world_aligned"], false, "the plank is turned 30 degrees");
+    assert_eq!(best(2).0, "plane");
+    assert_eq!(r.data[3]["holes"], 1);
+    assert_eq!(r.data[3]["closed"], false);
+}

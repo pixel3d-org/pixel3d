@@ -60,3 +60,26 @@ pub fn head_scene() -> Document {
     add(&mut doc, "hat", None, box_mesh([0.12, 0.05, 0.12], 0.0), [0.0, 0.27, 0.0]);
     doc
 }
+
+/// One part per shape family, spaced 1 m apart along X:
+///
+/// - `post` (o:1): cylinder, 100 mm radius, 500 mm tall, 16 segments;
+/// - `plank` (o:2): 800 x 50 x 200 mm box turned 30 degrees about Y;
+/// - `floor` (o:3): 1 x 1 m plane;
+/// - `bin` (o:4): 400 x 300 x 400 mm box without its top (open).
+pub fn shapes_scene() -> Document {
+    use p3d_geo::prim::{CapKind, CylinderSpec, PlaneSpec, cylinder, plane};
+    let mut doc = Document::new();
+    let post = cylinder(&CylinderSpec { radius: 0.1, height: 0.5, segments: 16, height_segments: 1, cap: CapKind::QuadGrid }, Origin::Bottom)
+        .unwrap_or_default();
+    add(&mut doc, "post", None, post, [0.0, 0.0, 0.0]);
+    let plank = add(&mut doc, "plank", None, box_mesh([0.8, 0.05, 0.2], 0.0), [1.5, 0.0, 0.0]);
+    turn_y(&mut doc, plank, 30.0);
+    let floor = plane(&PlaneSpec { size_x: 1.0, size_z: 1.0, segments_x: 4, segments_z: 4 }).unwrap_or_default();
+    add(&mut doc, "floor", None, floor, [3.0, 0.0, 0.0]);
+    let mut bin = box_mesh([0.4, 0.3, 0.4], 0.0);
+    let top: Vec<u32> = bin.group("top").map(|g| g.iter().collect()).unwrap_or_default();
+    let _ = bin.delete_faces(&top);
+    add(&mut doc, "bin", None, bin, [4.5, 0.0, 0.0]);
+    doc
+}
