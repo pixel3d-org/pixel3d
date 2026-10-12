@@ -10,6 +10,22 @@ the allow list in deny.toml. Dependencies under a weak-copyleft license (MPL-2.0
 unmodified as separate libraries and are listed here with their source location. There are none
 yet.
 
+Dependencies under licenses other than MIT or Apache-2.0 that ship in the desktop app (ADR 0004):
+
+- clipboard-win 5.4.1 and error-code 3.4.0 (Windows builds only), the clipboard backend of arboard
+  used by eframe: Boost Software License 1.0 (BSL-1.0).
+  https://github.com/DoumanAsh/clipboard-win, https://github.com/DoumanAsh/error-code
+- epaint_default_fonts 0.36.2 (egui's bundled fonts, compiled into the desktop app):
+  Ubuntu-Light under the Ubuntu Font Licence 1.0, Noto Emoji under the SIL Open Font License 1.1,
+  Hack under the MIT License and the Bitstream Vera License, emoji-icon-font under the MIT License.
+  The license texts ship with the crate (fonts/*.txt). https://github.com/emilk/egui
+
+Code adapted from cadcraft (https://github.com/storytold/cadcraft), Copyright (c) 2026 ArtCraft
+Team and the CADCraft contributors, licensed under the MIT License or the Apache License, Version
+2.0: the interface theme tokens, the icon drawing helpers, and the window chrome and docking
+patterns in crates/ui. The craft-ui library (https://github.com/storytold/craft-libs), Copyright
+(c) 2026 ArtCraft Team and the craft-libs contributors, is used under the same licenses.
+
 Bundled assets (icons, images, fonts, sample models) are listed with their authors, sources and
 licenses in ATTRIBUTION.md.
 

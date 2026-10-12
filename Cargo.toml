@@ -49,9 +49,9 @@ p3d-testdata = { path = "crates/testdata" }
 # GUI (L5 only). winit and accesskit come from eframe. craft-ui is pinned by
 # rev (MIT OR Apache-2.0; listed in deny.toml `allow-git`).
 craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "3c9702725d880e4e1eb9f711fc45f29dc82cf427", features = ["serde"] }
-# No default features: egui's bundled fonts carry font licenses outside the
-# allow list (the UI loads the OS fonts instead), and egui-wgpu's defaults
-# turn on wgpu's browser backends.
+# No default features here: the app enables egui's bundled fonts through
+# eframe's `default_fonts` (ADR 0004), and egui-wgpu's defaults come in
+# through eframe's `wgpu` feature.
 egui = { version = "0.36.2", default-features = false }
 eframe = { version = "0.36.2", default-features = false }
 egui-wgpu = { version = "0.36.2", default-features = false }
