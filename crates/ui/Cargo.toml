@@ -19,6 +19,7 @@ p3d-engine = { workspace = true }
 p3d-io = { workspace = true }
 p3d-math = { workspace = true }
 p3d-ops = { workspace = true }
+p3d-perceive = { workspace = true }
 p3d-render = { workspace = true }
 p3d-scene = { workspace = true }
 serde = { workspace = true }

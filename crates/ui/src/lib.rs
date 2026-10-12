@@ -11,6 +11,7 @@
 pub mod chrome;
 pub mod control;
 pub mod docking;
+pub mod health;
 pub mod i18n;
 pub mod icons;
 pub mod inspector;
@@ -231,6 +232,8 @@ pub struct PixelApp {
     pub quit_requested: bool,
     pub frame_ms: f32,
     pub shots: screenshot::Shots,
+    /// Diagnostics of the current document (the Health panel).
+    pub health: health::HealthState,
     /// Quit once the pending screenshot is saved (`--screenshot`).
     pub quit_after_shot: bool,
 }
@@ -257,6 +260,7 @@ impl PixelApp {
             quit_requested: false,
             frame_ms: 0.0,
             shots: screenshot::Shots::default(),
+            health: health::HealthState::default(),
             quit_after_shot: false,
         }
     }
@@ -273,7 +277,7 @@ impl PixelApp {
 
     /// Background work still running (shown in the status bar).
     pub fn running_jobs(&self) -> usize {
-        0
+        usize::from(self.health.busy())
     }
 
     /// Whether the History or Console panel is open.
@@ -344,6 +348,7 @@ impl PixelApp {
         self.viewport.hidden_changed();
         self.last_op = None;
         self.coalesce = None;
+        self.health = health::HealthState::default();
         self.viewport.frame_pending = true;
         self.ui.start_page = false;
     }
@@ -793,6 +798,11 @@ impl PixelApp {
         let t0 = Instant::now();
         control::begin_frame(ui.ctx());
         let tk = theme::Tokens::get();
+        if !self.ui.start_page {
+            let (key, seed) = (self.scene_key(), self.session.seed());
+            let (doc, registry) = (std::sync::Arc::clone(self.session.doc()), std::sync::Arc::clone(self.session.registry()));
+            self.health.update(key, &doc, &registry, seed, ui.ctx());
+        }
         chrome::top_bar(self, ui);
         if self.ui.show_toolbar {
             chrome::tool_settings(self, ui);
@@ -832,12 +842,14 @@ impl PixelApp {
                     })
                     .inner;
                 chrome::viewport_overlay(self, ui);
+                health::badges(self, ui);
                 nav = navgizmo::show(ui, view_rect, &mut self.viewport, self.ui.view.ortho);
             }
             other => {
                 egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| match other {
                     docking::Panel::Outliner => outliner::show(self, ui),
                     docking::Panel::Properties => inspector::show(self, ui),
+                    docking::Panel::Health => health::show(self, ui),
                     docking::Panel::History => panels::history(self, ui),
                     docking::Panel::Console | docking::Panel::Viewport => panels::console(self, ui),
                 });

@@ -17,18 +17,20 @@ pub enum Panel {
     Viewport,
     Outliner,
     Properties,
+    Health,
     History,
     Console,
 }
 
 impl Panel {
-    pub const ALL: &[Panel] = &[Panel::Viewport, Panel::Outliner, Panel::Properties, Panel::History, Panel::Console];
+    pub const ALL: &[Panel] = &[Panel::Viewport, Panel::Outliner, Panel::Properties, Panel::Health, Panel::History, Panel::Console];
 
     pub fn id(self) -> &'static str {
         match self {
             Panel::Viewport => "viewport",
             Panel::Outliner => "outliner",
             Panel::Properties => "properties",
+            Panel::Health => "health",
             Panel::History => "history",
             Panel::Console => "console",
         }
@@ -39,6 +41,7 @@ impl Panel {
             Panel::Viewport => t("Viewport"),
             Panel::Outliner => t("Outliner"),
             Panel::Properties => t("Properties"),
+            Panel::Health => t("Health"),
             Panel::History => t("History"),
             Panel::Console => t("Console"),
         }
@@ -86,6 +89,7 @@ impl Default for Workspace {
             entries: vec![
                 StackEntry { panel: Panel::Outliner, open: true, height: Some(220.0) },
                 StackEntry { panel: Panel::Properties, open: true, height: Some(520.0) },
+                StackEntry { panel: Panel::Health, open: true, height: Some(200.0) },
             ],
         };
         let root = split(SplitAxis::Horizontal, SplitSize::FixedSecond(320.0), center, right);
@@ -199,7 +203,7 @@ fn limits(panel: &Panel) -> PanelLimits {
     let (min, max_width) = match panel {
         Panel::Viewport => (egui::vec2(240.0, 160.0), 1_000_000.0),
         Panel::History | Panel::Console => (egui::vec2(200.0, 80.0), 1_000_000.0),
-        Panel::Outliner | Panel::Properties => (egui::vec2(220.0, 90.0), 720.0),
+        Panel::Outliner | Panel::Properties | Panel::Health => (egui::vec2(220.0, 90.0), 720.0),
     };
     PanelLimits { min, max: egui::vec2(max_width, 1_000_000.0) }
 }

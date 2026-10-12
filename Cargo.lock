@@ -3156,6 +3156,7 @@ dependencies = [
  "p3d-io",
  "p3d-math",
  "p3d-ops",
+ "p3d-perceive",
  "p3d-render",
  "p3d-scene",
  "serde",
