@@ -857,7 +857,7 @@ impl Op for Join {
                    objects are removed and their children move to the receiver. Groups with the same name merge.",
             examples: &[OpExample { args: r#"{"targets": ["crate", "post"]}"#, result: "joined 2 objects into crate (o:1): 38 faces" }],
             aliases: &["ctrl j", "combine", "merge objects", "attach"],
-            complexity: "O(total vertices and corners) plus O(groups x slots)",
+            complexity: "O(total mesh size + targets x log n + children x depth)",
             flags: EDIT,
             version: 1,
         }
@@ -867,23 +867,36 @@ impl Op for Join {
         if p.targets.len() < 2 {
             return Err(OpError::invalid("/targets", "join needs at least two objects"));
         }
-        let mut keys = Vec::with_capacity(p.targets.len());
+        let mut keys = std::collections::BTreeSet::new();
         for (i, t) in p.targets.iter().enumerate() {
             let path = format!("/targets/{i}");
             let k = resolve(doc, t, &path)?;
             if doc.object_mesh(k).is_none() {
                 return Err(OpError::invalid(&path, format!("{} is not a mesh", label(doc, k))));
             }
-            if keys.contains(&k) {
+            if !keys.insert(k) {
                 return Err(OpError::invalid(&path, format!("{} is listed twice", label(doc, k))));
             }
-            keys.push(k);
         }
-        if let Some(into) = &p.into {
-            let k = resolve(doc, into, "/into")?;
-            if !keys.contains(&k) {
-                return Err(OpError::invalid("/into", "`into` must be one of the targets"));
+        let into = match &p.into {
+            Some(t) => {
+                let k = resolve(doc, t, "/into")?;
+                if !keys.contains(&k) {
+                    return Err(OpError::invalid("/into", "`into` must be one of the targets"));
+                }
+                k
             }
+            None => resolve(doc, &p.targets[0], "/targets/0")?,
+        };
+        // The receiver cannot sit inside another target: that target's children
+        // (one of them holding the receiver) would have to move into it.
+        let mut cur = doc.object(into).and_then(|o| o.parent());
+        while let Some(a) = cur {
+            if keys.contains(&a) {
+                return Err(OpError::invalid("/into", format!("{} is inside {}, another target", label(doc, into), label(doc, a)))
+                    .with_hint("join into the outermost object instead"));
+            }
+            cur = doc.object(a).and_then(|o| o.parent());
         }
         Ok(())
     }
@@ -901,23 +914,16 @@ impl Op for Join {
         }
         let inv = world_into.inverse();
         tx.doc_mut().make_mesh_unique(into).map_err(scene_err("/into"))?;
-        let mut deleted = Vec::new();
-        for &k in keys.iter().filter(|&&k| k != into) {
+        let others: Vec<ObjectKey> = keys.iter().copied().filter(|&k| k != into).collect();
+        for &k in &others {
             let rel = inv * tx.doc().world_affine(k).ok_or_else(|| OpError::internal("object vanished"))?;
             let mut part = tx.mesh(k, "/targets")?.clone();
             part.transform(rel);
             tx.mesh_mut(into, "/into")?.append(&part);
-            let children: Vec<ObjectKey> = tx.doc().object(k).map(|o| o.children().to_vec()).unwrap_or_default();
-            for c in children {
-                let name = tx.doc().object(c).map(|o| o.name().to_owned()).unwrap_or_default();
-                let free = tx.doc().unique_name(&name, Some(into));
-                if free != name {
-                    tx.doc_mut().rename(c, &free).map_err(scene_err("/targets"))?;
-                }
-                tx.doc_mut().set_parent(c, Some(into), true).map_err(scene_err("/targets"))?;
-            }
-            deleted.extend(tx.doc_mut().delete(k, false).map_err(scene_err("/targets"))?);
+            // Children move to the receiver in one bulk step (never one by one).
+            tx.doc_mut().move_children(k, Some(into)).map_err(scene_err("/targets"))?;
         }
+        let deleted = tx.doc_mut().delete_leaves(&others).map_err(scene_err("/targets"))?;
         let faces = tx.mesh(into, "/into")?.face_count();
         let mut out = OpOutput::summary(format!("joined {} objects into {}: {} faces", keys.len(), label(tx.doc(), into), thousands(faces)));
         out.changed.push(into);

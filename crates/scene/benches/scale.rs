@@ -50,6 +50,24 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // A chain n deep: creating it and resolving the deepest path. Full-path
+    // indexes made this quadratic (depth x name length per object).
+    let mut g = c.benchmark_group("scale_scene_deep_chain");
+    for &n in &sizes {
+        g.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
+            b.iter(|| {
+                let mut d = Document::new();
+                let mut parent = None;
+                for i in 0..n {
+                    parent = d.create_object(&format!("link_{i}"), parent, ObjectKind::Empty).ok();
+                }
+                let path: Vec<String> = (0..n).map(|i| format!("link_{i}")).collect();
+                d.resolve(&path.join("/")).ok()
+            })
+        });
+    }
+    g.finish();
+
     let mut g = c.benchmark_group("scale_scene_resolve_leaf");
     for &n in &sizes {
         let (d, _) = flat(n);

@@ -1,6 +1,6 @@
 //! The document: objects in a hierarchy, meshes, history graphs, settings.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use glam::Affine3A;
@@ -31,19 +31,29 @@ pub enum SceneError {
     SingularParent { child: String },
     #[error("object id {0} is already used")]
     IdTaken(u32),
+    #[error("`{0}` still has children")]
+    HasChildren(String),
     #[error("the object no longer exists")]
     StaleObject,
     #[error("the mesh no longer exists")]
     StaleMesh,
 }
 
+/// Children of one parent by leaf name.
+type Siblings = BTreeMap<String, ObjectKey>;
+
 /// The document. Large tables sit behind `Arc` and are copied on write, so
 /// cloning a document (an undo snapshot) is O(1) and a transaction copies
 /// only the tables and objects it touches.
+///
+/// Names are indexed by (parent, leaf name) and by leaf name alone, never by
+/// full path: renaming or moving an object updates one entry, and path
+/// lookups walk the segments, so cost never grows with depth x name length.
 #[derive(Debug, Clone)]
 pub struct Document {
     objects: Arc<SlotMap<ObjectKey, Arc<Object>>>,
-    by_path: Arc<BTreeMap<String, ObjectKey>>,
+    by_name: Arc<BTreeMap<Option<ObjectKey>, Siblings>>,
+    by_leaf: Arc<BTreeMap<String, BTreeSet<ObjectKey>>>,
     by_id: Arc<BTreeMap<u32, ObjectKey>>,
     meshes: Arc<SlotMap<MeshKey, Arc<Mesh>>>,
     mesh_users: Arc<SecondaryMap<MeshKey, u32>>,
@@ -62,7 +72,8 @@ impl Default for Document {
     fn default() -> Self {
         Document {
             objects: Arc::default(),
-            by_path: Arc::default(),
+            by_name: Arc::default(),
+            by_leaf: Arc::default(),
             by_id: Arc::default(),
             meshes: Arc::default(),
             mesh_users: Arc::default(),
@@ -178,47 +189,105 @@ impl Document {
         Some(m)
     }
 
-    /// Finds an object by id (`o:12`), by path (`chest/lid`) or by a leaf
-    /// name that only one object uses.
+    /// The child of `parent` (or top-level object) with a leaf name.
     ///
-    /// Complexity: O(log n) for ids and paths; O(n) for leaf names and on
-    /// errors (suggestions).
+    /// Complexity: O(log n).
+    pub fn child_named(&self, parent: Option<ObjectKey>, name: &str) -> Option<ObjectKey> {
+        self.by_name.get(&parent).and_then(|s| s.get(name)).copied()
+    }
+
+    /// Finds an object by id (`o:12`), by path (`chest/lid`), or by a leaf
+    /// name: a top-level object with that name, else the only object with it.
+    ///
+    /// Complexity: O(depth x log n) for paths, O(log n) otherwise; O(n x
+    /// depth) on errors (suggestions).
     pub fn resolve(&self, target: &str) -> Result<ObjectKey, SceneError> {
         if let Some(n) = target.strip_prefix("o:") {
             return n.parse::<u32>().ok().and_then(|id| self.object_by_id(id)).ok_or_else(|| self.not_found(target));
         }
-        if let Some(&k) = self.by_path.get(target) {
+        if target.contains('/') {
+            let mut cur: Option<ObjectKey> = None;
+            for seg in target.split('/') {
+                cur = Some(self.child_named(cur, seg).ok_or_else(|| self.not_found(target))?);
+            }
+            return cur.ok_or_else(|| self.not_found(target));
+        }
+        if let Some(k) = self.child_named(None, target) {
             return Ok(k);
         }
-        let matches: Vec<ObjectKey> = self.objects().filter(|(_, o)| o.name == target).map(|(k, _)| k).collect();
+        let matches: Vec<ObjectKey> = self.by_leaf.get(target).map(|s| s.iter().copied().collect()).unwrap_or_default();
         match matches.as_slice() {
             [k] => Ok(*k),
             [] => Err(self.not_found(target)),
-            many => Err(SceneError::Ambiguous { name: target.to_owned(), candidates: many.iter().filter_map(|&k| self.path(k)).collect() }),
+            many => {
+                let mut candidates: Vec<String> = many.iter().filter_map(|&k| self.path(k)).collect();
+                candidates.sort();
+                Err(SceneError::Ambiguous { name: target.to_owned(), candidates })
+            }
         }
     }
 
+    /// Error with suggestions from leaf names and paths (error path only).
+    ///
+    /// Complexity: O(n x (depth + name length^2)).
     fn not_found(&self, target: &str) -> SceneError {
-        let names = self.by_path.keys().map(String::as_str).chain(self.objects.values().map(|o| o.name.as_str()));
+        let paths: Vec<String> = self.objects().filter_map(|(k, _)| self.path(k)).collect();
+        let names = self.by_leaf.keys().map(String::as_str).chain(paths.iter().map(String::as_str));
         SceneError::NotFound { target: target.to_owned(), suggestions: suggest(target, names, 3) }
     }
 
     /// `base`, or `base_1`, `base_2`, ... whichever is free under `parent`.
+    /// Creating many unnamed objects with one base under one parent costs
+    /// O(k) probes each (k = names taken so far); agents normally name objects.
     ///
-    /// Complexity: O(k log n) for k taken names.
+    /// Complexity: O(k x log n).
     pub fn unique_name(&self, base: &str, parent: Option<ObjectKey>) -> String {
-        let free = |n: &str| self.child_path(parent, n).is_some_and(|p| !self.by_path.contains_key(&p));
+        let siblings = self.by_name.get(&parent);
+        let free = |n: &str| siblings.is_none_or(|s| !s.contains_key(n));
         if free(base) {
             return base.to_owned();
         }
         (1u32..).map(|i| format!("{base}_{i}")).find(|n| free(n)).unwrap_or_else(|| base.to_owned())
     }
 
+    fn name_error(&self, parent: Option<ObjectKey>, name: &str) -> SceneError {
+        SceneError::NameTaken { path: self.child_path(parent, name).unwrap_or_else(|| name.to_owned()), suggestion: self.unique_name(name, parent) }
+    }
+
+    /// Adds an object to both name indexes.
+    ///
+    /// Complexity: O(log n).
+    fn index_insert(&mut self, parent: Option<ObjectKey>, name: &str, key: ObjectKey) {
+        Arc::make_mut(&mut self.by_name).entry(parent).or_default().insert(name.to_owned(), key);
+        Arc::make_mut(&mut self.by_leaf).entry(name.to_owned()).or_default().insert(key);
+    }
+
+    /// Removes an object from both name indexes, dropping empty entries.
+    ///
+    /// Complexity: O(log n).
+    fn index_remove(&mut self, parent: Option<ObjectKey>, name: &str, key: ObjectKey) {
+        let by_name = Arc::make_mut(&mut self.by_name);
+        if let Some(s) = by_name.get_mut(&parent) {
+            s.remove(name);
+            if s.is_empty() {
+                by_name.remove(&parent);
+            }
+        }
+        let by_leaf = Arc::make_mut(&mut self.by_leaf);
+        if let Some(s) = by_leaf.get_mut(name) {
+            s.remove(&key);
+            if s.is_empty() {
+                by_leaf.remove(name);
+            }
+        }
+    }
+
     // ---- objects: editing ------------------------------------------------------
 
     /// Creates an object with the next id.
     ///
-    /// Complexity: O(depth + log n).
+    /// Complexity: O(log n), plus an O(n) table copy on the first write after
+    /// a snapshot.
     pub fn create_object(&mut self, name: &str, parent: Option<ObjectKey>, kind: ObjectKind) -> Result<ObjectKey, SceneError> {
         let id = self.next_id;
         self.create_object_with_id(id, name, parent, kind)
@@ -226,7 +295,8 @@ impl Document {
 
     /// Creates an object with a given id (used when loading files).
     ///
-    /// Complexity: O(depth + log n).
+    /// Complexity: O(log n), plus an O(n) table copy on the first write after
+    /// a snapshot.
     pub fn create_object_with_id(&mut self, id: u32, name: &str, parent: Option<ObjectKey>, kind: ObjectKind) -> Result<ObjectKey, SceneError> {
         check_name(name)?;
         if self.by_id.contains_key(&id) {
@@ -242,9 +312,8 @@ impl Document {
         {
             return Err(SceneError::StaleMesh);
         }
-        let path = self.child_path(parent, name).ok_or(SceneError::StaleObject)?;
-        if self.by_path.contains_key(&path) {
-            return Err(SceneError::NameTaken { suggestion: self.unique_name(name, parent), path });
+        if self.child_named(parent, name).is_some() {
+            return Err(self.name_error(parent, name));
         }
         let object = Object {
             id,
@@ -268,7 +337,7 @@ impl Document {
         if let ObjectKind::Mesh { mesh } = kind {
             bump(Arc::make_mut(&mut self.mesh_users), mesh);
         }
-        Arc::make_mut(&mut self.by_path).insert(path, key);
+        self.index_insert(parent, name, key);
         Arc::make_mut(&mut self.by_id).insert(id, key);
         self.next_id = self.next_id.max(id + 1);
         Ok(key)
@@ -285,55 +354,32 @@ impl Document {
         self.next_id = self.next_id.max(next);
     }
 
-    /// Renames an object (and so the paths of its whole subtree).
+    /// Renames an object; the paths of its subtree change with it.
     ///
-    /// Complexity: O(subtree x path length + depth + log n).
+    /// Complexity: O(log n).
     pub fn rename(&mut self, key: ObjectKey, name: &str) -> Result<(), SceneError> {
         check_name(name)?;
         let o = self.object(key).ok_or(SceneError::StaleObject)?;
         if o.name == name {
             return Ok(());
         }
-        let parent = o.parent;
-        let old_prefix = self.path(key).ok_or(SceneError::StaleObject)?;
-        let new_prefix = self.child_path(parent, name).ok_or(SceneError::StaleObject)?;
-        if self.by_path.contains_key(&new_prefix) {
-            return Err(SceneError::NameTaken { suggestion: self.unique_name(name, parent), path: new_prefix });
+        let (parent, old) = (o.parent, o.name.clone());
+        if self.child_named(parent, name).is_some() {
+            return Err(self.name_error(parent, name));
         }
+        self.index_remove(parent, &old, key);
         if let Some(o) = self.object_mut(key) {
             o.name = name.to_owned();
         }
-        self.move_paths(key, &old_prefix, &new_prefix);
+        self.index_insert(parent, name, key);
         Ok(())
-    }
-
-    /// Rewrites the path index entries of a subtree after its root moved from
-    /// `old_prefix` to `new_prefix` (call after the rename or reparent). Each
-    /// old path is the new path with the prefix swapped back.
-    ///
-    /// Complexity: O(subtree x (depth + path length + log n)).
-    fn move_paths(&mut self, key: ObjectKey, old_prefix: &str, new_prefix: &str) {
-        let moved: Vec<(String, String, ObjectKey)> = self
-            .subtree(key)
-            .into_iter()
-            .filter_map(|k| {
-                let new = self.path(k)?;
-                let old = format!("{old_prefix}{}", new.get(new_prefix.len()..)?);
-                Some((old, new, k))
-            })
-            .collect();
-        let by_path = Arc::make_mut(&mut self.by_path);
-        for (old, _, _) in &moved {
-            by_path.remove(old);
-        }
-        by_path.extend(moved.into_iter().map(|(_, new, k)| (new, k)));
     }
 
     /// Moves an object under another parent (`None`: to the top level). With
     /// `keep_world` the local transform is recomputed so the object does not
     /// move in the world.
     ///
-    /// Complexity: O(depth + siblings + subtree x (path length + log n)).
+    /// Complexity: O(depth + siblings + log n).
     pub fn set_parent(&mut self, key: ObjectKey, parent: Option<ObjectKey>, keep_world: bool) -> Result<(), SceneError> {
         let o = self.object(key).ok_or(SceneError::StaleObject)?;
         if o.parent == parent {
@@ -342,33 +388,18 @@ impl Document {
         let name = o.name.clone();
         let old_parent = o.parent;
         if let Some(p) = parent {
-            let mut cur = Some(p);
-            while let Some(c) = cur {
-                if c == key {
-                    return Err(SceneError::Cycle { child: self.path(key).unwrap_or_default(), parent: self.path(p).unwrap_or_default() });
-                }
-                cur = self.object(c).ok_or(SceneError::StaleObject)?.parent;
-            }
+            self.check_not_inside(&[key], p)?;
         }
-        let new_prefix = self.child_path(parent, &name).ok_or(SceneError::StaleObject)?;
-        if self.by_path.contains_key(&new_prefix) {
-            return Err(SceneError::NameTaken { suggestion: self.unique_name(&name, parent), path: new_prefix });
+        if self.child_named(parent, &name).is_some() {
+            return Err(self.name_error(parent, &name));
         }
         let new_local = if keep_world {
             let world = self.world_affine(key).ok_or(SceneError::StaleObject)?;
-            let parent_world = match parent {
-                Some(p) => self.world_affine(p).ok_or(SceneError::StaleObject)?,
-                None => Affine3A::IDENTITY,
-            };
-            if parent_world.matrix3.determinant().abs() < f32::EPSILON {
-                return Err(SceneError::SingularParent { child: name });
-            }
-            Some(Trs::from_affine(&(parent_world.inverse() * world)).ok_or(SceneError::SingularParent { child: name.clone() })?)
+            let inv = self.inverse_world(parent)?.ok_or_else(|| SceneError::SingularParent { child: name.clone() })?;
+            Some(Trs::from_affine(&(inv * world)).ok_or(SceneError::SingularParent { child: name.clone() })?)
         } else {
             None
         };
-        let old_prefix = self.path(key).ok_or(SceneError::StaleObject)?;
-
         if let Some(op) = old_parent
             && let Some(po) = self.object_mut(op)
         {
@@ -385,7 +416,85 @@ impl Document {
                 o.transform = t;
             }
         }
-        self.move_paths(key, &old_prefix, &new_prefix);
+        self.index_remove(old_parent, &name, key);
+        self.index_insert(parent, &name, key);
+        Ok(())
+    }
+
+    /// Fails if `target` is one of `keys` or lies inside one of them.
+    ///
+    /// Complexity: O(depth x log k).
+    fn check_not_inside(&self, keys: &[ObjectKey], target: ObjectKey) -> Result<(), SceneError> {
+        let set: BTreeSet<ObjectKey> = keys.iter().copied().collect();
+        let mut cur = Some(target);
+        while let Some(c) = cur {
+            if set.contains(&c) {
+                return Err(SceneError::Cycle { child: self.path(c).unwrap_or_default(), parent: self.path(target).unwrap_or_default() });
+            }
+            cur = self.object(c).ok_or(SceneError::StaleObject)?.parent;
+        }
+        Ok(())
+    }
+
+    /// Inverse world transform of a parent (identity for the top level);
+    /// `None` when it is singular.
+    fn inverse_world(&self, parent: Option<ObjectKey>) -> Result<Option<Affine3A>, SceneError> {
+        Ok(match parent {
+            None => Some(Affine3A::IDENTITY),
+            Some(p) => {
+                let w = self.world_affine(p).ok_or(SceneError::StaleObject)?;
+                (w.matrix3.determinant().abs() >= f32::EPSILON).then(|| w.inverse())
+            }
+        })
+    }
+
+    /// Moves every child of `from` under `to`, keeping world transforms
+    /// (local ones are kept where `to` is singular) and adding `_N` suffixes
+    /// where names are taken. Everything is planned first, so nothing changes
+    /// on failure. Leaves `from` without children.
+    ///
+    /// Complexity: O(children x (depth + log n)); never O(children^2).
+    pub fn move_children(&mut self, from: ObjectKey, to: Option<ObjectKey>) -> Result<(), SceneError> {
+        let children: Vec<ObjectKey> = self.object(from).ok_or(SceneError::StaleObject)?.children.to_vec();
+        if children.is_empty() {
+            return Ok(());
+        }
+        if let Some(t) = to {
+            self.check_not_inside(&children, t)?;
+        }
+        let inverse = self.inverse_world(to)?;
+        let mut taken: BTreeSet<String> = BTreeSet::new();
+        let mut plan = Vec::with_capacity(children.len());
+        for &c in &children {
+            let co = self.object(c).ok_or(SceneError::StaleObject)?;
+            let mut name = co.name.clone();
+            let mut i = 1u32;
+            while self.child_named(to, &name).is_some() || taken.contains(&name) {
+                name = format!("{}_{i}", co.name);
+                i += 1;
+            }
+            taken.insert(name.clone());
+            let world = self.world_affine(c).ok_or(SceneError::StaleObject)?;
+            let local = inverse.and_then(|inv| Trs::from_affine(&(inv * world))).unwrap_or(co.transform);
+            plan.push((c, co.name.clone(), name, local));
+        }
+        for (c, old, name, local) in plan {
+            self.index_remove(Some(from), &old, c);
+            if let Some(co) = self.object_mut(c) {
+                co.parent = to;
+                co.name = name.clone();
+                co.transform = local;
+            }
+            if let Some(t) = to
+                && let Some(po) = self.object_mut(t)
+            {
+                po.children.push(c);
+            }
+            self.index_insert(to, &name, c);
+        }
+        if let Some(o) = self.object_mut(from) {
+            o.children.clear();
+        }
         Ok(())
     }
 
@@ -394,13 +503,10 @@ impl Document {
     /// get a `_N` suffix if their name is taken there). Meshes no other
     /// object uses are deleted. Returns the ids of deleted objects.
     ///
-    /// Complexity: O(subtree x (depth + log n)) recursive; O(subtree x
-    /// (depth + path length + log n)) otherwise. Never O(children^2): a
-    /// parent that is deleted too is not updated child by child.
+    /// Complexity: O(subtree x log n) recursive, O(children x (depth + log
+    /// n)) otherwise, plus O(siblings) to unlink it from its parent.
     pub fn delete(&mut self, key: ObjectKey, recursive: bool) -> Result<Vec<u32>, SceneError> {
-        let o = self.object(key).ok_or(SceneError::StaleObject)?;
-        let parent = o.parent;
-        let children: Vec<ObjectKey> = o.children.to_vec();
+        let parent = self.object(key).ok_or(SceneError::StaleObject)?.parent;
         if recursive {
             let doomed = self.subtree(key);
             let mut ids = Vec::with_capacity(doomed.len());
@@ -411,62 +517,36 @@ impl Document {
             ids.reverse();
             return Ok(ids);
         }
-
-        // Plan every move first (names free under the new parent, world-keeping
-        // transforms) so that nothing changes if anything fails.
-        let inverse = match parent {
-            Some(p) => {
-                let w = self.world_affine(p).ok_or(SceneError::StaleObject)?;
-                (w.matrix3.determinant().abs() >= f32::EPSILON).then(|| w.inverse())
-            }
-            None => Some(Affine3A::IDENTITY),
-        };
-        let mut taken: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        let mut plan = Vec::with_capacity(children.len());
-        for &c in &children {
-            let co = self.object(c).ok_or(SceneError::StaleObject)?;
-            let mut name = co.name.clone();
-            let mut i = 1u32;
-            loop {
-                let path = self.child_path(parent, &name).ok_or(SceneError::StaleObject)?;
-                if !self.by_path.contains_key(&path) && !taken.contains(&name) {
-                    break;
-                }
-                name = format!("{}_{i}", co.name);
-                i += 1;
-            }
-            taken.insert(name.clone());
-            let world = self.world_affine(c).ok_or(SceneError::StaleObject)?;
-            let local = inverse.and_then(|inv| Trs::from_affine(&(inv * world))).unwrap_or(co.transform);
-            plan.push((c, name, local));
-        }
-        for (c, name, local) in plan {
-            let old_prefix = self.path(c).ok_or(SceneError::StaleObject)?;
-            if let Some(co) = self.object_mut(c) {
-                co.parent = parent;
-                co.name = name.clone();
-                co.transform = local;
-            }
-            if let Some(p) = parent
-                && let Some(po) = self.object_mut(p)
-            {
-                po.children.push(c);
-            }
-            let new_prefix = self.child_path(parent, &name).ok_or(SceneError::StaleObject)?;
-            self.move_paths(c, &old_prefix, &new_prefix);
-        }
-        if let Some(o) = self.object_mut(key) {
-            o.children.clear();
-        }
+        self.move_children(key, parent)?;
         Ok(vec![self.remove_one(key, true)])
     }
 
-    /// Removes one object that has no children left. `update_parent` is false
-    /// when the parent is being deleted in the same call.
+    /// Deletes objects that have no children, unlinking each parent once.
+    /// Returns their ids in the given order.
     ///
-    /// Complexity: O(depth + log n), plus O(siblings) when updating the parent.
+    /// Complexity: O(k log n + siblings of the affected parents).
+    pub fn delete_leaves(&mut self, keys: &[ObjectKey]) -> Result<Vec<u32>, SceneError> {
+        for &k in keys {
+            let o = self.object(k).ok_or(SceneError::StaleObject)?;
+            if !o.children.is_empty() {
+                return Err(SceneError::HasChildren(self.path(k).unwrap_or_default()));
+            }
+        }
+        let doomed: BTreeSet<ObjectKey> = keys.iter().copied().collect();
+        let parents: BTreeSet<ObjectKey> = keys.iter().filter_map(|&k| self.object(k).and_then(|o| o.parent)).collect();
+        for p in parents {
+            if let Some(po) = self.object_mut(p) {
+                po.children.retain(|c| !doomed.contains(c));
+            }
+        }
+        Ok(keys.iter().map(|&k| self.remove_one(k, false)).collect())
+    }
+
+    /// Removes one object that has no children left. `update_parent` is false
+    /// when the caller unlinks the parent itself (or deletes it too).
+    ///
+    /// Complexity: O(log n), plus O(siblings) when updating the parent.
     fn remove_one(&mut self, key: ObjectKey, update_parent: bool) -> u32 {
-        let path = self.path(key);
         let Some(o) = Arc::make_mut(&mut self.objects).remove(key) else { return 0 };
         if update_parent
             && let Some(p) = o.parent
@@ -474,9 +554,7 @@ impl Document {
         {
             po.children.retain(|c| *c != key);
         }
-        if let Some(path) = path {
-            Arc::make_mut(&mut self.by_path).remove(&path);
-        }
+        self.index_remove(o.parent, &o.name, key);
         Arc::make_mut(&mut self.by_id).remove(&o.id);
         if let ObjectKind::Mesh { mesh } = o.kind {
             self.release_mesh(mesh);
@@ -640,15 +718,21 @@ impl Document {
 
     // ---- consistency ------------------------------------------------------------
 
-    /// Checks that the indexes agree with the objects: paths, ids,
-    /// parent/child links, mesh user counts. For tests and debug builds.
+    /// Checks that the indexes agree with the objects: names, ids,
+    /// parent/child links, reachability from the top level, mesh user counts.
+    /// For tests and debug builds.
     ///
-    /// Complexity: O(n x depth + meshes).
+    /// Complexity: O(n log n + meshes).
     pub fn check(&self) -> Result<(), String> {
-        if self.by_id.len() != self.objects.len() || self.by_path.len() != self.objects.len() {
-            return Err(format!("{} objects, {} ids, {} paths", self.objects.len(), self.by_id.len(), self.by_path.len()));
+        let n = self.objects.len();
+        let named: usize = self.by_name.values().map(BTreeMap::len).sum();
+        let leafed: usize = self.by_leaf.values().map(BTreeSet::len).sum();
+        if self.by_id.len() != n || named != n || leafed != n {
+            return Err(format!("{n} objects, {} ids, {named} sibling names, {leafed} leaf names", self.by_id.len()));
         }
         let mut users: SecondaryMap<MeshKey, u32> = SecondaryMap::new();
+        let mut child_links = 0usize;
+        let mut with_parent = 0usize;
         for (k, o) in self.objects.iter() {
             if self.by_id.get(&o.id) != Some(&k) {
                 return Err(format!("id {} not indexed", o.id));
@@ -656,26 +740,43 @@ impl Document {
             if o.id >= self.next_id {
                 return Err(format!("id {} not below next id {}", o.id, self.next_id));
             }
-            let path = self.path(k).ok_or("broken parent chain")?;
-            if self.by_path.get(&path) != Some(&k) {
-                return Err(format!("path `{path}` not indexed"));
+            if self.child_named(o.parent, &o.name) != Some(k) || !self.by_leaf.get(&o.name).is_some_and(|s| s.contains(&k)) {
+                return Err(format!("o:{} `{}` not indexed by name", o.id, o.name));
             }
-            if let Some(p) = o.parent
-                && !self.objects.get(p).is_some_and(|po| po.children.contains(&k))
-            {
-                return Err(format!("`{path}` missing from its parent's children"));
+            if let Some(p) = o.parent {
+                if !self.objects.contains_key(p) {
+                    return Err(format!("o:{} has a missing parent", o.id));
+                }
+                with_parent += 1;
+            }
+            // Each child points back here; together with the counts below, every
+            // object appears exactly once in its parent's list.
+            let mut kids: Vec<ObjectKey> = o.children.to_vec();
+            kids.sort_unstable();
+            kids.dedup();
+            if kids.len() != o.children.len() {
+                return Err(format!("o:{} lists a child twice", o.id));
             }
             for &c in &o.children {
                 if self.objects.get(c).and_then(|co| co.parent) != Some(k) {
-                    return Err(format!("child of `{path}` points elsewhere"));
+                    return Err(format!("a child of o:{} points elsewhere", o.id));
                 }
             }
+            child_links += o.children.len();
             if let ObjectKind::Mesh { mesh } = o.kind {
                 if !self.meshes.contains_key(mesh) {
-                    return Err(format!("`{path}` uses a missing mesh"));
+                    return Err(format!("o:{} uses a missing mesh", o.id));
                 }
                 bump(&mut users, mesh);
             }
+        }
+        if child_links != with_parent {
+            return Err(format!("{child_links} child links for {with_parent} objects with a parent"));
+        }
+        // No cycles: everything is reachable from the top level.
+        let reachable: usize = self.roots().map(|r| self.subtree(r).len()).sum();
+        if reachable != n {
+            return Err(format!("{} objects are unreachable from the top level", n - reachable));
         }
         for (m, _) in self.meshes.iter() {
             let counted = users.get(m).copied().unwrap_or(0);

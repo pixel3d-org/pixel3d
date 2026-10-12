@@ -126,9 +126,11 @@ impl OpError {
             SceneError::NameTaken { path: taken, suggestion } => {
                 Self::invalid(path, format!("an object `{taken}` already exists")).with_suggestions(vec![suggestion])
             }
-            e @ (SceneError::InvalidName(_) | SceneError::Cycle { .. } | SceneError::SingularParent { .. } | SceneError::IdTaken(_)) => {
-                Self::invalid(path, e.to_string())
-            }
+            e @ (SceneError::InvalidName(_)
+            | SceneError::Cycle { .. }
+            | SceneError::SingularParent { .. }
+            | SceneError::IdTaken(_)
+            | SceneError::HasChildren(_)) => Self::invalid(path, e.to_string()),
             e @ (SceneError::StaleObject | SceneError::StaleMesh) => Self::internal(e.to_string()),
         }
     }

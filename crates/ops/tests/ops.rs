@@ -284,3 +284,14 @@ fn select_ops() {
     let m = tx.doc().object_mesh(c).unwrap();
     assert!(m.edges().any(|e| m.edge_flags(e).contains(EdgeFlags::SHARP)), "geometry and flags stay");
 }
+
+#[test]
+fn join_into_a_nested_target_is_refused() {
+    let mut tx = fixture();
+    let e = err(&mut tx, "scene.join", json!({ "targets": ["crate", "crate/lid"], "into": "crate/lid" }));
+    assert_eq!(e.path.as_deref(), Some("/into"));
+    // The other way round works: lid's geometry joins crate, hinge moves to crate.
+    let s = ok(&mut tx, "scene.join", json!({ "targets": ["crate", "crate/lid"] }));
+    assert_eq!(s, "joined 2 objects into crate (o:1): 12 faces");
+    assert!(tx.doc().resolve("crate/hinge").is_ok());
+}
