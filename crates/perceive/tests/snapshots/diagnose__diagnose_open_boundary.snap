@@ -1,0 +1,9 @@
+---
+source: crates/perceive/tests/diagnose.rs
+expression: r.text
+---
+diagnose scene: 0 errors, 1 warning, 0 info
+F1 warn OPEN_BOUNDARY box: 1 hole (4 open edges); largest: 4 edges, 1600 mm around
+    at (0, 400, 0) (top of box)
+    fix: edit.fill {"target":"box"} (close every hole with a face)
+    note: ignore if the part is meant to be open (cloth, cards, a container)

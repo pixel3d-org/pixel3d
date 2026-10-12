@@ -1,0 +1,8 @@
+---
+source: crates/perceive/tests/diagnose.rs
+expression: r.text
+---
+diagnose scene: 0 errors, 1 warning, 0 info
+F1 warn FLOATING_PART lid -> crate: touches nothing: 12 mm from crate
+    at (200, 412, -200) (bottom of lid)
+    fix: scene.set_transform {"position":[0.0,-0.012,0.0],"relative":true,"target":"crate/lid"} (move it 12 mm onto crate)

@@ -1,0 +1,8 @@
+---
+source: crates/perceive/tests/diagnose.rs
+expression: r.text
+---
+diagnose scene: 1 error, 0 warnings, 0 info
+F1 error INVERTED_NORMALS box: 1 closed piece faces inward (volume -64 L): it renders inside out and bakes wrong
+    at (0, 200, 0) (center of box)
+    fix: edit.recalc_normals {"target":"box"} (flip the inward pieces)

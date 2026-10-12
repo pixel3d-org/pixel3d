@@ -1,0 +1,8 @@
+---
+source: crates/perceive/tests/diagnose.rs
+expression: r.text
+---
+diagnose scene: 0 errors, 1 warning, 0 info
+F1 warn SELF_INTERSECTION pair: 14 triangle pairs pass through each other (2 loose pieces overlap)
+    at (95, 255, 50) (center of pair)
+    fix: scene.separate {"by":"loose_parts","target":"pair"} (make each loose piece its own part)

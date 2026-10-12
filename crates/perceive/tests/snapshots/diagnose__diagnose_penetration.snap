@@ -1,0 +1,8 @@
+---
+source: crates/perceive/tests/diagnose.rs
+expression: r.text
+---
+diagnose scene: 0 errors, 1 warning, 0 info
+F1 warn PENETRATION handle -> crate: sinks 30 mm into crate (allowed 10 mm)
+    at (170, 200, -80) (left of handle)
+    fix: scene.set_transform {"position":[0.025,0.0,0.0],"relative":true,"target":"crate/handle"} (pull it out 25 mm)

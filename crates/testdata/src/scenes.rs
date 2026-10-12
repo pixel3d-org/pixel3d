@@ -94,3 +94,79 @@ pub fn hollow_box_mesh(size: [f64; 3], wall: f64) -> Mesh {
     outer.append(&inner);
     outer
 }
+
+/// A quad of `size` in the XZ plane facing +Y, centered on its origin.
+pub fn sheet_mesh(size: f64) -> Mesh {
+    p3d_geo::prim::plane(&p3d_geo::prim::PlaneSpec { size_x: size, size_z: size, segments_x: 1, segments_z: 1 }).unwrap_or_default()
+}
+
+/// The broken-model corpus: one problem per scene, each named after the
+/// finding code diagnostics must report. Parts are 400 mm boxes unless
+/// noted.
+pub fn broken_corpus() -> Vec<(&'static str, Document)> {
+    let mut out = Vec::new();
+
+    // A box without its top.
+    let mut doc = Document::new();
+    let mut m = box_mesh([0.4, 0.4, 0.4], 0.0);
+    let top: Vec<u32> = m.group("top").map(|g| g.iter().collect()).unwrap_or_default();
+    let _ = m.delete_faces(&top);
+    add(&mut doc, "box", None, m, [0.0; 3]);
+    out.push(("open_boundary", doc));
+
+    // A box whose faces point inward.
+    let mut doc = Document::new();
+    let mut m = box_mesh([0.4, 0.4, 0.4], 0.0);
+    m.flip_all();
+    add(&mut doc, "box", None, m, [0.0; 3]);
+    out.push(("inverted_normals", doc));
+
+    // A quad strip with a sliver triangle continuing one edge.
+    let mut doc = Document::new();
+    let p = vec![Vec3::ZERO, Vec3::new(0.4, 0.0, 0.0), Vec3::new(0.4, 0.4, 0.0), Vec3::new(0.0, 0.4, 0.0), Vec3::new(0.4, -0.4, 1e-9)];
+    let m = Mesh::from_polygons(p, &[4, 3], &[0, 1, 2, 3, 2, 1, 4]).unwrap_or_default();
+    add(&mut doc, "panel", None, m, [0.0; 3]);
+    out.push(("degenerate_faces", doc));
+
+    // Two identical boxes in one mesh.
+    let mut doc = Document::new();
+    let mut m = box_mesh([0.4, 0.4, 0.4], 0.0);
+    let copy = m.clone();
+    m.append(&copy);
+    add(&mut doc, "box", None, m, [0.0; 3]);
+    out.push(("duplicate_faces", doc));
+
+    // Two overlapping boxes joined into one mesh.
+    let mut doc = Document::new();
+    let mut m = box_mesh([0.4, 0.4, 0.4], 0.0);
+    let mut other = box_mesh([0.4, 0.4, 0.4], 0.0);
+    other.transform(glam::Affine3A::from_translation(Vec3::new(0.2, 0.1, 0.1)));
+    m.append(&other);
+    add(&mut doc, "pair", None, m, [0.0; 3]);
+    out.push(("self_intersection", doc));
+
+    // A hollow box with 0.5 mm walls.
+    let mut doc = Document::new();
+    add(&mut doc, "shell", None, hollow_box_mesh([0.4, 0.4, 0.4], 0.0005), [0.0; 3]);
+    out.push(("thin_wall", doc));
+
+    // A crate with its lid floating 12 mm above.
+    let mut doc = Document::new();
+    let c = add(&mut doc, "crate", None, box_mesh([0.4, 0.4, 0.4], 0.0), [0.0; 3]);
+    add(&mut doc, "lid", Some(c), box_mesh([0.42, 0.03, 0.42], 0.0), [0.0, 0.412, 0.0]);
+    out.push(("floating_part", doc));
+
+    // A handle sunk 30 mm into the crate's side (allowed: a quarter of its 40 mm thickness).
+    let mut doc = Document::new();
+    let c = add(&mut doc, "crate", None, box_mesh([0.4, 0.4, 0.4], 0.0), [0.0; 3]);
+    add(&mut doc, "handle", Some(c), box_mesh([0.04, 0.04, 0.16], 0.0), [0.19, 0.2, 0.0]);
+    out.push(("penetration", doc));
+
+    // A label sheet lying exactly on the crate's top face, facing up.
+    let mut doc = Document::new();
+    let c = add(&mut doc, "crate", None, box_mesh([0.4, 0.4, 0.4], 0.0), [0.0; 3]);
+    add(&mut doc, "label", Some(c), sheet_mesh(0.2), [0.0, 0.4, 0.0]);
+    out.push(("z_fighting", doc));
+
+    out
+}

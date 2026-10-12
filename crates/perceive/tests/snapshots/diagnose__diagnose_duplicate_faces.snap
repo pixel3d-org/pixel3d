@@ -1,0 +1,11 @@
+---
+source: crates/perceive/tests/diagnose.rs
+expression: r.text
+---
+diagnose scene: 0 errors, 1 warning, 1 info
+F1 warn DUPLICATE_FACES box: 6 faces duplicate other faces exactly: they flicker and double the cost
+    at (200, 200, 0) (right of box)
+    note: no automatic fix yet; remove the extra copy (cleanup.auto will)
+F2 info LOOSE_PIECES box: 2 separate pieces in one part
+    at (0, 200, 0) (center of box)
+    fix: scene.separate {"by":"loose_parts","target":"box"} (make each piece its own part)

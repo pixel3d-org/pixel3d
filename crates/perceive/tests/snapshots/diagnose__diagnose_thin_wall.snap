@@ -1,0 +1,8 @@
+---
+source: crates/perceive/tests/diagnose.rs
+expression: r.text
+---
+diagnose scene: 0 errors, 1 warning, 0 info
+F1 warn THIN_WALL shell: wall only 0.5 mm thick (limit 1 mm): it z-fights and bakes badly
+    at (-134, 0, 173) (bottom of shell)
+    note: no automatic fix yet; thicken the wall or remove the inner surface

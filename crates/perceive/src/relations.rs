@@ -41,18 +41,33 @@ pub struct PairRelation {
     pub dist: f32,
     /// For `penetrating`: the part whose surface sinks deepest into the other.
     pub sinks: Option<usize>,
-    /// Where: the closest point on `a`, or the deepest point.
+    /// Where: the closest point on `a` for contacts and gaps, the deepest
+    /// point of the sinking part for penetrations.
     pub at: Vec3,
+    /// The matching point: the closest point on `b` for contacts and gaps;
+    /// for penetrations, the nearest surface point of the other part to the
+    /// deepest point (moving the sinking part by `to - at` takes it out).
+    pub to: Vec3,
     /// The search ran out of budget: `dist` is an upper bound.
     pub approximate: bool,
+}
+
+/// The nearest other part of a floating part.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Near {
+    pub part: usize,
+    pub gap: f32,
+    /// Closest points on the floating part and on the other part.
+    pub from: Vec3,
+    pub to: Vec3,
 }
 
 /// A part that touches nothing and does not stand on the ground.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Floating {
     pub part: usize,
-    /// The nearest part within the search radius and the gap to it.
-    pub nearest: Option<(usize, f32)>,
+    /// The nearest part within the search radius.
+    pub nearest: Option<Near>,
 }
 
 /// The contact graph of a view.
@@ -79,26 +94,27 @@ impl Relations {
     }
 }
 
-/// Deepest point of part `a`'s vertices inside closed part `b`: (depth, point).
+/// Deepest point of part `a`'s vertices inside closed part `b`: (depth,
+/// point, nearest surface point of `b`).
 ///
 /// Complexity: O(s (log n + k)) for s <= [`DEPTH_SAMPLES`] sampled vertices.
-fn deepest_inside(view: &View, a: usize, b: usize) -> Option<(f32, Vec3)> {
+fn deepest_inside(view: &View, a: usize, b: usize) -> Option<(f32, Vec3, Vec3)> {
     let (pa, pb) = (&view.parts[a], &view.parts[b]);
-    if !pb.topology().is_watertight() {
+    if !pb.topology().is_closed() {
         return None;
     }
     let n = pa.mesh.vert_slots();
     let stride = n.div_ceil(DEPTH_SAMPLES).max(1);
-    let mut best: Option<(f32, Vec3)> = None;
+    let mut best: Option<(f32, Vec3, Vec3)> = None;
     for v in (0..n as u32).step_by(stride).filter(|&v| pa.mesh.is_vert_alive(v)) {
         let p = pa.world.transform_point3(pa.mesh.positions[v as usize]);
         if !(p.cmpge(pb.lo).all() && p.cmple(pb.hi).all()) || !pb.bvh().contains(p) {
             continue;
         }
         if let Some(c) = pb.bvh().closest(p, f32::INFINITY)
-            && best.is_none_or(|(d, _)| c.dist > d)
+            && best.is_none_or(|(d, _, _)| c.dist > d)
         {
-            best = Some((c.dist, p));
+            best = Some((c.dist, p, c.point));
         }
     }
     best
@@ -118,18 +134,15 @@ pub fn relations(view: &View) -> Relations {
     let (candidates, truncated) = box_pairs(&boxes, search / 2.0, MAX_PAIRS);
 
     let mut pairs = Vec::new();
-    let mut nearest: Vec<Option<(usize, f32)>> = vec![None; view.parts.len()];
-    let note = |i: usize, j: usize, d: f32, nearest: &mut Vec<Option<(usize, f32)>>| {
-        for (x, y) in [(i, j), (j, i)] {
-            if nearest[x].is_none_or(|(_, e)| d < e) {
-                nearest[x] = Some((y, d));
-            }
-        }
-    };
+    let mut nearest: Vec<Option<Near>> = vec![None; view.parts.len()];
     for (i, j) in candidates {
         let (pi, pj) = (&view.parts[i], &view.parts[j]);
         let Some(n) = pi.bvh().nearest(pj.bvh(), search) else { continue };
-        note(i, j, n.dist, &mut nearest);
+        for (x, y, from, to) in [(i, j, n.a, n.b), (j, i, n.b, n.a)] {
+            if nearest[x].as_ref().is_none_or(|e| n.dist < e.gap) {
+                nearest[x] = Some(Near { part: y, gap: n.dist, from, to });
+            }
+        }
         // Distance 0 is also plain contact (faces lying on each other): only
         // triangles passing through each other make a penetration.
         let mut crossing = None;
@@ -142,46 +155,51 @@ pub fn relations(view: &View) -> Relations {
         if let Some(cross_at) = crossing {
             let di = deepest_inside(view, i, j);
             let dj = deepest_inside(view, j, i);
-            let (depth, at, sinks) = match (di, dj) {
-                (Some((x, p)), Some((y, q))) => {
+            let (depth, at, to, sinks) = match (di, dj) {
+                (Some((x, p, c)), Some((y, q, e))) => {
                     if x >= y {
-                        (x, p, Some(i))
+                        (x, p, c, Some(i))
                     } else {
-                        (y, q, Some(j))
+                        (y, q, e, Some(j))
                     }
                 }
-                (Some((x, p)), None) => (x, p, Some(i)),
-                (None, Some((y, q))) => (y, q, Some(j)),
-                (None, None) => (0.0, cross_at, None),
+                (Some((x, p, c)), None) => (x, p, c, Some(i)),
+                (None, Some((y, q, e))) => (y, q, e, Some(j)),
+                (None, None) => (0.0, cross_at, cross_at, None),
             };
             // Crossing by less than the tolerance is contact.
             if sinks.is_none() || depth > tol {
-                pairs.push(PairRelation { a: i, b: j, kind: RelationKind::Penetrating, dist: depth, sinks, at, approximate: n.approximate });
+                pairs.push(PairRelation { a: i, b: j, kind: RelationKind::Penetrating, dist: depth, sinks, at, to, approximate: n.approximate });
                 continue;
             }
         }
-        // Not crossing: one part may still lie wholly inside the other.
+        // Not crossing: in contact, or one part wholly inside the other.
         let inside = |x: usize, y: usize| {
             let (px, py) = (&view.parts[x], &view.parts[y]);
-            px.lo.cmpge(py.lo).all() && px.hi.cmple(py.hi).all() && py.topology().is_watertight() && py.bvh().contains(n_point(px))
+            px.lo.cmpge(py.lo).all() && px.hi.cmple(py.hi).all() && py.topology().is_closed() && py.bvh().contains(n_point(px))
         };
-        if inside(i, j) || inside(j, i) {
+        let kind = if n.dist <= tol {
+            RelationKind::Touching
+        } else if inside(i, j) || inside(j, i) {
             let (a, b) = if inside(i, j) { (i, j) } else { (j, i) };
-            pairs.push(PairRelation { a, b, kind: RelationKind::Inside, dist: 0.0, sinks: None, at: view.parts[a].center(), approximate: false });
-        } else if n.dist <= tol {
-            pairs.push(PairRelation { a: i, b: j, kind: RelationKind::Touching, dist: n.dist, sinks: None, at: n.a, approximate: n.approximate });
+            let c = view.parts[a].center();
+            pairs.push(PairRelation { a, b, kind: RelationKind::Inside, dist: 0.0, sinks: None, at: c, to: c, approximate: false });
+            continue;
         } else if n.dist <= near {
-            pairs.push(PairRelation { a: i, b: j, kind: RelationKind::Gap, dist: n.dist, sinks: None, at: n.a, approximate: n.approximate });
-        }
+            RelationKind::Gap
+        } else {
+            continue;
+        };
+        pairs.push(PairRelation { a: i, b: j, kind, dist: n.dist, sinks: None, at: n.a, to: n.b, approximate: n.approximate });
     }
     pairs.sort_by_key(|r| (r.a.min(r.b), r.a.max(r.b)));
 
     let grounded: Vec<usize> = (0..view.parts.len()).filter(|&i| view.parts[i].lo.y.abs() <= tol).collect();
     let mut rel = Relations { tolerance: tol, pairs, floating: Vec::new(), grounded, truncated };
     if view.parts.len() > 1 {
-        for (i, near) in nearest.iter().enumerate() {
+        for (i, near) in nearest.into_iter().enumerate() {
             if !rel.in_contact(i) && rel.grounded.binary_search(&i).is_err() {
-                rel.floating.push(Floating { part: i, nearest: *near });
+                rel.floating.push(Floating { part: i, nearest: near });
             }
         }
     }
@@ -217,8 +235,8 @@ pub fn relation_lines(view: &View, rel: &Relations, max_lines: usize) -> Vec<Str
         out.push(format!("+{} more relations (perceive relations with a target narrows the view)", rel.pairs.len() - max_lines));
     }
     for f in &rel.floating {
-        out.push(match f.nearest {
-            Some((j, d)) => format!("floating: {} touches nothing; nearest {} at {} mm", name(f.part), name(j), mm(d)),
+        out.push(match &f.nearest {
+            Some(n) => format!("floating: {} touches nothing; nearest {} at {} mm", name(f.part), name(n.part), mm(n.gap)),
             None => format!("floating: {} touches nothing within {} mm", name(f.part), mm(0.25 * view.diagonal())),
         });
     }
@@ -272,8 +290,8 @@ pub fn named(view: &View, rel: &Relations) -> serde_json::Value {
         })).collect::<Vec<_>>(),
         "floating": rel.floating.iter().map(|f| serde_json::json!({
             "part": name(f.part),
-            "nearest": f.nearest.map(|(j, _)| name(j)),
-            "gap": f.nearest.map(|(_, d)| d),
+            "nearest": f.nearest.as_ref().map(|n| name(n.part)),
+            "gap": f.nearest.as_ref().map(|n| n.gap),
         })).collect::<Vec<_>>(),
         "grounded": rel.grounded.iter().map(|&i| name(i)).collect::<Vec<_>>(),
         "truncated": rel.truncated,

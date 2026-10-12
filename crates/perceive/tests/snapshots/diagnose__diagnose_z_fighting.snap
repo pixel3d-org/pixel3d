@@ -1,0 +1,8 @@
+---
+source: crates/perceive/tests/diagnose.rs
+expression: r.text
+---
+diagnose scene: 0 errors, 1 warning, 0 info
+F1 warn Z_FIGHTING label -> crate: 100% of its surface lies on same-facing faces of crate: they flicker
+    at (0.2, 400, 0.3) (center of label)
+    fix: scene.set_transform {"position":[0.0,0.0005,0.0],"relative":true,"target":"crate/label"} (move it 0.5 mm off the shared plane)

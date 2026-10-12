@@ -1,0 +1,8 @@
+---
+source: crates/perceive/tests/diagnose.rs
+expression: r.text
+---
+diagnose scene: 0 errors, 1 warning, 0 info
+F1 warn DEGENERATE_FACES panel: 1 collapsed or sliver face: they break normals, UVs and bakes
+    at (400, 0, 0) (right of panel)
+    note: no automatic fix yet; merging their vertices (cleanup.auto) will remove them

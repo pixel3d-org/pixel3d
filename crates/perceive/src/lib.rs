@@ -10,6 +10,7 @@
 //! (`diff`). Each aspect returns a [`Report`]: text for the model plus the
 //! same data as JSON. Default reports stay under about 600 tokens.
 
+pub mod diagnose;
 pub mod error;
 pub mod fmt;
 pub mod probe;
