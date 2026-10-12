@@ -221,6 +221,8 @@ struct EarScratch {
     pts: Vec<Vec2>,
     next: Vec<usize>,
     prev: Vec<usize>,
+    /// Cached ear status per corner.
+    ear: Vec<bool>,
 }
 
 /// z of the 2D cross product (b - a) x (c - b): positive for a left turn.
@@ -254,7 +256,31 @@ fn project(mesh: &Mesh, corners: &[u32], normal: Vec3, pts: &mut Vec<Vec2>) {
     }));
 }
 
+/// Whether corner `i` is an ear of the remaining polygon: convex, and no
+/// other remaining corner lies inside or on the triangle (prev, i, next).
+///
+/// Complexity: O(remaining corners).
+fn is_ear(ear: &EarScratch, i: usize) -> bool {
+    let (pts, p, n) = (&ear.pts, ear.prev[i], ear.next[i]);
+    if cross(pts[p], pts[i], pts[n]) <= 0.0 {
+        return false;
+    }
+    let mut j = ear.next[n];
+    while j != p {
+        let q = pts[j];
+        if cross(pts[p], pts[i], q) >= 0.0 && cross(pts[i], pts[n], q) >= 0.0 && cross(pts[n], pts[p], q) >= 0.0 {
+            return false;
+        }
+        j = ear.next[j];
+    }
+    true
+}
+
 /// Ear clipping of a simple CCW polygon (already projected into `ear.pts`).
+///
+/// Ear status is cached: clipping a corner changes only its two neighbours'
+/// status, so each clip costs one O(k) scan for the next ear plus two O(k)
+/// ear tests.
 ///
 /// Complexity: O(k^2) for k corners, k <= MAX_EAR_CLIP_CORNERS.
 fn ear_clip(corners: &[u32], ear: &mut EarScratch, tris: &mut Vec<[u32; 3]>) {
@@ -264,38 +290,31 @@ fn ear_clip(corners: &[u32], ear: &mut EarScratch, tris: &mut Vec<[u32; 3]>) {
     ear.prev.clear();
     ear.next.extend((0..k).map(|i| (i + 1) % k));
     ear.prev.extend((0..k).map(|i| (i + k - 1) % k));
-    let pts = &ear.pts;
+    ear.ear.clear();
+    for i in 0..k {
+        let e = is_ear(ear, i);
+        ear.ear.push(e);
+    }
     let mut remaining = k;
     let mut i = 0usize;
-    let mut misses = 0usize;
     while remaining > 3 {
-        let (p, n) = (ear.prev[i], ear.next[i]);
-        let is_ear = cross(pts[p], pts[i], pts[n]) > 0.0 && {
-            // No other remaining vertex inside or on the triangle (p, i, n).
-            let mut j = ear.next[n];
-            let mut clear = true;
-            while j != p {
-                let q = pts[j];
-                if cross(pts[p], pts[i], q) >= 0.0 && cross(pts[i], pts[n], q) >= 0.0 && cross(pts[n], pts[p], q) >= 0.0 {
-                    clear = false;
-                    break;
-                }
-                j = ear.next[j];
-            }
-            clear
-        };
-        // After a full pass without an ear (degenerate input), clip anyway.
-        if is_ear || misses >= remaining {
-            tris.push([corners[p], corners[i], corners[n]]);
-            ear.next[p] = n;
-            ear.prev[n] = p;
-            remaining -= 1;
-            misses = 0;
-            i = n;
-        } else {
-            misses += 1;
-            i = n;
+        // Next cached ear, at most one lap; degenerate input without any ear
+        // clips the current corner anyway so the loop always terminates.
+        let mut steps = 0;
+        while !ear.ear[i] && steps < remaining {
+            i = ear.next[i];
+            steps += 1;
         }
+        let (p, n) = (ear.prev[i], ear.next[i]);
+        tris.push([corners[p], corners[i], corners[n]]);
+        ear.next[p] = n;
+        ear.prev[n] = p;
+        remaining -= 1;
+        if remaining > 3 {
+            ear.ear[p] = is_ear(ear, p);
+            ear.ear[n] = is_ear(ear, n);
+        }
+        i = n;
     }
     let n = ear.next[i];
     tris.push([corners[ear.prev[i]], corners[i], corners[n]]);
@@ -405,6 +424,25 @@ mod tests {
         for tri in b.indices.chunks(3) {
             let [a, bb, c] = [0, 1, 2].map(|i| b.positions[tri[i] as usize]);
             assert!((bb - a).cross(c - a).z > 0.0, "triangle wound backwards");
+        }
+    }
+
+    #[test]
+    fn comb_polygon_near_the_ear_clip_bound() {
+        // 63 teeth: 2 + 4 * 63 = 254 corners, 126 of them reflex; area 4 per tooth.
+        let teeth = 63u32;
+        let mut pts = vec![[0.0, 0.0], [2.0 * teeth as f32, 0.0]];
+        for t in (0..teeth).rev() {
+            let x = 2.0 * t as f32;
+            pts.extend([[x + 2.0, 1.0], [x + 1.0, 1.0], [x + 1.0, 3.0], [x, 3.0]]);
+        }
+        let b = polygon(&pts).to_tri_buffers(&TriOptions::default());
+        assert_eq!(b.fallback_faces, 0);
+        assert_eq!(b.triangle_count(), pts.len() - 2);
+        assert!((tri_area_sum(&b) - 4.0 * teeth as f32).abs() < 1e-3, "{}", tri_area_sum(&b));
+        for tri in b.indices.chunks(3) {
+            let [a, bb, c] = [0, 1, 2].map(|i| b.positions[tri[i] as usize]);
+            assert!((bb - a).cross(c - a).z > 0.0, "triangle wound backwards or degenerate");
         }
     }
 
