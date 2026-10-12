@@ -1,0 +1,20 @@
+---
+source: apps/pixel3d-cli/tests/mcp_stdio.rs
+expression: init
+---
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": {
+    "capabilities": {
+      "resources": {},
+      "tools": {}
+    },
+    "instructions": "pixel3d builds 3D game assets from typed ops and lets you check them as text, without screenshots. Read `docs` (topic quickstart) once. Loop: `expect add` tests from the request, `run` ops in one batch, read the problems and test lines at the end of each answer, `perceive` or `describe` to look closer, `diagnose` for fixes with predicted results. Units are meters (or strings like \"12mm\"), +Y is up, +Z is the front.",
+    "protocolVersion": "2025-11-25",
+    "serverInfo": {
+      "name": "pixel3d",
+      "version": "_"
+    }
+  }
+}

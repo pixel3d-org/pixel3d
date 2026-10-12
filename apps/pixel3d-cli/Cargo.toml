@@ -16,5 +16,14 @@ todo = "deny"
 unimplemented = "deny"
 
 [dependencies]
+anyhow = { workspace = true }
+p3d-engine = { workspace = true }
+p3d-io = { workspace = true }
+p3d-mcp = { workspace = true }
 p3d-ops = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt"] }
+
+[dev-dependencies]
+insta = { workspace = true, features = ["json"] }

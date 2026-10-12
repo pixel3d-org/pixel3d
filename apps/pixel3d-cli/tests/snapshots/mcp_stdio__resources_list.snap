@@ -1,0 +1,42 @@
+---
+source: apps/pixel3d-cli/tests/mcp_stdio.rs
+expression: resources
+---
+{
+  "id": 7,
+  "jsonrpc": "2.0",
+  "result": {
+    "resources": [
+      {
+        "description": "conventions, the modelling loop, a crate in two calls, the tools",
+        "mimeType": "text/markdown",
+        "name": "quickstart",
+        "uri": "pixel3d://guide/quickstart"
+      },
+      {
+        "description": "ops, placing parts, sizes and budgets, selectors",
+        "mimeType": "text/markdown",
+        "name": "modeling",
+        "uri": "pixel3d://guide/modeling"
+      },
+      {
+        "description": "perception aspects, diagnostics codes and fixes, expectations",
+        "mimeType": "text/markdown",
+        "name": "debugging",
+        "uri": "pixel3d://guide/debugging"
+      },
+      {
+        "description": "every op with a one-line summary",
+        "mimeType": "text/markdown",
+        "name": "ops",
+        "uri": "pixel3d://ops"
+      },
+      {
+        "description": "the current scene overview",
+        "mimeType": "text/plain",
+        "name": "scene",
+        "uri": "pixel3d://scene"
+      }
+    ]
+  }
+}

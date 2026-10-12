@@ -1,0 +1,1343 @@
+---
+source: apps/pixel3d-cli/tests/mcp_stdio.rs
+expression: tools
+---
+{
+  "id": 2,
+  "jsonrpc": "2.0",
+  "result": {
+    "tools": [
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": true
+        },
+        "description": "What is in the scene: parts with sizes and positions, contacts, problems and test results, in a few lines.",
+        "inputSchema": {
+          "$defs": {
+            "Detail": {
+              "description": "How much `scene_overview` says.",
+              "oneOf": [
+                {
+                  "const": "brief",
+                  "description": "Parts, sizes, contacts, problems and tests in a few lines.",
+                  "type": "string"
+                },
+                {
+                  "const": "full",
+                  "description": "Adds groups, tags and every relation.",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "detail": {
+              "$ref": "#/$defs/Detail",
+              "default": "brief",
+              "description": "`brief` (default) or `full`."
+            }
+          },
+          "title": "SceneOverviewArgs",
+          "type": "object"
+        },
+        "name": "scene_overview"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": true
+        },
+        "description": "One-screen summary of an object: size, origin, parts, shape, symmetry, topology, groups, problems.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "target": {
+              "description": "Object (name, path such as `crate/lid`, or id such as `o:3`).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "title": "DescribeArgs",
+          "type": "object"
+        },
+        "name": "describe"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Run ops as one undoable transaction (all or nothing); returns per-op results, created groups, warnings, test results.",
+        "inputSchema": {
+          "$defs": {
+            "RunOp": {
+              "additionalProperties": false,
+              "description": "One op call of a `run` batch.",
+              "properties": {
+                "args": {
+                  "default": null,
+                  "description": "Op parameters (`describe_op` shows the schema); omitted means defaults."
+                },
+                "label": {
+                  "description": "Label for the history and for created groups (`<label>.<role>`).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "op": {
+                  "description": "Op id, for example `prim.box` (`list_ops` shows them all).",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "op"
+              ],
+              "type": "object"
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "checkpoint": {
+              "description": "Name the resulting state (for `history revert` and `history diff`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "dry_run": {
+              "default": false,
+              "description": "Report what would happen, then discard it.",
+              "type": "boolean"
+            },
+            "label": {
+              "description": "Undo label; the op labels when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "ops": {
+              "description": "Ops applied in order as one transaction: all succeed or nothing changes.",
+              "items": {
+                "$ref": "#/$defs/RunOp"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "ops"
+          ],
+          "title": "RunArgs",
+          "type": "object"
+        },
+        "name": "run"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe or diff, as compact text.",
+        "inputSchema": {
+          "$defs": {
+            "Aspect": {
+              "oneOf": [
+                {
+                  "const": "structure",
+                  "description": "What is where: parts, sizes, positions, groups, contacts, mirror pairs.",
+                  "type": "string"
+                },
+                {
+                  "const": "shape",
+                  "description": "Per part: best-fit primitive, axes, volume, thickness, edges, symmetry.",
+                  "type": "string"
+                },
+                {
+                  "const": "silhouette",
+                  "description": "Outline from a view as a short polyline labelled by part.",
+                  "type": "string"
+                },
+                {
+                  "const": "section",
+                  "description": "Loops of a planar slice, with wall thickness.",
+                  "type": "string"
+                },
+                {
+                  "const": "relations",
+                  "description": "Contacts, gaps, penetrations, floating parts.",
+                  "type": "string"
+                },
+                {
+                  "const": "probe",
+                  "description": "Everything at one surface point (needs `at`).",
+                  "type": "string"
+                },
+                {
+                  "const": "diff",
+                  "description": "What changed since `from` (a revision or checkpoint; the previous revision by default).",
+                  "type": "string"
+                }
+              ]
+            },
+            "Length": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\s*[-+]?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?\\s*(mm|cm|dm|m|km|in|ft)?\\s*$",
+                  "type": "string"
+                }
+              ],
+              "description": "Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. \"30cm\"."
+            },
+            "RayFrom": {
+              "additionalProperties": false,
+              "description": "A ray cast at a part from one side.",
+              "properties": {
+                "at": {
+                  "description": "The other two world coordinates of the ray in meters, in x, y, z order\n(for `+x`: [y, z]); the part's center when omitted.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "from": {
+                  "description": "Side the ray comes from: `+x`, `-x`, `+y`, `-y`, `+z` or `-z`.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from"
+              ],
+              "type": "object"
+            },
+            "SliceAxis": {
+              "description": "Slice plane normal.",
+              "oneOf": [
+                {
+                  "const": "x",
+                  "description": "A vertical slice across X; loops in (z, y).",
+                  "type": "string"
+                },
+                {
+                  "const": "y",
+                  "description": "A horizontal slice; loops in (x, z).",
+                  "type": "string"
+                },
+                {
+                  "const": "z",
+                  "description": "A vertical slice across Z; loops in (x, y).",
+                  "type": "string"
+                }
+              ]
+            },
+            "SurfacePoint": {
+              "additionalProperties": false,
+              "description": "A point on a part's surface, addressed by meaning (project spec 17.8).\nGive exactly one of `landmark`, `nearest`, `ray` or `group`; the\n`center` landmark when none is given.",
+              "properties": {
+                "group": {
+                  "description": "The surface point nearest the area center of a face group.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "landmark": {
+                  "description": "`top`, `bottom`, `front` (+Z), `back`, `left` (-X), `right`, or\n`center`: where a ray through the part's box center toward that side\nleaves the part (`center`: the surface point nearest the box center).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "nearest": {
+                  "description": "The surface point nearest to this world position (meters).",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "on": {
+                  "description": "Part (name, path or id).",
+                  "type": "string"
+                },
+                "ray": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/RayFrom"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The first hit of a ray from one side."
+                }
+              },
+              "required": [
+                "on"
+              ],
+              "type": "object"
+            },
+            "ViewDir": {
+              "description": "Where the orthographic camera sits.",
+              "oneOf": [
+                {
+                  "const": "front",
+                  "description": "From +Z (the asset's front): outline in (x, y).",
+                  "type": "string"
+                },
+                {
+                  "const": "back",
+                  "description": "From -Z: outline in (x, y).",
+                  "type": "string"
+                },
+                {
+                  "const": "right",
+                  "description": "From +X (the asset's right side): outline in (z, y).",
+                  "type": "string"
+                },
+                {
+                  "const": "left",
+                  "description": "From -X: outline in (z, y).",
+                  "type": "string"
+                },
+                {
+                  "const": "top",
+                  "description": "From +Y: outline in (x, z).",
+                  "type": "string"
+                },
+                {
+                  "const": "bottom",
+                  "description": "From -Y: outline in (x, z).",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "aspect": {
+              "$ref": "#/$defs/Aspect",
+              "default": "structure",
+              "description": "What to perceive."
+            },
+            "at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`section`: plane position; the middle of the target when omitted."
+            },
+            "axis": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SliceAxis"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`section`: slice across x, y (default, horizontal) or z."
+            },
+            "from": {
+              "description": "`diff`: base revision number or checkpoint name.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "point": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SurfacePoint"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`probe`: the surface point, e.g. `{\"on\": \"crate\", \"landmark\": \"top\"}`."
+            },
+            "points": {
+              "description": "`silhouette` and `section`: outline points (default 32 and 48).",
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "target": {
+              "description": "Object to look at with its children; the whole scene when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "view": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ViewDir"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`silhouette`: front (default), back, left, right, top, bottom."
+            }
+          },
+          "title": "PerceiveArgs",
+          "type": "object"
+        },
+        "name": "perceive"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Problems like compiler errors (part, place, cause) with fixes and their predicted results; explain or apply a fix.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "explain": {
+              "description": "Finding id (`F3`) to explain: every fix option with its predicted result.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "fix": {
+              "description": "Finding id (`F3`) to fix now (one undoable step).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "option": {
+              "description": "Fix option for `fix` (0 is the first).",
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "target": {
+              "description": "Object to check with its children; the whole scene when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "DiagnoseArgs",
+          "type": "object"
+        },
+        "name": "diagnose"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Tests for the model (dims, symmetric, attached, not_intersecting, budget, watertight): add, remove, list, check.",
+        "inputSchema": {
+          "$defs": {
+            "ExpectAction": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "list",
+                    "add",
+                    "remove"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "check",
+                  "description": "Run every expectation.",
+                  "type": "string"
+                }
+              ]
+            },
+            "ExpectArgs": {
+              "description": "What to test.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "World size of an object together with its children.",
+                  "properties": {
+                    "dims": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "depth": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LengthRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Size along Z."
+                        },
+                        "height": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LengthRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Size along Y."
+                        },
+                        "target": {
+                          "description": "Object (name, path or id).",
+                          "type": "string"
+                        },
+                        "width": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LengthRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Size along X."
+                        }
+                      },
+                      "required": [
+                        "target"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "dims"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "`a` and `b` are mirror images across the world plane `axis = at`;\nwithout `b`, `a` (with its children) mirrors itself across its\ncenter plane.",
+                  "properties": {
+                    "symmetric": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "a": {
+                          "description": "First object.",
+                          "type": "string"
+                        },
+                        "at": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Length"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Plane position; 0 for pairs, the center for a single object."
+                        },
+                        "axis": {
+                          "$ref": "#/$defs/MirrorAxis",
+                          "default": "x",
+                          "description": "Mirror axis (default x: left-right)."
+                        },
+                        "b": {
+                          "description": "Its mirror partner.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "tolerance": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Length"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Largest allowed deviation (default 1 mm)."
+                        }
+                      },
+                      "required": [
+                        "a"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "symmetric"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "`part` touches `to`.",
+                  "properties": {
+                    "attached": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "max_gap": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Length"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Largest allowed gap (default 1 mm)."
+                        },
+                        "max_penetration": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/Length"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Deepest it may sink in (no limit by default)."
+                        },
+                        "part": {
+                          "description": "The attached object.",
+                          "type": "string"
+                        },
+                        "to": {
+                          "description": "What it attaches to.",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "part",
+                        "to"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "attached"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "No two of the objects pass through or sit inside each other.",
+                  "properties": {
+                    "not_intersecting": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "parts": {
+                          "description": "2 to 64 objects.",
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "parts"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "not_intersecting"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Triangle count of an object with its children, or of the scene.",
+                  "properties": {
+                    "budget": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "max_tris": {
+                          "description": "Upper limit (default: the asset class budget).",
+                          "format": "uint64",
+                          "minimum": 0,
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "min_tris": {
+                          "description": "Lower limit.",
+                          "format": "uint64",
+                          "minimum": 0,
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "target": {
+                          "description": "Object; the whole scene when omitted.",
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "budget"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "The object's meshes are closed and face outward.",
+                  "properties": {
+                    "watertight": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "target": {
+                          "description": "Object (name, path or id).",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "target"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "watertight"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            "Length": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\s*[-+]?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?\\s*(mm|cm|dm|m|km|in|ft)?\\s*$",
+                  "type": "string"
+                }
+              ],
+              "description": "Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. \"30cm\"."
+            },
+            "LengthRange": {
+              "additionalProperties": false,
+              "description": "A range of lengths; either end may be left open.",
+              "properties": {
+                "max": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Length"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "min": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/Length"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "MirrorAxis": {
+              "description": "A mirror axis.",
+              "oneOf": [
+                {
+                  "const": "x",
+                  "description": "Left-right (across the YZ plane).",
+                  "type": "string"
+                },
+                {
+                  "const": "y",
+                  "description": "Up-down.",
+                  "type": "string"
+                },
+                {
+                  "const": "z",
+                  "description": "Front-back.",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/ExpectAction",
+              "default": "check",
+              "description": "`check` (default), `list`, `add` or `remove`."
+            },
+            "expect": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExpectArgs"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`add`: the test, e.g. `{\"attached\": {\"part\": \"lid\", \"to\": \"crate\"}}`."
+            },
+            "name": {
+              "description": "`add`: optional name; `remove`: the name.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "ExpectToolArgs",
+          "type": "object"
+        },
+        "name": "expect"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Count and locate mesh elements picked by a selector (groups, normals, boundaries, boxes); optionally save them as a group.",
+        "inputSchema": {
+          "$defs": {
+            "BoxFilter": {
+              "additionalProperties": false,
+              "description": "Axis-aligned box for the `in_box` filter, in meters.",
+              "properties": {
+                "max": {
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "min": {
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                }
+              },
+              "required": [
+                "min",
+                "max"
+              ],
+              "type": "object"
+            },
+            "Filter": {
+              "additionalProperties": false,
+              "description": "Conditions on elements; all given conditions must hold.",
+              "properties": {
+                "boundary": {
+                  "description": "On the mesh boundary (true) or not (false). Faces: having a boundary edge.",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "group": {
+                  "description": "Member of this named group (the group must hold this element kind).",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "in_box": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/BoxFilter"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Inside an axis-aligned box in object space: vertex positions, edge\nmidpoints, face centroids."
+                },
+                "material": {
+                  "description": "Faces with this material slot.",
+                  "format": "uint16",
+                  "maximum": 65535,
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "normal": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/NormalFilter"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Facing within an angle of a direction. Faces use the face normal,\nedges the mean of their faces' normals, vertices the mean of their\nfaces' normals."
+                },
+                "seam": {
+                  "description": "Edges marked as UV seams (true) or not (false).",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "sharp": {
+                  "description": "Edges marked sharp (true) or not (false).",
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "sharper_than_deg": {
+                  "description": "Edges whose faces meet at more than this angle in degrees (0 is flat).",
+                  "format": "float",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            },
+            "NormalFilter": {
+              "additionalProperties": false,
+              "description": "Direction and tolerance for the `normal` filter.",
+              "properties": {
+                "dir": {
+                  "description": "Direction in object space (need not be unit length).",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "within_deg": {
+                  "description": "Largest angle from `dir` in degrees.",
+                  "format": "float",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "dir",
+                "within_deg"
+              ],
+              "type": "object"
+            },
+            "Selector": {
+              "description": "A set of mesh elements described by meaning.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "Faces matching every condition of the filter (all faces when empty).",
+                  "properties": {
+                    "faces": {
+                      "$ref": "#/$defs/Filter"
+                    }
+                  },
+                  "required": [
+                    "faces"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Edges matching every condition of the filter.",
+                  "properties": {
+                    "edges": {
+                      "$ref": "#/$defs/Filter"
+                    }
+                  },
+                  "required": [
+                    "edges"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Vertices matching every condition of the filter.",
+                  "properties": {
+                    "verts": {
+                      "$ref": "#/$defs/Filter"
+                    }
+                  },
+                  "required": [
+                    "verts"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Elements in every selector (all of the same kind).",
+                  "properties": {
+                    "and": {
+                      "items": {
+                        "$ref": "#/$defs/Selector"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "and"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Elements in any selector (all of the same kind).",
+                  "properties": {
+                    "or": {
+                      "items": {
+                        "$ref": "#/$defs/Selector"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "or"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Elements of the same kind not in the selector.",
+                  "properties": {
+                    "not": {
+                      "$ref": "#/$defs/Selector"
+                    }
+                  },
+                  "required": [
+                    "not"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Adds neighbours `steps` times: faces across edges, edges and vertices\nthrough shared vertices.",
+                  "properties": {
+                    "grow": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "of": {
+                          "$ref": "#/$defs/Selector"
+                        },
+                        "steps": {
+                          "format": "uint32",
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "steps",
+                        "of"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "grow"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "Removes the outermost elements `steps` times (the inverse of grow).",
+                  "properties": {
+                    "shrink": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "of": {
+                          "$ref": "#/$defs/Selector"
+                        },
+                        "steps": {
+                          "format": "uint32",
+                          "minimum": 0,
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "steps",
+                        "of"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "shrink"
+                  ],
+                  "type": "object"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "save_as": {
+              "description": "Store the result as a group with this name (one undoable step).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "select": {
+              "$ref": "#/$defs/Selector",
+              "description": "Elements by meaning: `{\"faces\": {\"group\": \"top\"}}`, `{\"faces\": {\"normal\": {\"dir\": [0, 1, 0], \"within_deg\": 10}}}`,\n`{\"edges\": {\"boundary\": true}}`, `{\"verts\": {\"in_box\": {\"min\": [..], \"max\": [..]}}}`, `and`, `or`, `not`, `grow`."
+            },
+            "target": {
+              "description": "Mesh object (name, path or id).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "select"
+          ],
+          "title": "QueryArgs",
+          "type": "object"
+        },
+        "name": "query"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Topology metrics per part: counts, face kinds, poles, angles, holes, pieces, degenerate elements, volume.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "target": {
+              "description": "Object to measure with its children; the whole scene when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "AnalyzeArgs",
+          "type": "object"
+        },
+        "name": "analyze"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": true
+        },
+        "description": "List ops with one-line summaries; search matches ids, labels, summaries and Blender or Maya names.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "category": {
+              "description": "Only this category: scene, prim, select, edit, expect.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "search": {
+              "description": "Words to find in ids, labels, aliases (Blender and Maya names) and summaries.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "ListOpsArgs",
+          "type": "object"
+        },
+        "name": "list_ops"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": true
+        },
+        "description": "One op in full: what it does, parameters with schema and defaults, examples, aliases.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "op": {
+              "description": "Op id or alias, for example `prim.box` or `cube`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "op"
+          ],
+          "title": "DescribeOpArgs",
+          "type": "object"
+        },
+        "name": "describe_op"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Undo, redo, checkpoints, revert and diffs between states.",
+        "inputSchema": {
+          "$defs": {
+            "HistoryAction": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "undo",
+                    "redo"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "list",
+                  "description": "Undo transactions and checkpoints.",
+                  "type": "string"
+                },
+                {
+                  "const": "checkpoint",
+                  "description": "Name the current state.",
+                  "type": "string"
+                },
+                {
+                  "const": "revert",
+                  "description": "Return to a checkpoint (undoable).",
+                  "type": "string"
+                },
+                {
+                  "const": "diff",
+                  "description": "What changed between two states (`from`, `to`).",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/HistoryAction",
+              "default": "list",
+              "description": "`list` (default), `undo`, `redo`, `checkpoint`, `revert` or `diff`."
+            },
+            "from": {
+              "description": "`diff` base: a revision number or a checkpoint name; the previous revision by default.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "description": "Checkpoint name for `checkpoint` and `revert`.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "steps": {
+              "description": "Steps for `undo` and `redo` (default 1).",
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "target": {
+              "description": "`diff` only this object and its children.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "to": {
+              "description": "`diff` end: a revision number or a checkpoint name; the current state by default.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "HistoryArgs",
+          "type": "object"
+        },
+        "name": "history"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": true
+        },
+        "description": "Read the guides: quickstart, modeling, debugging and the op reference.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "topic": {
+              "description": "Guide name (`quickstart`, `modeling`, `debugging`, ...); the index when omitted.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "DocsArgs",
+          "type": "object"
+        },
+        "name": "docs"
+      }
+    ]
+  }
+}

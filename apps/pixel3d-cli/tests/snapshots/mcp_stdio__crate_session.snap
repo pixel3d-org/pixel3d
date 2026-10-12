@@ -1,0 +1,410 @@
+---
+source: apps/pixel3d-cli/tests/mcp_stdio.rs
+expression: transcript
+---
+[
+  {
+    "call": {
+      "arguments": {
+        "ops": [
+          {
+            "args": {
+              "bevel": {
+                "segments": 2,
+                "width": "8mm"
+              },
+              "depth": "600mm",
+              "height": "600mm",
+              "name": "crate",
+              "width": "600mm"
+            },
+            "op": "prim.box"
+          },
+          {
+            "args": {
+              "expect": {
+                "dims": {
+                  "target": "crate",
+                  "width": {
+                    "max": "610mm",
+                    "min": "590mm"
+                  }
+                }
+              }
+            },
+            "op": "expect.add"
+          },
+          {
+            "args": {
+              "expect": {
+                "watertight": {
+                  "target": "crate"
+                }
+              }
+            },
+            "op": "expect.add"
+          }
+        ]
+      },
+      "tool": "run"
+    },
+    "response": {
+      "id": 3,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "ok rev 1 (3 ops, _ ms)\nprim.box: created crate (o:1) box 0.6 x 0.6 x 0.6 m: 54 faces (108 tris; budget 6,000)\n  groups: right (1 face), left (1 face), top (1 face), bottom (1 face), front (1 face), back (1 face), bevel (48 faces)\nexpect.add: added E1 dims(crate): passes now (600 x 600 x 600 mm)\nexpect.add: added E2 watertight(crate): passes now (1 part closed and facing out)\nproblems: none\ntests 2/2 pass\n",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "dry_run": false,
+          "ops": [
+            {
+              "created": [
+                "o:1"
+              ],
+              "groups": [
+                {
+                  "count": 1,
+                  "kind": "faces",
+                  "name": "right"
+                },
+                {
+                  "count": 1,
+                  "kind": "faces",
+                  "name": "left"
+                },
+                {
+                  "count": 1,
+                  "kind": "faces",
+                  "name": "top"
+                },
+                {
+                  "count": 1,
+                  "kind": "faces",
+                  "name": "bottom"
+                },
+                {
+                  "count": 1,
+                  "kind": "faces",
+                  "name": "front"
+                },
+                {
+                  "count": 1,
+                  "kind": "faces",
+                  "name": "back"
+                },
+                {
+                  "count": 48,
+                  "kind": "faces",
+                  "name": "bevel"
+                }
+              ],
+              "label": "box_1",
+              "metrics": {
+                "faces": 54,
+                "objects": 1,
+                "tris": 108,
+                "verts": 56
+              },
+              "ms": "_",
+              "op": "prim.box",
+              "params": {
+                "advanced": {
+                  "segments": [
+                    1,
+                    1,
+                    1
+                  ]
+                },
+                "bevel": {
+                  "segments": 2,
+                  "width": 0.008
+                },
+                "depth": 0.6,
+                "height": 0.6,
+                "name": "crate",
+                "origin": "bottom",
+                "parent": null,
+                "position": [
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "width": 0.6
+              },
+              "summary": "created crate (o:1) box 0.6 x 0.6 x 0.6 m: 54 faces (108 tris; budget 6,000)",
+              "warnings": []
+            },
+            {
+              "created": [],
+              "groups": [],
+              "label": "add_2",
+              "metrics": {
+                "faces": 0,
+                "objects": 0,
+                "tris": 0,
+                "verts": 0
+              },
+              "ms": "_",
+              "op": "expect.add",
+              "params": {
+                "expect": {
+                  "dims": {
+                    "target": "crate",
+                    "width": {
+                      "max": 0.61,
+                      "min": 0.59
+                    }
+                  }
+                }
+              },
+              "summary": "added E1 dims(crate): passes now (600 x 600 x 600 mm)",
+              "warnings": []
+            },
+            {
+              "created": [],
+              "groups": [],
+              "label": "add_3",
+              "metrics": {
+                "faces": 0,
+                "objects": 0,
+                "tris": 0,
+                "verts": 0
+              },
+              "ms": "_",
+              "op": "expect.add",
+              "params": {
+                "expect": {
+                  "watertight": {
+                    "target": "crate"
+                  }
+                }
+              },
+              "summary": "added E2 watertight(crate): passes now (1 part closed and facing out)",
+              "warnings": []
+            }
+          ],
+          "revision": 1
+        }
+      }
+    }
+  },
+  {
+    "call": {
+      "arguments": {
+        "target": "crate"
+      },
+      "tool": "describe"
+    },
+    "response": {
+      "id": 4,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "object crate (o:1) mesh, prop_medium\nsize 600 x 600 x 600 mm (W x H x D)\norigin bottom center at (0, 0, 0) mm\nshape: box 100% (then cylinder z 58%); mirror x yes, y yes, z yes\ntopology: 108 tris (scene 108 of 6,000 budget), quads 100%, tris 0, ngons 0, poles 3:8 5:0 6+:0, min angle 81.6 deg, holes 0, pieces 1\ngroups: right left top bottom front back bevel\nshading: 36 hard edges (30 deg or more), 24 marked sharp\nuv: none; material slots: 0\ncontacts: on the ground\nproblems: none\ntests 2/2 pass\n",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "children": 0,
+          "groups": [
+            "right",
+            "left",
+            "top",
+            "bottom",
+            "front",
+            "back",
+            "bevel"
+          ],
+          "id": "o:1",
+          "kind": "mesh",
+          "name": "crate",
+          "shape": {
+            "area": 2.1328625358019053,
+            "axes": [
+              [
+                1.0,
+                0.0,
+                0.0
+              ],
+              [
+                0.0,
+                1.0,
+                0.0
+              ],
+              [
+                0.0,
+                0.0,
+                1.0
+              ]
+            ],
+            "closed": true,
+            "extents": [
+              0.6000000238418579,
+              0.6000000238418579,
+              0.6000000238418579
+            ],
+            "fill": 0.9993804693222046,
+            "fits": [
+              {
+                "kind": "box",
+                "percent": 99.93885803222656
+              },
+              {
+                "axis": "z",
+                "kind": "cylinder",
+                "percent": 57.750999450683594
+              },
+              {
+                "axis": "y",
+                "kind": "cylinder",
+                "percent": 57.73343276977539
+              },
+              {
+                "axis": "x",
+                "kind": "cylinder",
+                "percent": 57.650936126708984
+              },
+              {
+                "kind": "sphere",
+                "percent": 46.529109954833984
+              }
+            ],
+            "flat_edges": 0,
+            "hard_edges": 36,
+            "holes": 0,
+            "id": 1,
+            "max_edge_angle": 46.920562744140625,
+            "mirror": [
+              {
+                "axis": "x",
+                "capped": false,
+                "max_dev": 0.000052487281209323555,
+                "symmetric": true
+              },
+              {
+                "axis": "y",
+                "capped": false,
+                "max_dev": 0.00008111091301543638,
+                "symmetric": true
+              },
+              {
+                "axis": "z",
+                "capped": false,
+                "max_dev": 0.00008111098577501252,
+                "symmetric": true
+              }
+            ],
+            "name": "crate",
+            "parts": 1,
+            "soft_edges": 72,
+            "thickness": [
+              0.6000000238418579,
+              0.6000000238418579
+            ],
+            "volume": 0.21586620663164416,
+            "world_aligned": true
+          },
+          "size": [
+            0.6000000238418579,
+            0.6000000238418579,
+            0.6000000238418579
+          ],
+          "topology": {
+            "area": 2.1328612421712023,
+            "boundary_edges": 0,
+            "boundary_loops": 0,
+            "closed_parts": 1,
+            "degenerate_faces": 0,
+            "edges": 108,
+            "euler": 2,
+            "faces": 54,
+            "inverted_parts": 0,
+            "max_angle_deg": 111.2463836669922,
+            "max_valence": 4,
+            "min_angle_deg": 81.57877349853516,
+            "ngon_faces": 0,
+            "parts": 1,
+            "poles_3": 8,
+            "poles_5": 0,
+            "poles_6_plus": 0,
+            "quad_faces": 54,
+            "quad_percent": 100.0,
+            "short_edges": 0,
+            "tri_faces": 0,
+            "tris": 108,
+            "verts": 56,
+            "volume": 0.21586620663164416
+          }
+        }
+      }
+    }
+  },
+  {
+    "call": {
+      "arguments": {},
+      "tool": "diagnose"
+    },
+    "response": {
+      "id": 5,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "diagnose scene: 0 errors, 0 warnings, 0 info\nno problems found\n",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "findings": []
+        }
+      }
+    }
+  },
+  {
+    "call": {
+      "arguments": {
+        "ops": [
+          {
+            "args": {
+              "widht": 1
+            },
+            "op": "prim.box"
+          }
+        ]
+      },
+      "tool": "run"
+    },
+    "response": {
+      "id": 6,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "error INVALID_PARAM at /ops/0/args/widht: unknown field `widht`\ndid you mean: width",
+            "type": "text"
+          }
+        ],
+        "isError": true,
+        "structuredContent": {
+          "error": {
+            "code": "INVALID_PARAM",
+            "message": "unknown field `widht`",
+            "path": "/ops/0/args/widht",
+            "retryable": false,
+            "suggestions": [
+              "width"
+            ]
+          }
+        }
+      }
+    }
+  }
+]

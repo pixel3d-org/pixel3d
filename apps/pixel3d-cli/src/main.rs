@@ -1,42 +1,172 @@
 //! pixel3d headless command-line interface.
 
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use anyhow::{Context, Result, bail};
+use p3d_engine::Session;
+use p3d_mcp::Agent;
 use p3d_ops::Registry;
 use p3d_ops::catalog::catalog_json;
+use serde_json::{Value, json};
 
 const USAGE: &str = "\
-usage: pixel3d-cli <command>
+usage: pixel3d-cli <command> [options]
 
 commands:
-  catalog        print every op (metadata, parameter schema, defaults, examples) as JSON
+  mcp [--open <scene.p3d>]
+      serve the agent tools over MCP on stdin and stdout
+  run <script.json> [--open <in.p3d>] [--save <out.p3d>] [--timings]
+      run a list of ops as one transaction and print the result; the script
+      is {\"ops\": [{\"op\": \"prim.box\", \"args\": {...}}, ...]} or just the list
+  convert <scene.p3d> --to json [--out <file.json>]
+      write a scene as readable JSON (to stdout without --out)
+  catalog
+      print every op (metadata, parameter schema, defaults, examples) as JSON
   -V, --version  print the version
   -h, --help     print this help
+
+Logs go to stderr; PIXEL3D_LOG sets the level (error, warn, info, debug, trace).
 ";
 
+/// Command-line flags after the command and its positional argument.
+struct Flags {
+    positional: Option<String>,
+    options: Vec<(String, Option<String>)>,
+}
+
+impl Flags {
+    /// Parses `[positional] [--name value | --switch]...`; `switches` take no value.
+    fn parse(args: &[String], switches: &[&str]) -> Result<Flags> {
+        let mut f = Flags { positional: None, options: Vec::new() };
+        let mut it = args.iter();
+        while let Some(a) = it.next() {
+            if let Some(name) = a.strip_prefix("--") {
+                if switches.contains(&name) {
+                    f.options.push((name.to_owned(), None));
+                } else {
+                    let v = it.next().with_context(|| format!("--{name} needs a value"))?;
+                    f.options.push((name.to_owned(), Some(v.clone())));
+                }
+            } else if f.positional.is_none() {
+                f.positional = Some(a.clone());
+            } else {
+                bail!("unexpected argument `{a}`");
+            }
+        }
+        Ok(f)
+    }
+
+    fn value(&self, name: &str) -> Option<&str> {
+        self.options.iter().find(|(n, _)| n == name).and_then(|(_, v)| v.as_deref())
+    }
+
+    fn has(&self, name: &str) -> bool {
+        self.options.iter().any(|(n, _)| n == name)
+    }
+
+    /// Fails on options the command does not know.
+    fn only(&self, known: &[&str]) -> Result<()> {
+        if let Some((n, _)) = self.options.iter().find(|(n, _)| !known.contains(&n.as_str())) {
+            bail!("unknown option --{n} (known: {})", known.iter().map(|k| format!("--{k}")).collect::<Vec<_>>().join(", "));
+        }
+        Ok(())
+    }
+}
+
+fn init_logging() {
+    let level = std::env::var("PIXEL3D_LOG").ok().and_then(|l| l.parse::<tracing::Level>().ok()).unwrap_or(tracing::Level::WARN);
+    // stdout carries the MCP protocol: logs must go to stderr.
+    let _ = tracing_subscriber::fmt().with_writer(std::io::stderr).with_max_level(level).with_target(false).try_init();
+}
+
+/// A session, optionally with a document loaded from a file.
+fn session(open: Option<&str>) -> Result<Session> {
+    let mut s = Session::new();
+    if let Some(path) = open {
+        let doc = p3d_io::p3d::load(Path::new(path)).with_context(|| format!("cannot open {path}"))?;
+        s.load(doc);
+    }
+    Ok(s)
+}
+
+fn mcp(args: &[String]) -> Result<ExitCode> {
+    let f = Flags::parse(args, &[])?;
+    f.only(&["open"])?;
+    if let Some(p) = &f.positional {
+        bail!("mcp takes no positional argument (got `{p}`); use --open <scene.p3d>");
+    }
+    p3d_mcp::serve_stdio(session(f.value("open"))?)?;
+    Ok(ExitCode::SUCCESS)
+}
+
+fn run(args: &[String]) -> Result<ExitCode> {
+    let f = Flags::parse(args, &["timings"])?;
+    f.only(&["open", "save", "timings"])?;
+    let script = f.positional.as_deref().context("run needs a script file")?;
+    let text = std::fs::read_to_string(script).with_context(|| format!("cannot read {script}"))?;
+    let value: Value = serde_json::from_str(&text).with_context(|| format!("{script} is not JSON"))?;
+    let call = if value.is_array() { json!({ "ops": value }) } else { value };
+    let mut agent = Agent::new(session(f.value("open"))?);
+    let out = agent.call("run", call);
+    print!("{}", out.text);
+    if out.is_error {
+        return Ok(ExitCode::FAILURE);
+    }
+    if f.has("timings") {
+        for op in out.structured["ops"].as_array().into_iter().flatten() {
+            println!("timing {} {} ms", op["label"].as_str().unwrap_or("?"), op["ms"]);
+        }
+    }
+    if let Some(path) = f.value("save") {
+        let report = p3d_io::p3d::save(agent.session().doc(), &PathBuf::from(path)).with_context(|| format!("cannot save {path}"))?;
+        println!("saved {path} ({} bytes)", report.bytes);
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
+fn convert(args: &[String]) -> Result<ExitCode> {
+    let f = Flags::parse(args, &[])?;
+    f.only(&["to", "out"])?;
+    let input = f.positional.as_deref().context("convert needs a .p3d file")?;
+    match f.value("to") {
+        Some("json") => {}
+        Some(other) => bail!("cannot convert to `{other}` (supported: json)"),
+        None => bail!("convert needs --to json"),
+    }
+    let doc = p3d_io::p3d::load(Path::new(input)).with_context(|| format!("cannot open {input}"))?;
+    let json = serde_json::to_string_pretty(&p3d_io::p3d::to_json(&doc)?)?;
+    match f.value("out") {
+        Some(out) => std::fs::write(out, json + "\n").with_context(|| format!("cannot write {out}"))?,
+        None => println!("{json}"),
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 fn main() -> ExitCode {
-    match std::env::args().nth(1).as_deref() {
-        Some("catalog") => match serde_json::to_string_pretty(&catalog_json(&Registry::builtin())) {
-            Ok(s) => {
-                println!("{s}");
-                ExitCode::SUCCESS
-            }
-            Err(e) => {
-                eprintln!("error: {e}");
-                ExitCode::FAILURE
-            }
-        },
+    init_logging();
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let rest = args.get(1..).unwrap_or(&[]);
+    let result = match args.first().map(String::as_str) {
+        Some("mcp") => mcp(rest),
+        Some("run") => run(rest),
+        Some("convert") => convert(rest),
+        Some("catalog") => serde_json::to_string_pretty(&catalog_json(&Registry::builtin())).map_err(Into::into).map(|s| {
+            println!("{s}");
+            ExitCode::SUCCESS
+        }),
         Some("-V" | "--version") => {
             println!("pixel3d-cli {}", env!("CARGO_PKG_VERSION"));
-            ExitCode::SUCCESS
+            Ok(ExitCode::SUCCESS)
         }
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");
-            ExitCode::SUCCESS
+            Ok(ExitCode::SUCCESS)
         }
-        Some(other) => {
-            eprintln!("error: unknown command `{other}`\n\n{USAGE}");
-            ExitCode::FAILURE
-        }
-    }
+        Some(other) => Err(anyhow::anyhow!("unknown command `{other}`\n\n{USAGE}")),
+    };
+    result.unwrap_or_else(|e| {
+        eprintln!("error: {e:#}");
+        ExitCode::FAILURE
+    })
 }
