@@ -247,3 +247,20 @@ proptest! {
         }
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(48))]
+
+    #[test]
+    fn catmull_clark_stays_valid(m in strategy::mesh(), levels in 1u32..3, crease in 0.0f32..1.0, sharp in any::<bool>()) {
+        use p3d_geo::subd::{SubdSpec, catmull_clark, subdivided_face_count};
+        let mut c = m.clone();
+        c.edge_crease = Some(vec![crease; c.edge_slots()]);
+        let s = catmull_clark(&c, &SubdSpec { levels, keep_corners: true, sharp_as_crease: sharp }).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(s.validate(), Ok(()));
+        prop_assert_eq!(s.face_count(), subdivided_face_count(&m, levels));
+        prop_assert!(s.faces().all(|f| s.face_len(f) == 4));
+        let euler = |x: &Mesh| x.vert_count() as i64 - x.edge_count() as i64 + x.face_count() as i64;
+        prop_assert_eq!(euler(&s), euler(&m), "topology type is kept");
+    }
+}

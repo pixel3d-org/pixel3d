@@ -610,6 +610,18 @@ fn shading_flags_normals_and_creases() {
 }
 
 #[test]
+fn catmull_clark_subdivides_and_guards_the_budget() {
+    let mut tx = edit_fixture();
+    let a = run(&mut tx, "subd.catmull_clark", json!({ "target": "crate", "levels": 2 })).unwrap();
+    assert!(a.output.warnings.is_empty());
+    assert!(topo(&tx, "crate").is_watertight());
+    let a = run(&mut tx, "subd.catmull_clark", json!({ "target": "crate", "levels": 3 })).unwrap();
+    assert!(a.output.warnings[0].message.contains("exceed"), "{:?}", a.output.warnings);
+    let e = err(&mut tx, "subd.catmull_clark", json!({ "target": "crate", "levels": 6 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::BudgetExceeded, Some("/levels")));
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

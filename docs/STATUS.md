@@ -80,7 +80,7 @@ Acceptance:
 - [ ] Curves
 - [x] Edit ops (`edit.extrude`, `inset`, `bevel`, `loop_cut`, `bridge`, `fill`, `merge`, `merge_by_distance`, `dissolve`, `delete_elements`, `split`, `plane_cut`, `thicken`, `poke`, `triangulate`, `tris_to_quads`, `flip`, `recalc_normals`, `smooth`, `symmetrize`, `subdivide`; booleans below. All local edits apply one face patch (ADR 0003, `Mesh::apply_patch`, slope -0.01 for a fixed patch on growing meshes); property tests on random meshes in `crates/geo/tests/edit_props.rs`; 18 `scale_edit_*` kernels at slopes 0.95 to 1.05)
 - [x] Shading and normals (`shade.smooth_by_angle`, `mark_sharp`, `clear_sharp`, `set_flat`, `set_smooth`, `weighted_normals` (area, angle or both; custom split normals that respect sharp edges), `crease`; kernels in `crates/geo/src/shade.rs`, slopes 1.00 and 1.01)
-- [ ] Subdivision
+- [x] Subdivision (`subd.catmull_clark`: semi-sharp creases (DeRose et al. 1998; crease x 10 = sharpness, one level less per level), borders as creases with fixed corners, UVs and colors interpolated, groups, flags and creases carried; `crates/geo/src/subd.rs`, slope 1.04)
 - [ ] Deformers
 - [ ] `cleanup.auto`
 - [ ] Booleans (benchmark manifold-rust against boolmesh, choose, ADR)

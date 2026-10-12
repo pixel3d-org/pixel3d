@@ -230,6 +230,14 @@ export type SmoothAdvanced = {
   pin_sharp?: boolean;
 };
 
+/** Advanced settings of `subd.catmull_clark`. */
+export type SubdAdvanced = {
+  /** Open-border corners (vertices with two edges) stay in place. */
+  keep_corners?: boolean;
+  /** Treat edges marked sharp like fully creased edges. */
+  sharp_as_crease?: boolean;
+};
+
 /** Advanced settings of `edit.tris_to_quads`. */
 export type TrisToQuadsAdvanced = {
   /** Also join across sharp edges, UV seams and material borders. */
@@ -965,6 +973,16 @@ export type ShadeCreaseParams = {
   weight?: number;
 };
 
+/** `subd.catmull_clark`: Smooths the whole mesh by Catmull-Clark subdivision, keeping creased edges sharp. */
+export type SubdCatmullClarkParams = {
+  /** Rarely needed settings. */
+  advanced?: SubdAdvanced;
+  /** Subdivision levels (1 to 6); each makes about 4 times as many faces. */
+  levels?: number;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
 /** `expect.add`: Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. */
 export type ExpectAddParams = {
   /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight. */
@@ -1038,6 +1056,7 @@ export interface OpParams {
   "shade.set_smooth": ShadeSetSmoothParams;
   "shade.weighted_normals": ShadeWeightedNormalsParams;
   "shade.crease": ShadeCreaseParams;
+  "subd.catmull_clark": SubdCatmullClarkParams;
   "expect.add": ExpectAddParams;
   "expect.remove": ExpectRemoveParams;
 }

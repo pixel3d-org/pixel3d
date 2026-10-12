@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{edit, expect, prim, scene, select, shade};
+use crate::{edit, expect, prim, scene, select, shade, subd};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -92,6 +92,7 @@ impl Registry {
             Arc::new(Typed::<shade::SetSmooth>::new()),
             Arc::new(Typed::<shade::WeightedNormals>::new()),
             Arc::new(Typed::<shade::Crease>::new()),
+            Arc::new(Typed::<subd::CatmullClark>::new()),
             Arc::new(Typed::<expect::Add>::new()),
             Arc::new(Typed::<expect::Remove>::new()),
         ];

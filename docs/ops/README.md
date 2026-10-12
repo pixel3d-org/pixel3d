@@ -85,6 +85,12 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`shade.weighted_normals`](shade.weighted_normals.md) | Sets custom normals weighted by face area so large flat faces stay flat-shaded next to small bevel faces. |
 | [`shade.crease`](shade.crease.md) | Sets how sharp edges stay under `subd.catmull_clark`: 0 rounds them, 1 keeps them sharp. |
 
+## subd
+
+| Op | Summary |
+|---|---|
+| [`subd.catmull_clark`](subd.catmull_clark.md) | Smooths the whole mesh by Catmull-Clark subdivision, keeping creased edges sharp. |
+
 ## expect
 
 | Op | Summary |

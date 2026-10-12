@@ -105,6 +105,14 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // One level of Catmull-Clark subdivision.
+    let mut g = c.benchmark_group("scale_subd_catmull_clark");
+    for (t, m) in &spheres {
+        let spec = p3d_geo::subd::SubdSpec::default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| b.iter(|| p3d_geo::subd::catmull_clark(black_box(m), &spec)));
+    }
+    g.finish();
+
     // Edit kernels: the selection grows with the mesh.
     let edit_sets: Vec<(usize, Vec<_>)> = sizes.iter().map(|&t| (t, workloads::workloads(t))).collect();
     for i in 0..edit_sets[0].1.len() {
