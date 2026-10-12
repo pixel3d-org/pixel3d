@@ -42,8 +42,96 @@ p3d-plugin = { path = "crates/plugin" }
 p3d-ai = { path = "crates/ai" }
 p3d-testdata = { path = "crates/testdata" }
 
-# Third-party crates (versions verified on crates.io at bootstrap).
+# Third-party crates. Versions verified on crates.io on 2026-10-12; take newer
+# patch releases freely, verify compatibility before any minor or major bump.
+# Crates are added to a member's [dependencies] when a phase first uses them.
+
+# GUI (L5 only). winit and accesskit come from eframe. craft-ui (git, pinned
+# rev) is added with the GUI shell.
+egui = "0.36.2"
+eframe = { version = "0.36.2", default-features = false }
+egui-wgpu = "0.36.2"
+egui-winit = "0.36.2"
+epaint = "0.36.2"
+egui_kittest = "0.36.2"
+wgpu = "30.0.1"
+rfd = "0.17.2"
+arboard = { version = "3.6.1", default-features = false }
+muda = "0.21.2"
+transform-gizmo-egui = "0.11.0"
+egui-snarl = "0.12.0"
+
+# Math, geometry, algorithms
+glam = { version = "0.34.1", features = ["serde", "bytemuck"] }
+faer = "0.24.4"
+obvhs = "0.4.0"
+robust = "1.2.0"
+spade = "2.15.1"
+parry3d = "0.31.1"
+manifold-rust = "0.16.0"
+boolmesh = "0.2.1"
+meshopt = "0.6.2"
+rayon = "1.12.0"
+smallvec = "1.16.3"
+indexmap = "2.14.2"
+rustc-hash = "2.1.3"
+bytemuck = "1.25.2"
+fixedbitset = "0.5.7"
+
+# Images and textures
+image = { version = "0.25.10", default-features = false }
+png = "0.18.1"
+exr = "1.74.2"
+intel_tex_2 = "0.5.0"
+ktx2 = "0.5.0"
+
+# File formats
+gltf = "1.4.1"
+gltf-json = "1.4.1"
+ufbx = "0.11.5"
+fbxcel = "0.9.0"
+openusd = "0.8.0"
+tobj = "4.0.5"
+miniz_oxide = "0.9.1"
+zip = { version = "9.0.2", default-features = false }
+blake3 = "1.8.7"
+
+# Data, persistence, infrastructure
+serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
+slotmap = "1.1.1"
+rkyv = "0.8.18"
+postcard = "1.1.3"
+redb = "4.3.0"
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
+tracing-tracy = "0.12.0"
+directories = "6.0.0"
+notify = "8.2.0"
+crossbeam-channel = "0.5.17"
+
+# Agent interface, plugins, assistant (L5 only)
+rmcp = "3.5.1"
+schemars = "1.2.2"
+tokio = "1.53.2"
+axum = "0.8.9"
+wasmtime = "49.0.2"
+wit-bindgen = "0.62.0"
+rquickjs = "0.14.0"
+oxc_parser = "0.153.0"
+oxc_transformer = "0.153.0"
+oxc_codegen = "0.153.0"
+boa_engine = "0.22.0"
+reqwest = { version = "0.13.5", default-features = false }
+keyring = "4.2.0"
+
+# Testing
+insta = "1.49.0"
+proptest = "1.12.0"
+criterion = "0.8.2"
+image-compare = "0.5.0"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

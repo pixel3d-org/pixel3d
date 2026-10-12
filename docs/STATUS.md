@@ -20,6 +20,13 @@ Progress checklist for the roadmap. Tick a box in the commit that completes it; 
 - [x] `README.md` (product description)
 - [x] `docs/STATUS.md` with every phase as checkboxes
 - [x] `docs/architecture.md`
+- [x] Third-party versions re-checked on crates.io and pinned in `[workspace.dependencies]` (stable releases only: `smallvec` 1.16.3, `notify` 8.2.0, `wasmtime` 49.0.2; `muda` 0.21.2 patch update)
+
+Verification notes:
+
+- `transform-gizmo-egui` 0.11.0 and `egui-snarl` 0.12.0 both depend on `egui ^0.36`: compatible.
+- `craft-ui` (craft-libs) is `MIT OR Apache-2.0` and needs Rust 1.95 or newer; the pinned toolchain is 1.98.1.
+- Tangent-space candidates for Phase 6: `mikktspace` 0.3.0 (MIT or Apache-2.0), `bevy_mikktspace` 1.0.0 (Zlib and MIT or Apache-2.0).
 
 Acceptance:
 
