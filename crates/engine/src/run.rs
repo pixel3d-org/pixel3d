@@ -107,7 +107,9 @@ pub fn op_seed(session_seed: u64, revision: u64, index: usize) -> u64 {
 /// batch fails; panics inside ops become `INTERNAL` errors. In debug builds
 /// every touched mesh and the document indexes are validated after each op.
 ///
-/// Complexity: the ops' own costs plus O(objects touched) bookkeeping per op.
+/// Complexity: the ops' own costs plus, per op, O(size of each affected mesh)
+/// for the metric deltas and O(history length) per affected object (the
+/// history is copied when a snapshot shares it; see ADR 0002).
 pub fn run_batch(
     registry: &Registry,
     base: &Document,

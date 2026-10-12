@@ -196,7 +196,7 @@ fn read_entry(zip: &mut ZipArchive<Cursor<&[u8]>>, name: &str) -> Result<Vec<u8>
 /// Parses `.p3d` bytes, checking blob hashes, mesh invariants and the
 /// object hierarchy.
 ///
-/// Complexity: O(file size + objects log objects).
+/// Complexity: O(file size + objects x log objects).
 pub fn from_bytes(bytes: &[u8]) -> Result<Document, P3dError> {
     let mut zip = ZipArchive::new(Cursor::new(bytes)).map_err(zip_err)?;
     let json: serde_json::Value =

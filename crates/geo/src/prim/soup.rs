@@ -89,7 +89,7 @@ impl Soup {
 /// skipped) and marks edges between faces whose tags `sharp` separates as
 /// sharp.
 ///
-/// Complexity: O(F + E + groups x F / 64).
+/// Complexity: O(groups x F + E).
 pub(crate) fn tag_groups_and_sharp(mesh: &mut Mesh, tags: &[u16], names: &[Option<&str>], sharp: impl Fn(u16, u16) -> bool) {
     for (t, name) in names.iter().enumerate() {
         if let Some(name) = name {

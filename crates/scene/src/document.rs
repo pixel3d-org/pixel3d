@@ -679,6 +679,9 @@ impl Document {
     }
 
     /// Appends an op node to an object's history.
+    ///
+    /// Complexity: O(1) amortized, or O(history length) when an undo snapshot
+    /// shares the history (it is copied first; see ADR 0002).
     pub fn push_history(&mut self, key: ObjectKey, node: OpNode) -> Result<(), SceneError> {
         let existing = self.object(key).ok_or(SceneError::StaleObject)?.history;
         let g = match existing {

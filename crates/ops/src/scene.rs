@@ -132,7 +132,7 @@ impl Op for Delete {
                    no other object uses are freed. Undo restores everything.",
             examples: &[OpExample { args: r#"{"target": "crate/lid"}"#, result: "deleted crate/lid (o:2) and 1 child" }],
             aliases: &["remove", "erase", "delete object"],
-            complexity: "O(subtree x (depth + log n))",
+            complexity: "O(subtree x log n); O(children x depth) when children move up",
             flags: EDIT,
             version: 1,
         }
@@ -748,7 +748,7 @@ impl Op for Tag {
             docs: "Tags drive pipelines: bake pairs (`high` and `low`), collision proxies (`collision`), LOD meshes (`lod1`...).",
             examples: &[OpExample { args: r#"{"target": "crate", "add": ["low"]}"#, result: "crate (o:1) tags: low" }],
             aliases: &["label", "mark"],
-            complexity: "O(tags)",
+            complexity: "O(tags x (added + removed))",
             flags: EDIT,
             version: 1,
         }
