@@ -44,7 +44,7 @@ fn app_aliases(label: &str) -> &'static [&'static str] {
         "Delete" => &["remove", "x", "erase"],
         "Select all" => &["a", "all"],
         "Select none" => &["deselect", "alt a", "clear selection"],
-        "Frame selection" => &["view selected", "focus", "zoom to selection", "frame selected", "numpad ."],
+        "Frame selection" => &["frame", "view selected", "focus", "zoom to selection", "frame selected", "numpad ."],
         "Orthographic" => &["perspective", "toggle ortho", "numpad 5", "projection"],
         "Ground grid" => &["floor grid", "toggle grid"],
         "X-ray" => &["toggle x-ray", "alt z", "see through", "transparent", "xray"],
