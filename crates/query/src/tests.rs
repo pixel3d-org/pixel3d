@@ -137,3 +137,13 @@ fn edge_grow_from_a_fan_center_is_one_ring() {
     let grown = sel(&m, json!({ "grow": { "steps": 1, "of": { "edges": { "boundary": false } } } })).unwrap();
     assert_eq!(grown.len(), 2 * n as usize);
 }
+
+#[test]
+fn ids_pick_exact_elements() {
+    let m = cube();
+    assert_eq!(sel(&m, json!({ "faces": { "ids": [5, 1, 1] } })).unwrap(), vec![1, 5]);
+    assert_eq!(sel(&m, json!({ "verts": { "ids": [0, 7], "in_box": { "min": [0.5, 0.5, 0.5], "max": [2, 2, 2] } } })).unwrap(), vec![7]);
+    let e = sel(&m, json!({ "edges": { "ids": [0, 99] } })).unwrap_err();
+    assert_eq!(e.path(), "/edges/ids/1");
+    assert!(e.to_string().contains("revision"), "{e}");
+}

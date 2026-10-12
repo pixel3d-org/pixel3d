@@ -123,12 +123,20 @@ export type ExpectArgs = {
 /** How several faces are extruded. */
 export type ExtrudeModeParam = "region" | "individual";
 
+/** Proportional editing falloff. */
+export type FalloffParam = "smooth" | "sphere" | "root" | "inverse_square" | "sharp" | "linear" | "constant" | "random";
+
 /** Conditions on elements; all given conditions must hold. */
 export type Filter = {
   /** On the mesh boundary (true) or not (false). Faces: having a boundary edge. */
   boundary?: boolean | null;
   /** Member of this named group (the group must hold this element kind). */
   group?: string | null;
+  /**
+   * Element indices, valid only at the mesh revision they were read at
+   * (interactive selections in the app; prefer groups and filters).
+   */
+  ids?: number[] | null;
   /**
    * Inside an axis-aligned box in object space: vertex positions, edge
    * midpoints, face centroids.
@@ -185,10 +193,23 @@ export type OriginMode = "center" | "bottom_center" | "bbox" | "point";
 /** Where a primitive's origin sits. */
 export type OriginParam = "center" | "bottom";
 
+/** What rotations and scales of `edit.transform` turn around. */
+export type PivotParam = "median" | "bounds_center" | "individual" | "point";
+
 /** Advanced plane settings. */
 export type PlaneAdvanced = {
   /** Quads along X and Z. */
   segments?: [number, number];
+};
+
+/** Proportional editing settings. */
+export type ProportionalParams = {
+  /** Measure the distance along edges (only connected geometry follows). */
+  connected_only?: boolean;
+  /** How the influence fades: `smooth` (default), `sphere`, `root`, `inverse_square`, `sharp`, `linear`, `constant`, `random`. */
+  falloff?: FalloffParam;
+  /** Unselected vertices closer than this to the selection follow, less the farther they are. */
+  radius: Length;
 };
 
 /** Uniform or per-axis scale. */
@@ -825,6 +846,8 @@ export type EditPlaneCutParams = {
   normal?: [number, number, number];
   /** A point on the plane, in object space. */
   point?: [Length, Length, Length];
+  /** Cut only these faces (a knife cut); neighbours gain the crossing points. All faces when omitted. */
+  select?: Selector | null;
   /** Mesh object (name, path or id). */
   target: string;
 };
@@ -881,6 +904,50 @@ export type EditBevelParams = {
   target: string;
   /** Distance from each edge to the new edges, measured inside the faces. */
   width?: Length;
+};
+
+/** `edit.transform`: Moves, rotates and scales selected vertices, edges or faces of a mesh, optionally with proportional editing. */
+export type EditTransformParams = {
+  /** Orientation axes in object space as three columns (X, Y, Z); the object's own axes when omitted. */
+  axes?: [[number, number, number], [number, number, number], [number, number, number]] | null;
+  /** `median` (default), `bounds_center`, `individual` or `point`. */
+  pivot?: PivotParam;
+  /** Pivot for `pivot: "point"`, in object space. */
+  pivot_point?: [Length, Length, Length];
+  /** Proportional editing: nearby unselected vertices follow with a falloff. */
+  proportional?: ProportionalParams | null;
+  /** Rotation around the orientation axes (degrees, applied X, then Y, then Z). */
+  rotate?: [Angle, Angle, Angle];
+  /** Scale along the orientation axes (1 changes nothing, 0 flattens). */
+  scale?: [number, number, number];
+  /** Vertices to transform (edges and faces select their vertices). */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Offset along the orientation axes. */
+  translate?: [Length, Length, Length];
+};
+
+/** `edit.shrink_fatten`: Moves vertices along their normals: positive fattens (outward), negative shrinks. */
+export type EditShrinkFattenParams = {
+  /** Offset along the normals; negative shrinks. */
+  distance?: Length;
+  /** Stretch the offset at creases so faces move by the full distance. */
+  even?: boolean;
+  /** Vertices to move (edges and faces select their vertices). */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.edge_slide`: Slides edges (an edge loop) along the surface toward the neighbouring edges on one side. */
+export type EditEdgeSlideParams = {
+  /** How far, from -1 to 1: 1 reaches the neighbouring vertices on one side, -1 the other side. */
+  factor?: number;
+  /** Edges to slide (typically an edge loop). */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
 };
 
 /** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
@@ -1100,6 +1167,9 @@ export interface OpParams {
   "edit.thicken": EditThickenParams;
   "edit.smooth": EditSmoothParams;
   "edit.bevel": EditBevelParams;
+  "edit.transform": EditTransformParams;
+  "edit.shrink_fatten": EditShrinkFattenParams;
+  "edit.edge_slide": EditEdgeSlideParams;
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;

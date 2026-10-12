@@ -1415,6 +1415,9 @@ pub struct PlaneCutParams {
     /// Close the holes the cut leaves on the plane (when one side is removed).
     #[serde(default)]
     pub fill: bool,
+    /// Cut only these faces (a knife cut); neighbours gain the crossing points. All faces when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
 }
 
 fn up() -> [f32; 3] {
@@ -1423,7 +1426,7 @@ fn up() -> [f32; 3] {
 
 impl Default for PlaneCutParams {
     fn default() -> Self {
-        PlaneCutParams { target: String::new(), point: [Length(0.0); 3], normal: up(), keep: KeepParam::Both, fill: false }
+        PlaneCutParams { target: String::new(), point: [Length(0.0); 3], normal: up(), keep: KeepParam::Both, fill: false, select: None }
     }
 }
 
@@ -1441,14 +1444,15 @@ impl Op for PlaneCut {
             summary: "Cuts the mesh along a plane, optionally removing one side and capping the opening.",
             docs: "Every face crossing the plane is split along it (new vertices where edges cross; concave faces are triangulated \
                    first). With `keep: \"above\"` or `\"below\"` the other side is deleted, and `fill` closes the resulting holes \
-                   with flat caps. The cut edges are `<label>.edges`, caps `<label>.cap`.\n\n\
+                   with flat caps. With `select` only those faces are cut and their neighbours gain the crossing points (a knife cut through part \
+                   of the surface). The cut edges are `<label>.edges`, caps `<label>.cap`.\n\n\
                    **Use for** cutting a shape in half (then `edit.symmetrize` or mirror), flattening a base so a prop stands, \
                    adding an edge loop at an exact height, trimming terrain or architecture at a level.",
             examples: &[OpExample {
                 args: r#"{"target": "crate", "point": [0, "40cm", 0], "keep": "below", "fill": true}"#,
                 result: "crate (o:1): cut 4 faces along the plane; removed 1 face; 1 cap; groups plane_cut_1.edges (4), plane_cut_1.cap (1)",
             }],
-            aliases: &["bisect", "plane cut", "slice", "knife project plane", "polyCut", "cut in half"],
+            aliases: &["bisect", "plane cut", "slice", "knife", "knife project", "polyCut", "cut in half"],
             complexity: "O(V + F + C) to classify, plus O(c log c) for the corners of cut and removed faces",
             flags: EDIT.union(OpFlags::CREATES_GROUPS),
             version: 1,
@@ -1472,8 +1476,12 @@ impl Op for PlaneCut {
             KeepParam::Below => Keep::Below,
         };
         let spec = PlaneCutSpec { point: crate::params::vec3(&p.point), normal: glam::Vec3::from(p.normal), keep, fill: p.fill };
+        let only = match &p.select {
+            Some(s) => Some(selected_faces(tx.mesh(key, "/target")?, s, "edit.plane_cut")?),
+            None => None,
+        };
         let mesh = tx.mesh_mut(key, "/target")?;
-        let r = p3d_geo::edit::plane_cut(mesh, &spec).map_err(kernel_error)?;
+        let r = p3d_geo::edit::plane_cut(mesh, &spec, only.as_deref()).map_err(kernel_error)?;
         let mut out = OpOutput::default();
         if r.faces_cut == 0 && r.faces_removed == 0 {
             out.summary = format!("{}: the plane misses the mesh; nothing changed", label(tx.doc(), key));

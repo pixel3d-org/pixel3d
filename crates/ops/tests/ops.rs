@@ -639,6 +639,33 @@ fn deformers_move_vertices() {
 }
 
 #[test]
+fn element_transforms_by_ids_with_proportional_editing() {
+    let mut tx = edit_fixture();
+    let key = tx.doc().resolve("tiles").unwrap();
+    let center = {
+        let m = tx.doc().object_mesh(key).unwrap();
+        m.verts().find(|&v| m.positions[v as usize].length() < 1e-6).unwrap()
+    };
+    let a = run(
+        &mut tx,
+        "edit.transform",
+        json!({ "target": "tiles", "select": { "verts": { "ids": [center] } }, "translate": [0, 0.5, 0], "proportional": { "radius": 0.8, "falloff": "sphere" } }),
+    )
+    .unwrap();
+    assert!(a.output.summary.contains("+8 by proportional editing"), "{}", a.output.summary);
+    let m = tx.doc().object_mesh(key).unwrap();
+    assert_eq!(m.positions[center as usize].y, 0.5);
+    let e = err(&mut tx, "edit.transform", json!({ "target": "tiles", "select": { "verts": { "ids": [9999] } } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select/verts/ids/0")));
+    let e = err(&mut tx, "edit.transform", json!({ "target": "tiles", "select": { "verts": {} }, "axes": [[1, 0, 0], [2, 0, 0], [0, 0, 1]] }));
+    assert_eq!(e.path.as_deref(), Some("/axes"));
+    // A knife cut through the crate's front face only: the sides gain the cut points.
+    ok(&mut tx, "edit.plane_cut", json!({ "target": "crate", "point": [0, "30cm", 0], "select": { "faces": { "group": "front" } } }));
+    assert!(topo(&tx, "crate").is_watertight());
+    ok(&mut tx, "edit.shrink_fatten", json!({ "target": "crate", "select": { "faces": { "group": "top" } }, "distance": "1cm" }));
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

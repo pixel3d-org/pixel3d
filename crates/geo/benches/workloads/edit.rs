@@ -62,7 +62,7 @@ pub fn run(name: &str, mut m: Mesh, faces: &[u32]) -> usize {
         "dissolve_inner_verts" => dissolve_verts(&mut m, faces).map_or(0, |r| r.removed_verts),
         "plane_cut_sphere" => {
             let spec = PlaneCutSpec { point: glam::Vec3::new(0.0, 0.1, 0.0), normal: glam::Vec3::new(0.3, 1.0, 0.2), keep: Keep::Above, fill: true };
-            plane_cut(&mut m, &spec).map_or(0, |r| r.faces_cut)
+            plane_cut(&mut m, &spec, None).map_or(0, |r| r.faces_cut)
         }
         "symmetrize_sphere" => symmetrize(&mut m, Axis::X, true, 1e-5).map_or(0, |r| r.mirrored.len()),
         "thicken_grid" => thicken(&mut m, faces, &ThickenSpec::default()).map_or(0, |r| r.inner.len()),

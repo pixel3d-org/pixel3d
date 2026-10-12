@@ -74,6 +74,10 @@ pub struct Filter {
     /// midpoints, face centroids.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_box: Option<BoxFilter>,
+    /// Element indices, valid only at the mesh revision they were read at
+    /// (interactive selections in the app; prefer groups and filters).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ids: Option<Vec<u32>>,
 }
 
 /// Direction and tolerance for the `normal` filter.
@@ -296,6 +300,19 @@ fn filter(mesh: &Mesh, kind: ElementKind, f: &Filter, path: &str) -> Result<Sele
     }
     let not_for = |field: &'static str| QueryError::NotApplicable { field, kind: kind_name(kind), path: format!("{path}/{field}") };
 
+    if let Some(ids) = &f.ids {
+        let mut keep = FixedBitSet::with_capacity(n);
+        for (i, &x) in ids.iter().enumerate() {
+            if !mesh.is_alive(kind, x) {
+                return Err(QueryError::Invalid {
+                    what: format!("{} {x} does not exist (ids are only valid at the revision they were read)", kind_name(kind)),
+                    path: format!("{path}/ids/{i}"),
+                });
+            }
+            keep.insert(x as usize);
+        }
+        bits.intersect_with(&keep);
+    }
     if let Some(name) = &f.group {
         let g = mesh.group(name).ok_or_else(|| QueryError::NoGroup {
             name: name.clone(),

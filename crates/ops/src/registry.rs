@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{deform, edit, expect, prim, scene, select, shade, subd};
+use crate::{deform, edit, element, expect, prim, scene, select, shade, subd};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -82,6 +82,9 @@ impl Registry {
             Arc::new(Typed::<edit::Thicken>::new()),
             Arc::new(Typed::<edit::Smooth>::new()),
             Arc::new(Typed::<edit::Bevel>::new()),
+            Arc::new(Typed::<element::TransformElements>::new()),
+            Arc::new(Typed::<element::ShrinkFatten>::new()),
+            Arc::new(Typed::<element::EdgeSlide>::new()),
             Arc::new(Typed::<edit::Fill>::new()),
             Arc::new(Typed::<edit::RecalcNormals>::new()),
             Arc::new(Typed::<edit::DeleteElements>::new()),

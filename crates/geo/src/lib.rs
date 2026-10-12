@@ -5,6 +5,7 @@
 pub mod bvh;
 pub mod deform;
 pub mod edit;
+pub mod kdtree;
 pub mod prim;
 pub mod shade;
 pub mod subd;
