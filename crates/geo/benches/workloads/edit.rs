@@ -1,8 +1,9 @@
 //! Edit workloads shared by the `edit` and `scale` benches.
 
 use p3d_geo::edit::{
-    Axis, ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, Keep, PlaneCutSpec, QuadSpec, SmoothSpec, ThickenSpec, dissolve_limited, dissolve_verts,
-    extrude, inset, loop_cut, merge_by_distance, plane_cut, poke, smooth, split, subdivide, symmetrize, thicken, triangulate, tris_to_quads,
+    Axis, BevelSpec, ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, Keep, PlaneCutSpec, QuadSpec, SmoothSpec, ThickenSpec, bevel, dissolve_limited,
+    dissolve_verts, extrude, inset, loop_cut, merge_by_distance, plane_cut, poke, smooth, split, subdivide, symmetrize, thicken, triangulate,
+    tris_to_quads,
 };
 use p3d_mesh::Mesh;
 use p3d_testdata::{grid, sphere, terrain};
@@ -35,6 +36,7 @@ pub fn workloads(tris: usize) -> Vec<(&'static str, Mesh, Vec<u32>)> {
         ("symmetrize_sphere", sphere(tris), Vec::new()),
         ("thicken_grid", grid(tris), grid(tris).faces().collect()),
         ("smooth_terrain", terrain(tris, 3), terrain(tris, 3).verts().collect()),
+        ("bevel_sphere_third", sphere(tris), sphere(tris).edges().step_by(3).collect()),
     ]
 }
 
@@ -64,7 +66,8 @@ pub fn run(name: &str, mut m: Mesh, faces: &[u32]) -> usize {
         }
         "symmetrize_sphere" => symmetrize(&mut m, Axis::X, true, 1e-5).map_or(0, |r| r.mirrored.len()),
         "thicken_grid" => thicken(&mut m, faces, &ThickenSpec::default()).map_or(0, |r| r.inner.len()),
-        _ => smooth(&mut m, faces, &SmoothSpec { iterations: 4, ..SmoothSpec::default() }).unwrap_or(0),
+        "smooth_terrain" => smooth(&mut m, faces, &SmoothSpec { iterations: 4, ..SmoothSpec::default() }).unwrap_or(0),
+        _ => bevel(&mut m, faces, &BevelSpec { width: 1e-4, segments: 2, ..BevelSpec::default() }).map_or(0, |r| r.faces.len()),
     }
 }
 

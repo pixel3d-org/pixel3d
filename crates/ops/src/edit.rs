@@ -1,8 +1,8 @@
 //! `edit.*`: mesh edits addressed by selectors and groups.
 
 use p3d_geo::edit::{
-    Axis, ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, Keep, KernelError, MergeMode, PlaneCutSpec, QuadSpec, SmoothSpec, ThickenSpec, extrude,
-    inset,
+    Axis, BevelSpec, ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, Keep, KernelError, MergeMode, PlaneCutSpec, QuadSpec, SmoothSpec, ThickenSpec,
+    extrude, inset,
 };
 use p3d_mesh::{ElementKind, Mesh};
 use p3d_query::{Filter, Selector, select as evaluate};
@@ -1804,6 +1804,155 @@ impl Op for Smooth {
             out.warnings.push(Warning { message: "every selected vertex is pinned (border or sharp edge); see advanced settings".into(), fix: None });
         } else {
             out.changed.push(key);
+        }
+        Ok(out)
+    }
+}
+
+// ---- edit.bevel -------------------------------------------------------------------------
+
+/// Advanced settings of `edit.bevel`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct BevelAdvanced {
+    /// Shrink the width where it would overlap neighbouring edges instead of failing.
+    pub clamp_overlap: bool,
+}
+
+impl Default for BevelAdvanced {
+    fn default() -> Self {
+        BevelAdvanced { clamp_overlap: true }
+    }
+}
+
+/// Parameters of `edit.bevel`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BevelEdgeParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Edges to bevel (faces select their edges); for example {"edges": {"sharp": true}}.
+    pub select: Selector,
+    /// Distance from each edge to the new edges, measured inside the faces.
+    #[serde(default = "bevel_width")]
+    pub width: Length,
+    /// Faces across the bevel: 1 is a flat chamfer, 2 or more round it.
+    #[serde(default = "one_cut")]
+    pub segments: u32,
+    /// Profile for 2 or more segments: 0.5 round, toward 0 flat, toward 1 pointed.
+    #[serde(default = "half")]
+    pub profile: f32,
+    /// Rarely needed settings.
+    #[serde(default)]
+    pub advanced: BevelAdvanced,
+}
+
+fn bevel_width() -> Length {
+    Length(0.005)
+}
+
+impl Default for BevelEdgeParams {
+    fn default() -> Self {
+        BevelEdgeParams {
+            target: String::new(),
+            select: Selector::Edges(Filter::default()),
+            width: bevel_width(),
+            segments: 1,
+            profile: 0.5,
+            advanced: BevelAdvanced::default(),
+        }
+    }
+}
+
+/// `edit.bevel`.
+pub struct Bevel;
+
+impl Op for Bevel {
+    const ID: &'static str = "edit.bevel";
+    type Params = BevelEdgeParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Bevel",
+            category: Category::Edit,
+            summary: "Rounds or chamfers edges: each edge becomes a strip of faces `width` wide, with caps where strips meet or end.",
+            docs: "Every selected edge is replaced by a strip between two new edges, `width` inside each neighbouring face; `segments` \
+                   faces across give a flat chamfer (1) or a rounded profile (2 or more, shaped by `profile`). Where several beveled \
+                   edges meet, a corner patch closes the gap; where a strip ends, a small cap does. Strips and caps are \
+                   `<label>.faces`. Widths that would overlap neighbouring edges are clamped (see the warning) unless \
+                   `advanced.clamp_overlap` is false.\n\n\
+                   **Use for** hard-surface props: catch light on edges so models read well in engines. Typical values: 1 segment \
+                   and 2 to 5 mm on small props, 2 to 3 segments on hero assets; pair with `shade.weighted_normals`. Select sharp \
+                   edges with {\"edges\": {\"sharp\": true}} or by angle with {\"edges\": {\"sharper_than_deg\": 30}}.\n\n\
+                   **Not for** whole primitives you are about to create (use `prim.box` with `bevel`).",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "select": {"edges": {"sharp": true}}, "width": "2cm", "segments": 2}"#,
+                result: "crate (o:1): beveled 12 edges by 20 mm (2 segments): +48 faces; group bevel_1.faces",
+            }],
+            aliases: &["bevel", "ctrl b", "chamfer", "fillet edges", "round edges", "polyBevel"],
+            complexity: "O(c log c) for the c corners around the beveled edges, plus the selector",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &BevelEdgeParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        crate::common::check_length("/width", p.width, 1e-6, p3d_geo::prim::MAX_SIZE)?;
+        crate::common::check_count("/segments", p.segments, 1, p3d_geo::edit::MAX_BEVEL_SEGMENTS)?;
+        if !(p.profile.is_finite() && (0.0..=1.0).contains(&p.profile)) {
+            return Err(OpError::out_of_range("/profile", format!("profile {} is outside 0 to 1", p.profile)));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &BevelEdgeParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let mesh = tx.mesh(key, "/target")?;
+        let sel = evaluate(mesh, &p.select).map_err(|e| OpError::from_query(e, "/select"))?;
+        let mut edges: Vec<u32> = match sel.kind {
+            ElementKind::Edge => sel.iter().collect(),
+            ElementKind::Face => sel.iter().flat_map(|f| mesh.face_halfedges(f).map(|h| h >> 1).collect::<Vec<_>>()).collect(),
+            ElementKind::Vert => {
+                return Err(OpError::invalid("/select", "edit.bevel works on edges (vertex bevel is not available)")
+                    .with_hint("select edges, for example {\"edges\": {\"sharp\": true}}"));
+            }
+        };
+        edges.sort_unstable();
+        edges.dedup();
+        if edges.is_empty() {
+            return Err(empty_selection("the selector matched no edges", "query shows what a selector picks"));
+        }
+        let glabel = group_label(mesh, ctx, "bevel");
+        let spec = BevelSpec { width: p.width.0 as f32, segments: p.segments, profile: p.profile, clamp: p.advanced.clamp_overlap };
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::bevel(mesh, &edges, &spec).map_err(kernel_error)?;
+        let g = face_group(mesh, key, format!("{glabel}.faces"), &r.faces)?;
+        let mut out = OpOutput::summary(format!(
+            "{}: beveled {} edge{} by {} ({} segment{}): +{} faces; group {}",
+            label(tx.doc(), key),
+            thousands(r.edges),
+            plural(r.edges),
+            p3d_math::format_length(f64::from(r.width)),
+            p.segments,
+            plural(p.segments as usize),
+            thousands(r.faces.len()),
+            g.name
+        ));
+        out.changed.push(key);
+        out.groups = vec![g];
+        if f64::from(r.width) < p.width.0 * 0.999 {
+            out.warnings.push(Warning {
+                message: format!(
+                    "the width was clamped from {} to {} so the bevel does not overlap neighbouring edges",
+                    p3d_math::format_length(p.width.0),
+                    p3d_math::format_length(f64::from(r.width))
+                ),
+                fix: None,
+            });
+        }
+        if r.skipped > 0 {
+            out.warnings.push(Warning { message: format!("{} boundary edge(s) cannot be beveled and were skipped", r.skipped), fix: None });
         }
         Ok(out)
     }

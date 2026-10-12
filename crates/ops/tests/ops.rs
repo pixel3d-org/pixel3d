@@ -567,6 +567,21 @@ fn cut_mirror_thicken_and_smooth() {
 }
 
 #[test]
+fn bevel_edges_with_clamping() {
+    let mut tx = edit_fixture();
+    let a = run(&mut tx, "edit.bevel", json!({ "target": "crate", "select": { "edges": { "sharp": true } }, "width": "50cm" })).unwrap();
+    assert!(a.output.warnings.iter().any(|w| w.message.contains("clamped")), "{:?}", a.output.warnings);
+    assert!(topo(&tx, "crate").is_watertight());
+    let e =
+        err(&mut tx, "edit.bevel", json!({ "target": "lid", "select": { "edges": {} }, "width": "50cm", "advanced": { "clamp_overlap": false } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/width")));
+    let e = err(&mut tx, "edit.bevel", json!({ "target": "lid", "select": { "verts": {} } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select")));
+    let e = err(&mut tx, "edit.bevel", json!({ "target": "bin", "select": { "edges": { "boundary": true } } }));
+    assert_eq!(e.code, ErrorCode::EmptySelection);
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

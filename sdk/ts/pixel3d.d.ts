@@ -7,6 +7,12 @@ export type Angle = number | string;
 /** An axis of object space. */
 export type AxisParam = "x" | "y" | "z";
 
+/** Advanced settings of `edit.bevel`. */
+export type BevelAdvanced = {
+  /** Shrink the width where it would overlap neighbouring edges instead of failing. */
+  clamp_overlap?: boolean;
+};
+
 /** Bevel of a box's edges. */
 export type BevelParams = {
   /**
@@ -850,6 +856,22 @@ export type EditSmoothParams = {
   target: string;
 };
 
+/** `edit.bevel`: Rounds or chamfers edges: each edge becomes a strip of faces `width` wide, with caps where strips meet or end. */
+export type EditBevelParams = {
+  /** Rarely needed settings. */
+  advanced?: BevelAdvanced;
+  /** Profile for 2 or more segments: 0.5 round, toward 0 flat, toward 1 pointed. */
+  profile?: number;
+  /** Faces across the bevel: 1 is a flat chamfer, 2 or more round it. */
+  segments?: number;
+  /** Edges to bevel (faces select their edges); for example {"edges": {"sharp": true}}. */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Distance from each edge to the new edges, measured inside the faces. */
+  width?: Length;
+};
+
 /** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
 export type EditFillParams = {
   /**
@@ -942,6 +964,7 @@ export interface OpParams {
   "edit.symmetrize": EditSymmetrizeParams;
   "edit.thicken": EditThickenParams;
   "edit.smooth": EditSmoothParams;
+  "edit.bevel": EditBevelParams;
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;

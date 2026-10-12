@@ -68,6 +68,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`edit.symmetrize`](edit.symmetrize.md) | Makes a mesh mirror-symmetric: keeps one half and replaces the other with its mirror image, welded at the seam. |
 | [`edit.thicken`](edit.thicken.md) | Gives surfaces a wall thickness: an offset back side joined to the front along open borders. |
 | [`edit.smooth`](edit.smooth.md) | Smooths vertex positions without shrinking the shape (Taubin smoothing). |
+| [`edit.bevel`](edit.bevel.md) | Rounds or chamfers edges: each edge becomes a strip of faces `width` wide, with caps where strips meet or end. |
 | [`edit.fill`](edit.fill.md) | Closes holes (loops of boundary edges) with one face each. |
 | [`edit.recalc_normals`](edit.recalc_normals.md) | Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way. |
 | [`edit.delete_elements`](edit.delete_elements.md) | Deletes the selected faces (or every face using the selected edges or vertices) and anything left unused. |

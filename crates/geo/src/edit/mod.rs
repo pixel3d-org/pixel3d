@@ -2,6 +2,7 @@
 //! what, then applies a single [`p3d_mesh::Patch`] (ADR 0003), so its cost
 //! depends on the edited region, not on the mesh size.
 
+mod bevel;
 mod dissolve;
 mod extrude;
 mod faces;
@@ -12,6 +13,7 @@ mod plane;
 mod shell;
 mod split;
 
+pub use bevel::{BevelResult, BevelSpec, MAX_BEVEL_SEGMENTS, bevel};
 pub use dissolve::{DissolveResult, STRAIGHT_DEG, dissolve_edges, dissolve_faces, dissolve_limited, dissolve_verts};
 pub use extrude::{ExtrudeMode, ExtrudeResult, ExtrudeSpec, extrude};
 pub use faces::{QuadSpec, poke, triangulate, tris_to_quads};

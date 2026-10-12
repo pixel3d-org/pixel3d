@@ -2,9 +2,9 @@
 //! always a valid mesh, and a refused edit changes nothing.
 
 use p3d_geo::edit::{
-    Axis, ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, Keep, KernelError, MergeMode, PlaneCutSpec, QuadSpec, SmoothSpec, ThickenSpec, bridge,
-    dissolve_edges, dissolve_limited, dissolve_verts, extrude, inset, loop_cut, merge, merge_by_distance, plane_cut, poke, smooth, split, subdivide,
-    symmetrize, thicken, triangulate, tris_to_quads,
+    Axis, BevelSpec, ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, Keep, KernelError, MergeMode, PlaneCutSpec, QuadSpec, SmoothSpec, ThickenSpec,
+    bevel, bridge, dissolve_edges, dissolve_limited, dissolve_verts, extrude, inset, loop_cut, merge, merge_by_distance, plane_cut, poke, smooth,
+    split, subdivide, symmetrize, thicken, triangulate, tris_to_quads,
 };
 use p3d_mesh::Mesh;
 use p3d_testdata::strategy;
@@ -221,5 +221,29 @@ proptest! {
         let verts: Vec<u32> = sm.verts().collect();
         smooth(&mut sm, &verts, &SmoothSpec::default()).map_err(|e| TestCaseError::fail(e.to_string()))?;
         prop_assert_eq!(sm.validate(), Ok(()));
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+
+    #[test]
+    fn bevels_stay_valid_or_change_nothing(m in strategy::mesh(), picks in prop::collection::vec(any::<u32>(), 1..10), w in 0.001f32..0.2, segments in 1u32..5, profile in 0.0f32..1.0, clamp in any::<bool>()) {
+        let live: Vec<u32> = m.edges().collect();
+        prop_assume!(!live.is_empty());
+        let edges: Vec<u32> = picks.iter().map(|&p| live[p as usize % live.len()]).collect();
+        let mut n = m.clone();
+        match bevel(&mut n, &edges, &BevelSpec { width: w, segments, profile, clamp }) {
+            Ok(r) => {
+                prop_assert_eq!(n.validate(), Ok(()));
+                prop_assert!(r.width <= w);
+                // Closed meshes stay closed.
+                let open = |x: &Mesh| x.edges().filter(|&e| x.is_boundary_edge(e)).count();
+                if open(&m) == 0 {
+                    prop_assert_eq!(open(&n), 0);
+                }
+            }
+            Err(_) => prop_assert_eq!(&n, &m),
+        }
     }
 }

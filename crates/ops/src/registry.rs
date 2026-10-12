@@ -81,6 +81,7 @@ impl Registry {
             Arc::new(Typed::<edit::Symmetrize>::new()),
             Arc::new(Typed::<edit::Thicken>::new()),
             Arc::new(Typed::<edit::Smooth>::new()),
+            Arc::new(Typed::<edit::Bevel>::new()),
             Arc::new(Typed::<edit::Fill>::new()),
             Arc::new(Typed::<edit::RecalcNormals>::new()),
             Arc::new(Typed::<edit::DeleteElements>::new()),
