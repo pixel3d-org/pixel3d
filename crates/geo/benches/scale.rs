@@ -6,7 +6,7 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use glam::{Affine3A, DVec3, Vec3};
 use p3d_geo::bvh::TriBvh;
-use p3d_geo::prim::{BoxSpec, Origin, PlaneSpec, QuadSphereSpec, cuboid, plane, quad_sphere};
+use p3d_geo::prim::{BoxSpec, CapKind, ConeSpec, Origin, PlaneSpec, QuadSphereSpec, cone, cuboid, plane, quad_sphere};
 use p3d_testdata::{scale_sizes, sphere};
 
 fn scale(c: &mut Criterion) {
@@ -32,6 +32,15 @@ fn scale(c: &mut Criterion) {
         let n = ((tris as f64 / 12.0).sqrt().round()) as u32;
         let spec = BoxSpec { size: DVec3::ONE, segments: [n; 3], bevel_width: 0.05, bevel_segments: 3 };
         g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| cuboid(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_prim_cone");
+    for &tris in &sizes {
+        // Side 2 s x s / 2 and caps about s^2 / 8 triangles: s = sqrt(tris)
+        // keeps both proportional to tris.
+        let s = (((tris as f64).sqrt() / 4.0).round().max(1.0) as u32) * 4;
+        let spec = ConeSpec { radius_bottom: 0.5, radius_top: 0.2, height: 1.0, segments: s, height_segments: s / 2, cap: CapKind::QuadGrid };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| cone(black_box(spec), Origin::Center)));
     }
     g.finish();
 

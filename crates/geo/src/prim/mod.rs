@@ -11,7 +11,7 @@ mod soup;
 mod sphere;
 
 pub use cuboid::{BoxSpec, cuboid};
-pub use cylinder::{CapKind, CylinderSpec, cylinder};
+pub use cylinder::{CapKind, ConeSpec, CylinderSpec, cone, cylinder};
 pub use plane::{PlaneSpec, plane};
 pub use sphere::{QuadSphereSpec, quad_sphere};
 

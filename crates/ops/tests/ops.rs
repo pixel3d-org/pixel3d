@@ -138,6 +138,23 @@ fn prim_errors_are_precise() {
 }
 
 #[test]
+fn prim_cone_points_and_frustums() {
+    let mut tx = Tx::new(Document::new());
+    let a = run(&mut tx, "prim.cone", json!({ "name": "spike", "radius_bottom": "2cm", "height": "10cm", "segments": 8, "cap": "ngon" })).unwrap();
+    let names: Vec<&str> = a.output.groups.iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, vec!["side", "cap_bottom"], "a point has no cap");
+    let m = tx.doc().object_mesh(a.output.created[0]).unwrap();
+    let (lo, hi) = m.bounds().unwrap();
+    assert!((hi - lo).abs_diff_eq(Vec3::new(0.04, 0.1, 0.04), 1e-5));
+    let e = err(&mut tx, "prim.cone", json!({ "radius_bottom": 0, "radius_top": 0 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/radius_top")));
+    let e = err(&mut tx, "prim.cone", json!({ "segments": 6 }));
+    assert_eq!(e.suggestions, vec!["4", "8"]);
+    let e = err(&mut tx, "prim.cone", json!({ "radius_top": "-1cm" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/radius_top")));
+}
+
+#[test]
 fn adaptive_segments_follow_the_asset_class() {
     let mut tx = Tx::new(Document::new());
     let a = run(&mut tx, "prim.cylinder", json!({ "radius": 0.05 })).unwrap();

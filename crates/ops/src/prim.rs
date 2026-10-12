@@ -2,7 +2,8 @@
 
 use glam::DVec3;
 use p3d_geo::prim::{
-    self as kernel, BoxSpec, CapKind, CylinderSpec, MAX_BEVEL_SEGMENTS, MAX_SEGMENTS, MAX_SIZE, MIN_SIZE, PlaneSpec, PrimError, QuadSphereSpec,
+    self as kernel, BoxSpec, CapKind, ConeSpec, CylinderSpec, MAX_BEVEL_SEGMENTS, MAX_SEGMENTS, MAX_SIZE, MIN_SIZE, PlaneSpec, PrimError,
+    QuadSphereSpec,
 };
 use p3d_scene::Document;
 use schemars::JsonSchema;
@@ -311,13 +312,7 @@ impl Op for Cylinder {
         check_length("/height", p.height, MIN_SIZE, MAX_SIZE)?;
         check_count("/advanced/height_segments", p.advanced.height_segments, 1, MAX_SEGMENTS)?;
         if let Some(s) = p.segments {
-            check_count("/segments", s, 3, MAX_SEGMENTS)?;
-            if p.cap == CapParam::QuadGrid && !s.is_multiple_of(4) {
-                let lower = (s / 4).max(1) * 4;
-                return Err(OpError::invalid("/segments", format!("quad_grid caps need a multiple of 4 segments, got {s}"))
-                    .with_suggestions(vec![lower.to_string(), (lower + 4).to_string()])
-                    .with_hint("or use cap \"ngon\" or \"fan\""));
-            }
+            check_round_segments("/segments", s, p.cap)?;
         }
         check_placement(doc, p.name.as_deref(), p.parent.as_deref())
     }
@@ -333,6 +328,150 @@ impl Op for Cylinder {
         let mesh = kernel::cylinder(&spec, p.origin.into()).map_err(kernel_error)?;
         let key = create_mesh_object(tx, p.name.as_deref(), "cylinder", p.parent.as_deref(), &p.position, mesh)?;
         Ok(created_summary(tx, key, "cylinder"))
+    }
+}
+
+// ---- prim.cone ------------------------------------------------------------------------
+
+/// Advanced cone settings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct ConeAdvanced {
+    /// Segments along the height.
+    pub height_segments: u32,
+}
+
+impl Default for ConeAdvanced {
+    fn default() -> Self {
+        ConeAdvanced { height_segments: 1 }
+    }
+}
+
+/// Parameters of `prim.cone`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct ConeParams {
+    /// Object name; a free name such as `cone_1` is picked when omitted.
+    pub name: Option<String>,
+    /// Parent object (name, path or id); top level when omitted.
+    pub parent: Option<String>,
+    /// Radius at the bottom; 0 makes a point there.
+    pub radius_bottom: Length,
+    /// Radius at the top; 0 (default) makes a pointed cone, any other value a frustum.
+    pub radius_top: Length,
+    /// Size along Y.
+    pub height: Length,
+    /// Segments around; when omitted, derived from the larger circumference and
+    /// the asset class's target edge length (8 to 64, a multiple of 4 for quad-grid caps).
+    pub segments: Option<u32>,
+    /// Cap fill of ends with a radius: `quad_grid` (default, quads only), `ngon`, `fan` or `none`.
+    pub cap: CapParam,
+    /// Origin at the bottom center (stands on the ground) or the center.
+    pub origin: OriginParam,
+    /// Origin position in the parent's space.
+    pub position: [Length; 3],
+    /// Rarely needed settings.
+    pub advanced: ConeAdvanced,
+}
+
+impl Default for ConeParams {
+    fn default() -> Self {
+        ConeParams {
+            name: None,
+            parent: None,
+            radius_bottom: Length(0.25),
+            radius_top: Length(0.0),
+            height: Length(0.5),
+            segments: None,
+            cap: CapParam::QuadGrid,
+            origin: OriginParam::Bottom,
+            position: [Length(0.0); 3],
+            advanced: ConeAdvanced::default(),
+        }
+    }
+}
+
+/// `prim.cone`.
+pub struct Cone;
+
+/// Checks a radius that may be 0 (a point) or a real size.
+fn check_radius(path: &str, r: Length) -> Result<(), OpError> {
+    if r.0 == 0.0 { Ok(()) } else { check_length(path, r, MIN_SIZE, MAX_SIZE) }
+}
+
+/// Checks a segment count for a cap kind; quad-grid caps need a multiple of 4.
+fn check_round_segments(path: &str, s: u32, cap: CapParam) -> Result<(), OpError> {
+    check_count(path, s, 3, MAX_SEGMENTS)?;
+    if cap == CapParam::QuadGrid && !s.is_multiple_of(4) {
+        let lower = (s / 4).max(1) * 4;
+        return Err(OpError::invalid(path, format!("quad_grid caps need a multiple of 4 segments, got {s}"))
+            .with_suggestions(vec![lower.to_string(), (lower + 4).to_string()])
+            .with_hint("or use cap \"ngon\" or \"fan\""));
+    }
+    Ok(())
+}
+
+impl Op for Cone {
+    const ID: &'static str = "prim.cone";
+    type Params = ConeParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Cone",
+            category: Category::Prim,
+            summary: "Creates a pointed cone or a frustum (truncated cone) along Y with groups side, cap_top, cap_bottom.",
+            docs: "Creates a cone standing on the ground by default. `radius_top: 0` (default) gives a point with one ring of triangles \
+                   around it; any other top radius gives a frustum with two caps. A zero `radius_bottom` points the cone down.\n\n\
+                   **Caps** work as on `prim.cylinder`: `quad_grid` (default, quads only, multiple of 4 segments), `ngon`, `fan`, `none`. \
+                   Ends with radius 0 never get a cap. Rim edges are sharp.\n\n\
+                   **Use for** spikes, horns (blockout), lamp shades, funnels, bucket and pot bodies (frustums), tree crowns in low poly.",
+            examples: &[
+                OpExample {
+                    args: r#"{"name": "spike", "radius_bottom": "3cm", "height": "12cm", "segments": 8}"#,
+                    result: "created spike (o:1) cone 60 mm x 0.12 m x 60 mm: 20 faces (32 tris; budget 6,000)",
+                },
+                OpExample {
+                    args: r#"{"name": "bucket", "radius_bottom": 0.12, "radius_top": 0.15, "height": 0.3, "cap": "ngon"}"#,
+                    result: "created bucket (o:1) cone 0.3 x 0.3 x 0.3 m: 26 faces (92 tris; budget 6,000)",
+                },
+            ],
+            aliases: &["add cone", "frustum", "truncated cone", "polyCone", "spike"],
+            complexity: "O(segments x height segments + segments^2 / 16) with quad-grid caps",
+            flags: FLAGS,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &ConeParams) -> Result<(), OpError> {
+        check_radius("/radius_bottom", p.radius_bottom)?;
+        check_radius("/radius_top", p.radius_top)?;
+        if p.radius_bottom.0 == 0.0 && p.radius_top.0 == 0.0 {
+            return Err(OpError::out_of_range("/radius_top", "both radii are 0; at most one end can be a point")
+                .with_hint("give radius_bottom or radius_top a size"));
+        }
+        check_length("/height", p.height, MIN_SIZE, MAX_SIZE)?;
+        check_count("/advanced/height_segments", p.advanced.height_segments, 1, MAX_SEGMENTS)?;
+        if let Some(s) = p.segments {
+            check_round_segments("/segments", s, p.cap)?;
+        }
+        check_placement(doc, p.name.as_deref(), p.parent.as_deref())
+    }
+
+    fn apply(tx: &mut Tx, p: &ConeParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let multiple = if p.cap == CapParam::QuadGrid { 4 } else { 1 };
+        let r = p.radius_bottom.0.max(p.radius_top.0);
+        let segments = p.segments.unwrap_or_else(|| tx.doc().settings.round_segments(std::f64::consts::TAU * r, multiple));
+        let spec = ConeSpec {
+            radius_bottom: p.radius_bottom.0,
+            radius_top: p.radius_top.0,
+            height: p.height.0,
+            segments,
+            height_segments: p.advanced.height_segments,
+            cap: p.cap.into(),
+        };
+        let mesh = kernel::cone(&spec, p.origin.into()).map_err(kernel_error)?;
+        let key = create_mesh_object(tx, p.name.as_deref(), "cone", p.parent.as_deref(), &p.position, mesh)?;
+        Ok(created_summary(tx, key, "cone"))
     }
 }
 

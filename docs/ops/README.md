@@ -27,6 +27,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 |---|---|
 | [`prim.box`](prim.box.md) | Creates a box with optional rounded or chamfered edges and groups top, bottom, front, back, left, right. |
 | [`prim.cylinder`](prim.cylinder.md) | Creates a cylinder along Y with quad-grid, n-gon, fan or open caps and groups side, cap_top, cap_bottom. |
+| [`prim.cone`](prim.cone.md) | Creates a pointed cone or a frustum (truncated cone) along Y with groups side, cap_top, cap_bottom. |
 | [`prim.quad_sphere`](prim.quad_sphere.md) | Creates a sphere of even quads with no poles (a projected subdivided cube). |
 | [`prim.plane`](prim.plane.md) | Creates a flat grid of quads in the XZ plane facing up (+Y). |
 

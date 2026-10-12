@@ -4,7 +4,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use glam::DVec3;
-use p3d_geo::prim::{BoxSpec, CapKind, CylinderSpec, Origin, PlaneSpec, QuadSphereSpec, cuboid, cylinder, plane, quad_sphere};
+use p3d_geo::prim::{BoxSpec, CapKind, ConeSpec, CylinderSpec, Origin, PlaneSpec, QuadSphereSpec, cone, cuboid, cylinder, plane, quad_sphere};
 use p3d_testdata::SIZES;
 
 fn prims(c: &mut Criterion) {
@@ -31,6 +31,10 @@ fn prims(c: &mut Criterion) {
         g.bench_with_input(BenchmarkId::new("cylinder", tris), &s, |b, &s| {
             let spec = CylinderSpec { radius: 0.5, height: 1.0, segments: s, height_segments: s / 2, cap: CapKind::QuadGrid };
             b.iter(|| cylinder(black_box(&spec), Origin::Center))
+        });
+        g.bench_with_input(BenchmarkId::new("cone", tris), &s, |b, &s| {
+            let spec = ConeSpec { radius_bottom: 0.5, radius_top: 0.2, height: 1.0, segments: s, height_segments: s / 2, cap: CapKind::QuadGrid };
+            b.iter(|| cone(black_box(&spec), Origin::Center))
         });
     }
     g.finish();

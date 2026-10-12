@@ -1,7 +1,7 @@
 //! Property tests for the primitive generators over their parameter ranges.
 
 use glam::DVec3;
-use p3d_geo::prim::{BoxSpec, CapKind, CylinderSpec, Origin, QuadSphereSpec, cuboid, cylinder, quad_sphere};
+use p3d_geo::prim::{BoxSpec, CapKind, ConeSpec, CylinderSpec, Origin, QuadSphereSpec, cone, cuboid, cylinder, quad_sphere};
 use p3d_mesh::Mesh;
 use proptest::prelude::*;
 
@@ -49,5 +49,23 @@ proptest! {
         let m = quad_sphere(&QuadSphereSpec { radius: r, segments: n }, Origin::Center).map_err(|e| TestCaseError::fail(e.to_string()))?;
         assert_closed_outward(&m)?;
         prop_assert!(m.verts().all(|v| ((m.positions[v as usize].length() as f64) - r).abs() < 1e-5 * r.max(1.0)));
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(48))]
+
+    #[test]
+    fn cones_and_frustums(quarter in 1u32..12, rows in 1u32..5, rb in 0.0f64..2.0, rt in 0.0f64..2.0, point in 0usize..3, h in 0.01f64..3.0, cap in 0usize..3) {
+        let cap = [CapKind::QuadGrid, CapKind::Ngon, CapKind::Fan][cap];
+        let segments = if cap == CapKind::QuadGrid { 4 * quarter } else { 2 + quarter };
+        // Sometimes a pointed end (bottom or top), otherwise a frustum.
+        let (rb, rt) = match point { 0 => (0.0, rt + 0.01), 1 => (rb + 0.01, 0.0), _ => (rb + 0.01, rt + 0.01) };
+        let spec = ConeSpec { radius_bottom: rb, radius_top: rt, height: h, segments, height_segments: rows, cap };
+        let m = cone(&spec, Origin::Bottom).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        assert_closed_outward(&m)?;
+        prop_assert_eq!(m.group("side").map(|g| g.count()), Some((segments * rows) as usize));
+        prop_assert_eq!(m.group("cap_top").is_some(), rt > 0.0);
+        prop_assert_eq!(m.group("cap_bottom").is_some(), rb > 0.0);
     }
 }

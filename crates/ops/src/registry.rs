@@ -50,6 +50,7 @@ impl Registry {
             Arc::new(Typed::<scene::Separate>::new()),
             Arc::new(Typed::<prim::BoxOp>::new()),
             Arc::new(Typed::<prim::Cylinder>::new()),
+            Arc::new(Typed::<prim::Cone>::new()),
             Arc::new(Typed::<prim::QuadSphere>::new()),
             Arc::new(Typed::<prim::Plane>::new()),
             Arc::new(Typed::<select::Save>::new()),

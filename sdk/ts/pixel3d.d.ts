@@ -30,6 +30,12 @@ export type BoxFilter = {
 /** How cylinder caps are filled. */
 export type CapParam = "quad_grid" | "ngon" | "fan" | "none";
 
+/** Advanced cone settings. */
+export type ConeAdvanced = {
+  /** Segments along the height. */
+  height_segments?: number;
+};
+
 /** Advanced cylinder settings. */
 export type CylinderAdvanced = {
   /** Segments along the height. */
@@ -368,6 +374,33 @@ export type PrimCylinderParams = {
   segments?: number | null;
 };
 
+/** `prim.cone`: Creates a pointed cone or a frustum (truncated cone) along Y with groups side, cap_top, cap_bottom. */
+export type PrimConeParams = {
+  /** Rarely needed settings. */
+  advanced?: ConeAdvanced;
+  /** Cap fill of ends with a radius: `quad_grid` (default, quads only), `ngon`, `fan` or `none`. */
+  cap?: CapParam;
+  /** Size along Y. */
+  height?: Length;
+  /** Object name; a free name such as `cone_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom center (stands on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Radius at the bottom; 0 makes a point there. */
+  radius_bottom?: Length;
+  /** Radius at the top; 0 (default) makes a pointed cone, any other value a frustum. */
+  radius_top?: Length;
+  /**
+   * Segments around; when omitted, derived from the larger circumference and
+   * the asset class's target edge length (8 to 64, a multiple of 4 for quad-grid caps).
+   */
+  segments?: number | null;
+};
+
 /** `prim.quad_sphere`: Creates a sphere of even quads with no poles (a projected subdivided cube). */
 export type PrimQuadSphereParams = {
   /** Object name; a free name such as `sphere_1` is picked when omitted. */
@@ -516,6 +549,7 @@ export interface OpParams {
   "scene.separate": SceneSeparateParams;
   "prim.box": PrimBoxParams;
   "prim.cylinder": PrimCylinderParams;
+  "prim.cone": PrimConeParams;
   "prim.quad_sphere": PrimQuadSphereParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
