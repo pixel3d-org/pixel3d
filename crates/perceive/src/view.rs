@@ -167,6 +167,11 @@ impl<'a> View<'a> {
         Ok(View { doc, root, parts, others, lo, hi })
     }
 
+    /// A view with nothing in it.
+    pub fn empty(doc: &'a Document) -> View<'a> {
+        View { doc, root: None, parts: Vec::new(), others: Vec::new(), lo: Vec3::ZERO, hi: Vec3::ZERO }
+    }
+
     /// Size of everything in view.
     pub fn size(&self) -> Vec3 {
         self.hi - self.lo

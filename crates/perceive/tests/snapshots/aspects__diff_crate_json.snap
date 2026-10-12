@@ -1,0 +1,62 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.data
+---
+{
+  "added": [
+    {
+      "changes": [
+        "100 x 100 x 10 mm at (0, 250, 300)"
+      ],
+      "id": 5,
+      "name": "badge"
+    }
+  ],
+  "after": 1,
+  "before": 0,
+  "changed": [
+    {
+      "changes": [
+        "tris 108 -> 106 (-2)",
+        "holes 0 -> 1"
+      ],
+      "id": 1,
+      "name": "crate"
+    },
+    {
+      "changes": [
+        "moved by (0, 12, 0) mm"
+      ],
+      "id": 2,
+      "name": "lid"
+    }
+  ],
+  "findings_added": [
+    {
+      "code": "FLOATING_PART",
+      "part": "lid"
+    },
+    {
+      "code": "OPEN_BOUNDARY",
+      "part": "crate"
+    }
+  ],
+  "findings_resolved": [],
+  "removed": [
+    {
+      "changes": [],
+      "id": 4,
+      "name": "handle_r"
+    }
+  ],
+  "silhouette": {
+    "area_after": 0.38925,
+    "area_before": 0.39059,
+    "at": [
+      0.33129,
+      0.4009
+    ],
+    "max_shift": 0.03094,
+    "view": "front"
+  }
+}

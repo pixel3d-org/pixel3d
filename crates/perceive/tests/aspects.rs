@@ -136,3 +136,27 @@ fn probe_reports() {
     let e = report(&view, &SurfacePoint { ray: Some(RayFrom { from: "up".into(), at: None }), ..at("head") }).unwrap_err();
     assert_eq!(e.path.as_deref(), Some("/at/ray/from"));
 }
+
+#[test]
+fn diff_reports() {
+    let before = scenes::crate_scene();
+    let mut after = before.clone();
+    after.revision = 1;
+    let lid = after.resolve("lid").unwrap();
+    after.object_mut(lid).unwrap().transform.translation.y += 0.012;
+    let handle = after.resolve("handle_r").unwrap();
+    after.delete(handle, true).unwrap();
+    scenes::add(&mut after, "badge", None, scenes::box_mesh([0.1, 0.1, 0.01], 0.0), [0.0, 0.2, 0.3]);
+    let c = after.resolve("crate").unwrap();
+    let mk = after.object(c).unwrap().mesh_key().unwrap();
+    let m = after.mesh_mut(mk).unwrap();
+    let top: Vec<u32> = m.group("top").unwrap().iter().collect();
+    m.delete_faces(&top).unwrap();
+    let r = p3d_perceive::diff::report(&before, &after, None).unwrap();
+    check("diff_crate", &r);
+    assert_eq!(r.data["removed"][0]["name"], "handle_r");
+    assert_eq!(r.data["added"][0]["name"], "badge");
+    // An unchanged scene has no changes.
+    let r = p3d_perceive::diff::report(&before, &before.clone(), None).unwrap();
+    assert!(r.text.contains("no changes"), "{}", r.text);
+}

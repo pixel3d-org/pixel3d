@@ -1,0 +1,11 @@
+---
+source: crates/perceive/tests/aspects.rs
+expression: r.text
+---
+diff rev 0 -> rev 1 of scene
+added badge (o:5): 100 x 100 x 10 mm at (0, 250, 300)
+removed handle_r (o:4)
+changed crate (o:1): tris 108 -> 106 (-2); holes 0 -> 1
+changed lid (o:2): moved by (0, 12, 0) mm
+silhouette front: area -0.3%, outline moved up to 31 mm (near x=331, y=401)
+findings: new FLOATING_PART lid, OPEN_BOUNDARY crate
