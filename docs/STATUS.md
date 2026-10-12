@@ -13,7 +13,7 @@ Progress checklist for the roadmap. Tick a box in the commit that completes it; 
 - [x] `rust-toolchain.toml` (1.98.1), `rustfmt.toml`, `clippy.toml`, build profiles
 - [ ] `deny.toml` with the license allow list and banned crates
 - [x] `cargo xtask emdash`
-- [ ] `cargo xtask layers`
+- [x] `cargo xtask layers` (ranks inside layers: ADR 0001)
 - [ ] `cargo xtask ci` and `cargo xtask ci-fast`
 - [ ] CI workflows (`ci.yml`, `nightly.yml`)
 - [ ] Licenses: `LICENSE-MIT`, `LICENSE-APACHE`, `NOTICE`, `ATTRIBUTION.md`
