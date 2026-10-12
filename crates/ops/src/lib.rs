@@ -10,6 +10,7 @@ mod common;
 mod dynop;
 pub mod edit;
 mod error;
+pub mod expect;
 mod op;
 pub mod params;
 pub mod prim;

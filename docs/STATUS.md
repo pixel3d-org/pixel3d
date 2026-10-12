@@ -61,7 +61,7 @@ Acceptance:
 - [ ] MCP tools: `scene_overview`, `describe`, `query`, `run`, `list_ops`, `describe_op`, `history`, `docs`
 - [x] Perception v0: `perceive` aspects `structure`, `shape`, `silhouette`, `section`, `relations`, `probe`, `diff` (`crates/perceive`; text and JSON snapshots in `tests/aspects.rs`; 100k triangles, uncached including BVH builds: structure 22 ms, shape 27 ms, silhouette 21 ms, section 1 ms, relations 22 ms, probe 15 ms, diff 44 ms with findings cached per revision; `cargo bench -p p3d-perceive --bench aspects`)
 - [x] Diagnostics v0: geometry and relations findings with locations and fixes (`crates/perceive/src/diagnose.rs`: 10 codes; fixes are op calls whose results the engine predicts on a copy, `crates/engine/src/predict.rs`; 100k triangles: 102 ms)
-- [ ] Expectations v0: `dims`, `symmetric`, `attached`, `not_intersecting`, `budget`, `watertight`
+- [x] Expectations v0: `dims`, `symmetric`, `attached`, `not_intersecting`, `budget`, `watertight` (stored in the document and `.p3d`; ops `expect.add` and `expect.remove`; checks in `crates/perceive/src/expect.rs`, every type passing and failing in `crates/perceive/tests/expect.rs`)
 - [ ] `render`: offscreen wgpu (shaded, wire, matcap, contact sheet, part-label overlays)
 - [ ] `analyze` v0: topology metrics
 - [ ] `docs/agents/` guides v0

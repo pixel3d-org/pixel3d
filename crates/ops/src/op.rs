@@ -36,6 +36,7 @@ pub enum Category {
     Prim,
     Select,
     Edit,
+    Expect,
 }
 
 impl Category {
@@ -45,6 +46,7 @@ impl Category {
             Category::Prim => "prim",
             Category::Select => "select",
             Category::Edit => "edit",
+            Category::Expect => "expect",
         }
     }
 }

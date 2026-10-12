@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{edit, prim, scene, select};
+use crate::{edit, expect, prim, scene, select};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -60,6 +60,8 @@ impl Registry {
             Arc::new(Typed::<edit::Fill>::new()),
             Arc::new(Typed::<edit::RecalcNormals>::new()),
             Arc::new(Typed::<edit::DeleteElements>::new()),
+            Arc::new(Typed::<expect::Add>::new()),
+            Arc::new(Typed::<expect::Remove>::new()),
         ];
         for op in ops {
             // Built-in ids are unique by construction (tested).

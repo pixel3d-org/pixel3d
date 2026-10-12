@@ -46,6 +46,13 @@ fn fixture() -> Tx {
     tx
 }
 
+/// The fixture plus an expectation `size` (lid dims), for `expect.*` examples.
+fn expect_fixture() -> Tx {
+    let mut tx = fixture();
+    ok(&mut tx, "expect.add", json!({ "name": "size", "expect": { "dims": { "target": "lid", "height": { "max": "60mm" } } } }));
+    tx
+}
+
 /// The fixture plus bin (o:5), an open box without its top, for `edit.*` examples.
 fn edit_fixture() -> Tx {
     let mut tx = fixture();
@@ -64,6 +71,7 @@ fn every_example_produces_its_documented_result() {
             let mut tx = match op.meta().category {
                 Category::Prim => Tx::new(Document::new()),
                 Category::Edit => edit_fixture(),
+                Category::Expect => expect_fixture(),
                 _ => fixture(),
             };
             match op.run(&mut tx, &args, &OpCtx::default()) {
@@ -393,4 +401,33 @@ fn delete_elements_by_faces_edges_and_vertices() {
     assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/target")));
     let a = run(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": {} } })).unwrap();
     assert_eq!(a.output.warnings[0].fix.as_ref().map(|f| f.op.as_str()), Some("scene.delete"));
+}
+
+#[test]
+fn expectations_are_added_checked_and_removed() {
+    let mut tx = fixture();
+    let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));
+    // crate 12 + lid 12 + post 64 (16 side and 48 quad-grid cap triangles).
+    assert_eq!(s, "added E1 budget(scene): passes now (88 tris, want at most 6,000)");
+    let s = ok(&mut tx, "expect.add", json!({ "expect": { "dims": { "target": "lid", "width": { "min": "0.7m" } } } }));
+    assert!(s.starts_with("added E2 dims(lid): fails now"), "{s}");
+    let s = ok(&mut tx, "expect.add", json!({ "name": "mirror", "expect": { "symmetric": { "a": "crate" } } }));
+    assert!(s.contains("passes now"), "{s}");
+    assert_eq!(tx.doc().expectations().len(), 3);
+
+    let e = err(&mut tx, "expect.add", json!({ "expect": { "attached": { "part": "lidd", "to": "crate" } } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::NotFound, Some("/expect/attached/part")));
+    assert_eq!(e.suggestions.first().map(String::as_str), Some("lid"));
+    let e = err(&mut tx, "expect.add", json!({ "name": "mirror", "expect": { "watertight": { "target": "crate" } } }));
+    assert_eq!((e.code, e.suggestions.clone()), (ErrorCode::InvalidParam, vec!["E3".to_owned()]));
+    let e = err(&mut tx, "expect.add", json!({ "expect": { "dims": { "target": "lid" } } }));
+    assert_eq!(e.path.as_deref(), Some("/expect/dims"));
+    let e = err(&mut tx, "expect.add", json!({ "expect": { "not_intersecting": { "parts": ["lid"] } } }));
+    assert_eq!(e.code, ErrorCode::OutOfRange);
+    let e = err(&mut tx, "expect.add", json!({ "expect": { "watertigth": { "target": "crate" } } }));
+    assert_eq!(e.suggestions.first().map(String::as_str), Some("watertight"));
+
+    assert_eq!(ok(&mut tx, "expect.remove", json!({ "name": "E2" })), "removed E2 dims(lid); 2 left");
+    let e = err(&mut tx, "expect.remove", json!({ "name": "E9" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::NotFound, Some("/name")));
 }

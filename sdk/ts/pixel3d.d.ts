@@ -39,6 +39,63 @@ export type CylinderAdvanced = {
 /** Copy or instance. */
 export type DuplicateMode = "copy" | "instance";
 
+/** What to test. */
+export type ExpectArgs = {
+  dims: {
+    /** Size along Z. */
+    depth?: LengthRange | null;
+    /** Size along Y. */
+    height?: LengthRange | null;
+    /** Object (name, path or id). */
+    target: string;
+    /** Size along X. */
+    width?: LengthRange | null;
+  };
+} | {
+  symmetric: {
+    /** First object. */
+    a: string;
+    /** Plane position; 0 for pairs, the center for a single object. */
+    at?: Length | null;
+    /** Mirror axis (default x: left-right). */
+    axis?: MirrorAxis;
+    /** Its mirror partner. */
+    b?: string | null;
+    /** Largest allowed deviation (default 1 mm). */
+    tolerance?: Length | null;
+  };
+} | {
+  attached: {
+    /** Largest allowed gap (default 1 mm). */
+    max_gap?: Length | null;
+    /** Deepest it may sink in (no limit by default). */
+    max_penetration?: Length | null;
+    /** The attached object. */
+    part: string;
+    /** What it attaches to. */
+    to: string;
+  };
+} | {
+  not_intersecting: {
+    /** 2 to 64 objects. */
+    parts: string[];
+  };
+} | {
+  budget: {
+    /** Upper limit (default: the asset class budget). */
+    max_tris?: number | null;
+    /** Lower limit. */
+    min_tris?: number | null;
+    /** Object; the whole scene when omitted. */
+    target?: string | null;
+  };
+} | {
+  watertight: {
+    /** Object (name, path or id). */
+    target: string;
+  };
+};
+
 /** Conditions on elements; all given conditions must hold. */
 export type Filter = {
   /** On the mesh boundary (true) or not (false). Faces: having a boundary edge. */
@@ -68,6 +125,15 @@ export type Filter = {
 
 /** Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. "30cm". */
 export type Length = number | string;
+
+/** A range of lengths; either end may be left open. */
+export type LengthRange = {
+  max?: Length | null;
+  min?: Length | null;
+};
+
+/** A mirror axis. */
+export type MirrorAxis = "x" | "y" | "z";
 
 /** Direction and tolerance for the `normal` filter. */
 export type NormalFilter = {
@@ -419,6 +485,20 @@ export type EditDeleteElementsParams = {
   target: string;
 };
 
+/** `expect.add`: Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. */
+export type ExpectAddParams = {
+  /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight. */
+  expect: ExpectArgs;
+  /** Name; `E1`, `E2`, ... when omitted. */
+  name?: string | null;
+};
+
+/** `expect.remove`: Removes an expectation by name. */
+export type ExpectRemoveParams = {
+  /** Name of the expectation, for example `E2`. */
+  name: string;
+};
+
 /** Parameters of each op, by op id. */
 export interface OpParams {
   "scene.create_empty": SceneCreateEmptyParams;
@@ -446,6 +526,8 @@ export interface OpParams {
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;
+  "expect.add": ExpectAddParams;
+  "expect.remove": ExpectRemoveParams;
 }
 
 /** Every op id. */

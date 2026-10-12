@@ -47,3 +47,10 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`edit.fill`](edit.fill.md) | Closes holes (loops of boundary edges) with one face each. |
 | [`edit.recalc_normals`](edit.recalc_normals.md) | Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way. |
 | [`edit.delete_elements`](edit.delete_elements.md) | Deletes the selected faces (or every face using the selected edges or vertices) and anything left unused. |
+
+## expect
+
+| Op | Summary |
+|---|---|
+| [`expect.add`](expect.add.md) | Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. |
+| [`expect.remove`](expect.remove.md) | Removes an expectation by name. |
