@@ -63,6 +63,10 @@ impl Group {
         &self.bits
     }
 
+    pub(crate) fn from_bits(kind: ElementKind, bits: FixedBitSet) -> Self {
+        Group { kind, bits }
+    }
+
     #[inline]
     pub(crate) fn insert(&mut self, i: u32) {
         self.bits.insert(i as usize);
