@@ -1,3 +1,14 @@
 //! Session, transactions, undo, jobs, events and fix prediction.
 //!
 //! Layer L4 (engine). See `docs/architecture.md`.
+//!
+//! The [`Session`] owns the current document. Every [`Session::execute`]
+//! call is one transaction: ops run on a copy-on-write working copy, are
+//! validated, and commit together or not at all. Undo and redo swap
+//! snapshots; jobs run batches on the rayon pool against a snapshot.
+
+mod run;
+mod session;
+
+pub use run::{BatchError, OpCall, OpResult, op_seed, run_batch};
+pub use session::{BatchOptions, BatchResult, HistoryEntry, Job, JobHandle, JobStatus, Session, UndoLimits};

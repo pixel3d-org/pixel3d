@@ -42,7 +42,7 @@ Acceptance:
 - [x] `scene`: document, ids, names, hierarchy, settings
 - [x] `query`: selectors
 - [x] `ops`: trait, registry, schemas, errors, outputs
-- [ ] `engine`: Session, transactions, undo and redo, checkpoints, `catch_unwind` rollback, jobs, linear history graph
+- [x] `engine`: Session, transactions, undo and redo, checkpoints, `catch_unwind` rollback, jobs, linear history graph
 - [ ] `.p3d` save and load
 - [x] Ops: `scene.*` (13), `prim.box`, `prim.cylinder`, `prim.quad_sphere`, `prim.plane`, `select.save/grow/shrink/group_delete/group_rename`
 - [ ] `cargo xtask codegen`
@@ -53,7 +53,7 @@ Acceptance:
 - [ ] Property tests green
 - [x] 1M-triangle grid builds in < 200 ms (37 ms, `cargo bench -p p3d-geo --bench prim -- prim/plane/1000000`, M-series laptop)
 - [ ] Save then load gives identical blob hashes
-- [ ] Undo and redo < 5 ms
+- [x] Undo and redo < 5 ms (0.44 us per undo + redo pair on a 1M-triangle, 201-object scene; `cargo bench -p p3d-engine --bench session`; tiny op transaction 0.95 us)
 
 ## Phase 2: Agent surface v0
 

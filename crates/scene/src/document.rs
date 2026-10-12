@@ -488,6 +488,11 @@ impl Document {
         self.meshes.len()
     }
 
+    /// Every mesh with its key, in slot order (for memory accounting and IO).
+    pub fn mesh_entries(&self) -> impl Iterator<Item = (MeshKey, &Arc<Mesh>)> {
+        self.meshes.iter()
+    }
+
     /// The mesh of a mesh object.
     pub fn object_mesh(&self, key: ObjectKey) -> Option<&Mesh> {
         self.object(key)?.mesh_key().and_then(|m| self.mesh(m))

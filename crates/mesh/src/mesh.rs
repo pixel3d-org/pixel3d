@@ -356,6 +356,23 @@ impl Mesh {
         })
     }
 
+    /// Approximate heap memory in bytes (array lengths, not capacities).
+    ///
+    /// Complexity: O(groups).
+    pub fn approx_bytes(&self) -> usize {
+        let (nh, nv, ne, nf) = (self.he_slots(), self.vert_slots(), self.edge_slots(), self.face_slots());
+        let topo = 4 * (4 * nh + nv + nf);
+        let attrs = 12 * nv
+            + self.corner_uv.len() * 8 * nh
+            + self.corner_normal.as_ref().map_or(0, |n| 12 * n.len())
+            + self.corner_color.as_ref().map_or(0, |c| 16 * c.len())
+            + 2 * nf
+            + ne
+            + self.edge_crease.as_ref().map_or(0, |c| 4 * c.len());
+        let groups: usize = self.groups.values().map(|g| g.bits().len() / 8 + 64).sum();
+        topo + attrs + groups + 4 * (self.free_verts.len() + self.free_edges.len() + self.free_faces.len())
+    }
+
     /// Number of triangles after triangulating every face.
     ///
     /// Complexity: O(face slots + half-edges).
