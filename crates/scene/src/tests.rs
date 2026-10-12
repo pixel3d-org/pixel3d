@@ -25,8 +25,8 @@ fn paths_ids_and_resolution() {
     let d = chest();
     let lid = d.resolve("chest/lid").unwrap();
     assert_eq!(d.path(lid).unwrap(), "chest/lid");
-    assert_eq!(d.object(lid).unwrap().public_id(), "o:2");
-    assert_eq!(d.resolve("o:2").unwrap(), lid);
+    assert_eq!(d.object(lid).unwrap().public_id(), "o:3");
+    assert_eq!(d.resolve("o:3").unwrap(), lid);
     assert_eq!(d.resolve("lid").unwrap(), lid, "unique leaf name");
     assert_eq!(d.path(d.resolve("hinge").unwrap()).unwrap(), "chest/lid/hinge");
     let names: Vec<&str> = d.objects().map(|(_, o)| o.name()).collect();
@@ -91,7 +91,7 @@ fn delete_recursive_and_flat() {
     let mut d = chest();
     let meshes = d.mesh_count();
     let lid = d.resolve("lid").unwrap();
-    assert_eq!(d.delete(lid, true).unwrap(), vec![2, 3]);
+    assert_eq!(d.delete(lid, true).unwrap(), vec![3, 4]);
     assert_eq!(d.mesh_count(), meshes - 1, "lid's mesh is gone");
     d.check().unwrap();
 
@@ -113,7 +113,7 @@ fn ids_are_never_reused() {
     let hinge = d.resolve("hinge").unwrap();
     d.delete(hinge, true).unwrap();
     let k = d.create_object("hinge", None, ObjectKind::Empty).unwrap();
-    assert_eq!(d.object(k).unwrap().id(), 4);
+    assert_eq!(d.object(k).unwrap().id(), 5);
     assert!(matches!(d.create_object_with_id(1, "x", None, ObjectKind::Empty), Err(SceneError::IdTaken(1))));
 }
 

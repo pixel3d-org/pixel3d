@@ -40,7 +40,7 @@ pub enum SceneError {
 /// The document. Large tables sit behind `Arc` and are copied on write, so
 /// cloning a document (an undo snapshot) is O(1) and a transaction copies
 /// only the tables and objects it touches.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Document {
     objects: Arc<SlotMap<ObjectKey, Arc<Object>>>,
     by_path: Arc<BTreeMap<String, ObjectKey>>,
@@ -52,6 +52,23 @@ pub struct Document {
     pub settings: DocSettings,
     /// Set by the engine on every committed transaction.
     pub revision: u64,
+}
+
+impl Default for Document {
+    /// An empty document; the first object gets id 1 (`o:1`).
+    fn default() -> Self {
+        Document {
+            objects: Arc::default(),
+            by_path: Arc::default(),
+            by_id: Arc::default(),
+            meshes: Arc::default(),
+            mesh_users: Arc::default(),
+            graphs: Arc::default(),
+            next_id: 1,
+            settings: DocSettings::default(),
+            revision: 0,
+        }
+    }
 }
 
 impl Document {
@@ -426,7 +443,12 @@ impl Document {
 
     /// Adds a mesh no object uses yet.
     pub fn add_mesh(&mut self, mesh: Mesh) -> MeshKey {
-        let key = Arc::make_mut(&mut self.meshes).insert(Arc::new(mesh));
+        self.add_shared_mesh(Arc::new(mesh))
+    }
+
+    /// Adds a mesh that shares its data with other keys until edited (copies).
+    pub fn add_shared_mesh(&mut self, mesh: Arc<Mesh>) -> MeshKey {
+        let key = Arc::make_mut(&mut self.meshes).insert(mesh);
         Arc::make_mut(&mut self.mesh_users).insert(key, 0);
         key
     }
