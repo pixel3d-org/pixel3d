@@ -12,8 +12,10 @@ workspace = true
 
 [dependencies]
 glam = { workspace = true }
+obvhs = { workspace = true }
 p3d-mesh = { workspace = true }
 rustc-hash = { workspace = true }
+smallvec = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
