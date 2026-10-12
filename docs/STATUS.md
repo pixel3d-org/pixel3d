@@ -76,9 +76,9 @@ Acceptance:
 
 ## Phase 3a: Modelling ops
 
-- [ ] All primitives and generators
+- [ ] All primitives and generators (primitives done: `box`, `cylinder`, `cone`, `quad_sphere`, `uv_sphere`, `ico_sphere`, `torus`, `tube`, `capsule`, `wedge`, `plane`; generators pending)
 - [ ] Curves
-- [ ] Edit ops
+- [x] Edit ops (`edit.extrude`, `inset`, `bevel`, `loop_cut`, `bridge`, `fill`, `merge`, `merge_by_distance`, `dissolve`, `delete_elements`, `split`, `plane_cut`, `thicken`, `poke`, `triangulate`, `tris_to_quads`, `flip`, `recalc_normals`, `smooth`, `symmetrize`, `subdivide`; booleans below. All local edits apply one face patch (ADR 0003, `Mesh::apply_patch`, slope -0.01 for a fixed patch on growing meshes); property tests on random meshes in `crates/geo/tests/edit_props.rs`; 18 `scale_edit_*` kernels at slopes 0.95 to 1.05)
 - [ ] Shading and normals
 - [ ] Subdivision
 - [ ] Deformers
