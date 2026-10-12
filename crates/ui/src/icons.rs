@@ -87,6 +87,41 @@ icons! {
     Info => d::INFO_CIRCLE, false;
     Warning => d::ALERT_TRIANGLE, false;
     Keyboard => d::KEYBOARD, false;
+    Collection => d::FOLDER, false;
+    LodGroup => d::STACK_3, false;
+    MeshData => d::TRIANGLE, false;
+    SceneRoot => d::BOX_MULTIPLE, false;
+    Extrude => d::ARROW_BAR_UP, false;
+    Inset => d::BORDER_INNER, false;
+    Bevel => d::BORDER_CORNERS, false;
+    LoopCut => d::LAYOUT_COLUMNS, false;
+    Knife => d::KNIFE, false;
+    Smooth => d::WAVE_SINE, false;
+    EdgeSlide => d::ARROWS_HORIZONTAL, false;
+    ShrinkFatten => d::ARROW_AUTOFIT_HEIGHT, false;
+    Rip => d::SCISSORS, false;
+    Poke => d::SQUARE_DOT, false;
+    Triangulate => d::TRIANGLES, false;
+    Merge => d::ARROWS_JOIN, false;
+    Dissolve => d::ERASER, false;
+    Subdivide => d::GRID_3X3, false;
+    Bridge => d::BUILDING_BRIDGE, false;
+    Split => d::ARROWS_SPLIT, false;
+    Symmetrize => d::FLIP_VERTICAL, false;
+    Orientation => d::COMPASS, false;
+    Pivot => d::FOCUS_2, false;
+    Snap => d::MAGNET, false;
+    Proportional => d::CIRCLE_DASHED, false;
+    Cursor => d::CROSSHAIR, false;
+    ChevronUp => d::CHEVRON_UP, false;
+    Check => d::CHECK, false;
+    Cone => d::CONE, false;
+    Capsule => d::CAPSULE, false;
+    IcoSphere => d::HEXAGON, false;
+    Torus => d::TORUS, false;
+    Wedge => d::WEDGE, false;
+    BoxSelect => d::MARQUEE_2, false;
+    Tube => d::CIRCLE_DOT, false;
 }
 
 /// The flattened outlines of an icon, parsed on first use.

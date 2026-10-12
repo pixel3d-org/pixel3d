@@ -475,6 +475,11 @@ impl PixelApp {
                 self.set_status(format!("{} {label}", t("Redid")));
                 Ok(json!({ "redone": label }))
             }
+            "edit.new_collection" => {
+                let members = self.selected_targets();
+                outliner::new_collection(self, &members)
+            }
+            "edit.lod_group" => outliner::lod_group_from_selection(self),
             "edit.select_all" if self.ui.mode != SelectMode::Object && self.edit.object.is_some() => {
                 self.edit.select_all(self.ui.mode);
                 Ok(json!({ "elements": self.edit.picked().0.len() }))

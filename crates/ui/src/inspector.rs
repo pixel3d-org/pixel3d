@@ -174,7 +174,12 @@ fn object_tab(app: &mut PixelApp, ui: &mut egui::Ui, key: ObjectKey) {
             icons::paint(
                 ui.painter(),
                 Rect::from_min_size(ui.cursor().min + vec2(0.0, 2.0), vec2(18.0, 18.0)),
-                if obj.mesh_key().is_some() { Icon::Mesh } else { Icon::Empty },
+                match crate::outliner::kind_of(obj) {
+                    crate::outliner::Kind::Collection => Icon::Collection,
+                    crate::outliner::Kind::LodGroup => Icon::LodGroup,
+                    crate::outliner::Kind::Mesh => Icon::Mesh,
+                    _ => Icon::Empty,
+                },
                 false,
             );
             ui.add_space(22.0);
