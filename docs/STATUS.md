@@ -57,22 +57,22 @@ Acceptance:
 
 ## Phase 2: Agent surface v0
 
-- [ ] `pixel3d-cli`: `mcp` over stdio, `run <script.json>`, `convert`
-- [ ] MCP tools: `scene_overview`, `describe`, `query`, `run`, `list_ops`, `describe_op`, `history`, `docs`
+- [x] `pixel3d-cli`: `mcp` over stdio, `run <script.json>`, `convert` (`apps/pixel3d-cli`; `run` also saves `.p3d` and prints per-op timings; `convert --to json`)
+- [x] MCP tools: `scene_overview`, `describe`, `query`, `run`, `list_ops`, `describe_op`, `history`, `docs`, plus `perceive`, `diagnose`, `expect`, `analyze` (`crates/mcp`: transport-free `Agent` and an rmcp stdio server; guides, op list and scene as resources)
 - [x] Perception v0: `perceive` aspects `structure`, `shape`, `silhouette`, `section`, `relations`, `probe`, `diff` (`crates/perceive`; text and JSON snapshots in `tests/aspects.rs`; 100k triangles, uncached including BVH builds: structure 22 ms, shape 27 ms, silhouette 21 ms, section 1 ms, relations 22 ms, probe 15 ms, diff 44 ms with findings cached per revision; `cargo bench -p p3d-perceive --bench aspects`)
 - [x] Diagnostics v0: geometry and relations findings with locations and fixes (`crates/perceive/src/diagnose.rs`: 10 codes; fixes are op calls whose results the engine predicts on a copy, `crates/engine/src/predict.rs`; 100k triangles: 102 ms)
 - [x] Expectations v0: `dims`, `symmetric`, `attached`, `not_intersecting`, `budget`, `watertight` (stored in the document and `.p3d`; ops `expect.add` and `expect.remove`; checks in `crates/perceive/src/expect.rs`, every type passing and failing in `crates/perceive/tests/expect.rs`)
 - [ ] `render`: offscreen wgpu (shaded, wire, matcap, contact sheet, part-label overlays)
-- [ ] `analyze` v0: topology metrics
-- [ ] `docs/agents/` guides v0
+- [x] `analyze` v0: topology metrics (`crates/analyze`: counts, face kinds, poles, angles, holes, pieces, cavities, degenerate elements, volume; `analyze` tool; 64k triangles in 3.5 ms)
+- [x] `docs/agents/` guides v0 (`quickstart`, `modeling`, `debugging`; served by the `docs` tool and as `pixel3d://guide/*` resources)
 
 Acceptance:
 
-- [ ] An MCP client builds a beveled crate in at most 3 calls
+- [x] An MCP client builds a beveled crate in at most 3 calls (`apps/pixel3d-cli/tests/mcp_stdio.rs`, `crate_session`: one `run` builds the crate and adds two passing tests, then `describe` and a clean `diagnose`)
 - [x] The broken-mesh corpus yields the exact expected findings (`p3d_testdata::scenes::broken_corpus`, 9 scenes: `crates/perceive/tests/diagnose.rs` asserts code, severity, part, side and fix op; `crates/engine/tests/fixes.rs` asserts every top fix is predicted to resolve its finding)
-- [ ] Perception outputs stay under 600 tokens
-- [ ] MCP snapshot tests
-- [ ] CLI cold start < 150 ms
+- [x] Perception outputs stay under 600 tokens (asserted for every aspect and diagnostics report in `crates/perceive/tests`; default tool answers under 800 in `crates/mcp/tests/agent.rs`)
+- [x] MCP snapshot tests (the real `pixel3d-cli mcp` process over JSON-RPC: initialize, tools/list, resources/list and a session in `apps/pixel3d-cli/tests/snapshots`; every tool in `crates/mcp/tests/snapshots`)
+- [x] CLI cold start < 150 ms (spawn to the MCP initialize answer, best of three: 2.9 ms release, 3.9 ms debug on an M-series laptop; `apps/pixel3d-cli/tests/mcp_stdio.rs`, `cold_start_to_initialized`)
 
 ## Phase 3a: Modelling ops
 
