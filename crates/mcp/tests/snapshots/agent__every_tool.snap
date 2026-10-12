@@ -1,0 +1,163 @@
+---
+source: crates/mcp/tests/agent.rs
+expression: log
+---
+>>> scene_overview {}
+scene rev 0: 0 objects (0 meshes), 0 tris (budget 6,000, prop_medium)
+empty: start with run (for example prim.box) or docs quickstart
+problems: none
+
+>>> list_ops {"search":"cube"}
+2 ops
+prim.box: Creates a box with optional rounded or chamfered edges and groups top, bottom, front, back, left, right.
+prim.quad_sphere: Creates a sphere of even quads with no poles (a projected subdivided cube).
+
+>>> describe_op {"op":"cube"}
+prim.box (Box): Creates a box with optional rounded or chamfered edges and groups top, bottom, front, back, left, right.
+
+Creates a mesh box at real size. The origin sits at the bottom center by default so the box stands on the ground.
+
+**Use for** crates, cabinets, walls, panels, blockouts. Add `bevel` for hard-surface props: 1 segment (chamfer) for small props, 2 to 3 for hero assets; widths of 3 to 10 mm read well on 0.5 to 1 m props.
+
+**Groups:** `top`, `bottom`, `front` (+Z), `back`, `left` (-X), `right` (+X), and `bevel` when beveled. Edges between groups are marked sharp.
+
+**Not for** round shapes (use `prim.cylinder` or `prim.quad_sphere`).
+
+aliases: cube, add cube, rounded box, chamfer box, polyCube
+complexity: O(faces): segments products plus bevel segments times edge segments
+parameters (JSON Schema): {"$defs":{"BevelParams":{"additionalProperties":false,"description":"Bevel of a box's edges.","properties":{"segments":{"default":1,"description":"Segments across the bevel: 1 is a flat chamfer (one triangle per\ncorner), 2 or more rounds it (even counts give quads only).","format":"uint32","minimum":0,"type":"integer"},"width":{"$ref":"#/$defs/Length","description":"Bevel radius; less than half the smallest box size."}},"required":["width"],"type":"object"},"BoxAdvanced":{"additionalProperties":false,"description":"Advanced box settings.","properties":{"segments":{"default":[1,1,1],"description":"Quads along X, Y and Z on each flat face.","items":{"format":"uint32","minimum":0,"type":"integer"},"maxItems":3,"minItems":3,"type":"array"}},"type":"object"},"Length":{"anyOf":[{"type":"number"},{"pattern":"^\\s*[-+]?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?\\s*(mm|cm|dm|m|km|in|ft)?\\s*$","type":"string"}],"description":"Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. \"30cm\"."},"OriginParam":{"description":"Where a primitive's origin sits.","oneOf":[{"const":"center","description":"Bounding box center.","type":"string"},{"const":"bottom","description":"Center of the bottom: the object stands on the ground plane.","type":"string"}]}},"$schema":"https://json-schema.org/draft/2020-12/schema","additionalProperties":false,"description":"Parameters of `prim.box`.","properties":{"advanced":{"$ref":"#/$defs/BoxAdvanced","default":{"segments":[1,1,1]},"description":"Rarely needed settings."},"bevel":{"anyOf":[{"$ref":"#/$defs/BevelParams"},{"type":"null"}],"default":null,"description":"Rounded or chamfered edges; sharp when omitted."},"depth":{"$ref":"#/$defs/Length","default":1.0,"description":"Size along Z (back to front)."},"height":{"$ref":"#/$defs/Length","default":1.0,"description":"Size along Y (bottom to top)."},"name":{"default":null,"description":"Object name; a free name such as `box_1` is picked when omitted.","type":["string","null"]},"origin":{"$ref":"#/$defs/OriginParam","default":"bottom","description":"Origin at the bottom center (stands on the ground) or the center."},"parent":{"default":null,"description":"Parent object (name, path or id); top level when omitted.","type":["string","null"]},"position":{"default":[0.0,0.0,0.0],"description":"Origin position in the parent's space.","items":{"$ref":"#/$defs/Length"},"maxItems":3,"minItems":3,"type":"array"},"width":{"$ref":"#/$defs/Length","default":1.0,"description":"Size along X (left to right)."}},"title":"BoxParams","type":"object"}
+defaults: {"advanced":{"segments":[1,1,1]},"bevel":null,"depth":1.0,"height":1.0,"name":null,"origin":"bottom","parent":null,"position":[0.0,0.0,0.0],"width":1.0}
+example: {"name": "crate", "width": 0.6, "height": 0.6, "depth": 0.6, "bevel": {"width": "8mm", "segments": 2}} -> created crate (o:1) box 0.6 x 0.6 x 0.6 m: 54 faces (108 tris; budget 6,000)
+example: {"width": "4m", "height": "3m", "depth": "20cm"} -> created box (o:1) box 4 x 3 x 0.2 m: 6 faces (12 tris; budget 6,000)
+
+>>> run {"checkpoint":"blockout","ops":[{"args":{"depth":0.6,"height":0.6,"name":"crate","width":0.6},"op":"prim.box"},{"args":{"depth":0.62,"height":0.04,"name":"lid","parent":"crate","position":[0,0.612,0],"width":0.62},"op":"prim.box"},{"args":{"depth":0.16,"height":0.04,"name":"handle_l","parent":"crate","position":[-0.315,0.4,0],"width":0.03},"op":"prim.box"}]}
+ok rev 1 (3 ops, _ ms)
+prim.box: created crate (o:1) box 0.6 x 0.6 x 0.6 m: 6 faces (12 tris; budget 6,000)
+  groups: right (1 face), left (1 face), top (1 face), bottom (1 face), front (1 face), back (1 face)
+prim.box: created crate/lid (o:2) box 0.62 m x 40 mm x 0.62 m: 6 faces (12 tris; budget 6,000)
+  groups: right (1 face), left (1 face), top (1 face), bottom (1 face), front (1 face), back (1 face)
+prim.box: created crate/handle_l (o:3) box 30 mm x 40 mm x 0.16 m: 6 faces (12 tris; budget 6,000)
+  groups: right (1 face), left (1 face), top (1 face), bottom (1 face), front (1 face), back (1 face)
+checkpoint blockout saved
+problems: 0 errors, 1 warning, 0 info (FLOATING_PART lid; diagnose for fixes)
+
+>>> scene_overview {"detail":"full"}
+scene rev 1: 3 objects (3 meshes), 36 tris (budget 6,000, prop_medium)
+size 640 x 652 x 620 mm, bottom y=0
+crate (o:1) 600 x 600 x 600 at (0, 300, 0); 12 tris; groups right left top bottom front back; on the ground, 12 mm from lid, touches handle_l
+  lid (o:2) 620 x 40 x 620 at (0, 632, 0); 12 tris; groups right left top bottom front back; 12 mm from crate, floating
+  handle_l (o:3) 30 x 40 x 160 at (-315, 420, 0); 12 tris; groups right left top bottom front back; touches crate
+contacts: 1 touching, 1 gaps, 0 penetrating, 1 floating (perceive relations for details)
+crate - lid: gap 12 mm at (300, 600, -300)
+crate - handle_l: touching at (-300, 440, 80)
+floating: lid touches nothing; nearest crate at 12 mm
+on the ground (y = 0): crate
+problems: 0 errors, 1 warning, 0 info (FLOATING_PART lid; diagnose for fixes)
+
+>>> expect {"action":"add","expect":{"attached":{"part":"lid","to":"crate"}}}
+ok rev 2: added E1 attached(lid, crate): fails now (gap 12 mm > 1 mm)
+problems: 0 errors, 1 warning, 0 info (FLOATING_PART lid; diagnose for fixes)
+tests 0/1 pass; failing: E1 attached(lid, crate)
+
+>>> perceive {"aspect":"relations"}
+relations of scene: 3 parts, contact within 1.1 mm
+crate - lid: gap 12 mm at (300, 600, -300)
+crate - handle_l: touching at (-300, 440, 80)
+floating: lid touches nothing; nearest crate at 12 mm
+on the ground (y = 0): crate
+
+>>> perceive {"aspect":"silhouette","points":16,"view":"front"}
+silhouette front of scene (12 pts, mm, (x, y), precision 2.5 mm)
+  width 640 (x -330 to 310), height 652 (y 0 to 652)
+  outline 1: (-302,0 crate) (302,0) (302,601) (-302,601) (-302,441) (-330,441 handle_l) (-330,400) (-302,400 crate)
+  outline 2: (-312,611 lid) (310,611) (310,652) (-312,652)
+  extremes: left handle_l (-330,420), right lid (310,633), top lid (0,652), bottom crate (0,0)
+
+>>> perceive {"aspect":"section","at":"400mm","axis":"y"}
+section y=400 of scene (horizontal slice, mm, (x, z))
+crate outer: 600 x 600 mm, area 0.36 m2: (300,-300) (300,300) (-300,300) (-300,-300)
+
+>>> perceive {"aspect":"probe","point":{"landmark":"top","on":"crate"}}
+probe crate.top at (0, 600, 0) mm
+  part crate (o:1), normal (0, 1, 0)
+  face quad in top; corner valences 3 3 3 3; edges about 600 mm
+  face bends up to 90 deg into its neighbours (hard edge), 4 sharp-marked edges
+  thickness 600 mm; material slot 0; no UVs
+  nearest other part: lid at 12 mm
+
+>>> perceive {"aspect":"shape","target":"lid"}
+shape of lid (o:2): 1 part, mm
+lid (o:2): box 100% (then cylinder y 76%, cylinder x 0%)
+  extents X 620, Z 620, Y 40 (world axes)
+  area 0.868 m2, volume 15.4 L, fills 100% of its box, closed
+  thickness min 40, typical 40; edges 12 hard, 0 soft, 0 flat (max 90 deg); mirror x yes y yes z yes
+
+>>> diagnose {}
+diagnose scene: 0 errors, 1 warning, 0 info
+F1 warn FLOATING_PART lid -> crate: touches nothing: 12 mm from crate
+    at (300, 612, -300) (bottom of lid); last changed by prim.box (box_2)
+    fix: scene.set_transform {"position":[0.0,-0.012,0.0],"relative":true,"target":"crate/lid"} (move it 12 mm onto crate)  predicted: resolved
+
+>>> diagnose {"explain":"F1"}
+diagnose scene (explain F1): 0 errors, 1 warning, 0 info
+F1 warn FLOATING_PART lid -> crate: touches nothing: 12 mm from crate
+    at (300, 612, -300) (bottom of lid); last changed by prim.box (box_2)
+    fix: scene.set_transform {"position":[0.0,-0.012,0.0],"relative":true,"target":"crate/lid"} (move it 12 mm onto crate)  predicted: resolved
+
+>>> diagnose {"fix":"F1"}
+fixed F1 FLOATING_PART lid: rev 3 (crate/lid (o:2): position 0 0.6 0, rotation 0 0 0 deg, scale 1 1 1)
+problems: none
+tests 1/1 pass
+
+>>> perceive {"aspect":"diff"}
+diff rev 2 -> rev 3 of scene
+changed lid (o:2): moved by (0, -12, 0) mm
+silhouette front: area -0.4%, outline moved up to 13 mm (near x=-311, y=653)
+findings: resolved FLOATING_PART lid
+
+>>> history {"action":"diff","from":"blockout"}
+diff rev 1 -> rev 3 of scene
+changed lid (o:2): moved by (0, -12, 0) mm
+silhouette front: area -0.4%, outline moved up to 13 mm (near x=-311, y=653)
+findings: resolved FLOATING_PART lid
+
+>>> query {"save_as":"up","select":{"faces":{"normal":{"dir":[0,1,0],"within_deg":5}}},"target":"crate"}
+crate: 1 face, world box 600 x 0 x 600 mm from (-300, 600, -300) to (300, 600, 300)
+saved as group up (rev 4)
+problems: none
+tests 1/1 pass
+
+>>> analyze {}
+analyze scene: 3 parts
+crate: 12 tris, 6 faces (quads 100%, tris 0, ngons 0), poles 3:8 5:0 6+:0, angles 90 to 90 deg, holes 0, pieces 1
+lid: 12 tris, 6 faces (quads 100%, tris 0, ngons 0), poles 3:8 5:0 6+:0, angles 90 to 90 deg, holes 0, pieces 1
+handle_l: 12 tris, 6 faces (quads 100%, tris 0, ngons 0), poles 3:8 5:0 6+:0, angles 90 to 90 deg, holes 0, pieces 1
+total 36 tris (budget 6,000, ok), quads 100%
+
+>>> expect {"action":"check"}
+pass E1 attached(lid, crate): gap 0 mm
+tests 1/1 pass
+
+>>> history {}
+rev 4; 4 undo steps
+rev 4: save_1
+rev 3: fix F1 FLOATING_PART lid
+rev 2: add_1
+rev 1: box_1, box_2, box_3
+checkpoints: blockout
+
+>>> history {"action":"undo","steps":2}
+undid save_1, fix F1 FLOATING_PART lid; now rev 2
+problems: 0 errors, 1 warning, 0 info (FLOATING_PART lid; diagnose for fixes)
+tests 0/1 pass; failing: E1 attached(lid, crate)
+
+>>> history {"action":"revert","name":"blockout"}
+reverted to blockout; now rev 5
+problems: 0 errors, 1 warning, 0 info (FLOATING_PART lid; diagnose for fixes)
+
+>>> docs {}
+guides (docs with topic):
+- quickstart: conventions, the modelling loop, a crate in two calls, the tools
+- modeling: ops, placing parts, sizes and budgets, selectors
+- debugging: perception aspects, diagnostics codes and fixes, expectations
+- ops: every op with a one-line summary

@@ -1,0 +1,29 @@
+---
+source: crates/mcp/tests/agent.rs
+expression: log
+---
+>>> run {"ops":[{"args":{"bevel":{"segments":2,"width":"8mm"},"depth":"600mm","height":"600mm","name":"crate","width":"600mm"},"op":"prim.box"},{"args":{"expect":{"dims":{"height":{"max":"610mm","min":"590mm"},"target":"crate"}}},"op":"expect.add"},{"args":{"expect":{"watertight":{"target":"crate"}}},"op":"expect.add"}]}
+ok rev 1 (3 ops, _ ms)
+prim.box: created crate (o:1) box 0.6 x 0.6 x 0.6 m: 54 faces (108 tris; budget 6,000)
+  groups: right (1 face), left (1 face), top (1 face), bottom (1 face), front (1 face), back (1 face), bevel (48 faces)
+expect.add: added E1 dims(crate): passes now (600 x 600 x 600 mm)
+expect.add: added E2 watertight(crate): passes now (1 part closed and facing out)
+problems: none
+tests 2/2 pass
+
+>>> describe {"target":"crate"}
+object crate (o:1) mesh, prop_medium
+size 600 x 600 x 600 mm (W x H x D)
+origin bottom center at (0, 0, 0) mm
+shape: box 100% (then cylinder z 58%); mirror x yes, y yes, z yes
+topology: 108 tris (scene 108 of 6,000 budget), quads 100%, tris 0, ngons 0, poles 3:8 5:0 6+:0, min angle 81.6 deg, holes 0, pieces 1
+groups: right left top bottom front back bevel
+shading: 36 hard edges (30 deg or more), 24 marked sharp
+uv: none; material slots: 0
+contacts: on the ground
+problems: none
+tests 2/2 pass
+
+>>> diagnose {}
+diagnose scene: 0 errors, 0 warnings, 0 info
+no problems found

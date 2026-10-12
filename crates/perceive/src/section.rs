@@ -15,7 +15,7 @@ use crate::view::{Part, View};
 pub const DEFAULT_POINTS: usize = 48;
 
 /// Slice plane normal.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SliceAxis {
     /// A vertical slice across X; loops in (z, y).

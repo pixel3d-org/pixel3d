@@ -818,6 +818,21 @@ dependencies = [
 [[package]]
 name = "p3d-mcp"
 version = "0.1.0"
+dependencies = [
+ "glam",
+ "insta",
+ "p3d-engine",
+ "p3d-mesh",
+ "p3d-ops",
+ "p3d-perceive",
+ "p3d-query",
+ "p3d-scene",
+ "p3d-testdata",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tracing",
+]
 
 [[package]]
 name = "p3d-mesh"

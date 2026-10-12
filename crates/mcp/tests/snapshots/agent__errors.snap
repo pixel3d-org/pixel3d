@@ -1,0 +1,52 @@
+---
+source: crates/mcp/tests/agent.rs
+expression: log
+---
+>>> run {"ops":[{"op":"prim.bxo"}]}
+[error] error UNKNOWN_OP at /ops/0/op: no op `prim.bxo`
+hint: list_ops shows every op; search matches aliases such as Blender names
+did you mean: prim.box
+
+>>> run {"ops":[{"args":{"widht":1},"op":"prim.box"}]}
+[error] error INVALID_PARAM at /ops/0/args/widht: unknown field `widht`
+did you mean: width
+
+>>> run {"ops":[{"args":{"bevel":{"width":0.6},"width":1},"op":"prim.box"}]}
+[error] error OUT_OF_RANGE at /ops/0/args/bevel/width: bevel width 0.6 m must be less than half the smallest size
+hint: use less than 0.5 m
+
+>>> run {"opps":[]}
+[error] error INVALID_PARAM at /opps: unknown field `opps`
+did you mean: ops
+
+>>> describe {"target":"nothing"}
+[error] error NOT_FOUND at /target: no object `nothing`
+hint: refer to objects by name, path (parent/child) or id (o:12)
+
+>>> perceive {"aspect":"probe"}
+[error] error INVALID_PARAM at /point: probe needs a point
+hint: for example {"on": "crate", "landmark": "top"}
+
+>>> perceive {"aspect":"silhouete"}
+[error] error INVALID_PARAM at /aspect: unknown variant `silhouete`
+did you mean: silhouette
+
+>>> diagnose {"fix":"F7"}
+[error] error NOT_FOUND at /fix: no finding F7 at this revision
+hint: finding ids are per revision: run diagnose again after an edit
+
+>>> history {"action":"undo"}
+[error] error INVALID_PARAM: nothing to undo
+
+>>> history {"action":"diff","from":"nowhere"}
+[error] error NOT_FOUND at /from: no state `nowhere` (revisions still in the history, or checkpoint names)
+
+>>> expect {"action":"remove","name":"E1"}
+[error] error NOT_FOUND at /name: no expectation `E1`
+
+>>> docs {"topic":"quikstart"}
+[error] error NOT_FOUND at /topic: no guide `quikstart`
+did you mean: quickstart
+
+>>> no_such_tool {}
+[error] error UNKNOWN_OP: no tool `no_such_tool`

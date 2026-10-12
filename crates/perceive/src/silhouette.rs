@@ -21,7 +21,7 @@ pub const DEFAULT_RESOLUTION: usize = 256;
 const MIN_LOOP_CELLS: i64 = 4;
 
 /// Where the orthographic camera sits.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ViewDir {
     /// From +Z (the asset's front): outline in (x, y).
