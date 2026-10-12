@@ -22,6 +22,7 @@ pub mod outliner;
 pub mod panels;
 pub mod schema_form;
 pub mod screenshot;
+pub mod stats;
 pub mod theme;
 pub mod vector_icon;
 pub mod viewport;
@@ -237,6 +238,8 @@ pub struct PixelApp {
     pub shots: screenshot::Shots,
     /// Diagnostics of the current document (the Health panel).
     pub health: health::HealthState,
+    /// Scene statistics for the overlay and the status bar.
+    pub stats: stats::StatsCache,
     /// Quit once the pending screenshot is saved (`--screenshot`).
     pub quit_after_shot: bool,
 }
@@ -264,6 +267,7 @@ impl PixelApp {
             frame_ms: 0.0,
             shots: screenshot::Shots::default(),
             health: health::HealthState::default(),
+            stats: stats::StatsCache::default(),
             quit_after_shot: false,
         }
     }
@@ -284,6 +288,16 @@ impl PixelApp {
     }
 
     /// Whether the History or Console panel is open.
+    /// Object and element counts, selected and visible.
+    ///
+    /// Complexity: O(selected + hidden) per call; a recount (O(faces)) only
+    /// after an edit or a selection change.
+    pub fn stats(&mut self) -> stats::Stats {
+        let key = self.scene_key();
+        let doc = std::sync::Arc::clone(self.session.doc());
+        self.stats.get(key, &doc, &self.selection, &self.hidden)
+    }
+
     pub fn bottom_panel_visible(&self) -> bool {
         self.ui.docking.is_visible(docking::Panel::History) || self.ui.docking.is_visible(docking::Panel::Console)
     }
@@ -486,6 +500,10 @@ impl PixelApp {
             "view.grid" => {
                 self.ui.view.grid = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.grid);
                 Ok(json!({ "grid": self.ui.view.grid }))
+            }
+            "view.stats" => {
+                self.ui.view.stats = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.stats);
+                Ok(json!({ "stats": self.ui.view.stats }))
             }
             "view.shading" => {
                 let mode = str_param("mode").ok_or("mode is required: solid, solid_wire, wire or matcap")?;

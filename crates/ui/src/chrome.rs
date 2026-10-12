@@ -556,8 +556,8 @@ pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
         let resp = ui.scope_builder(egui::UiBuilder::new().max_rect(br), |ui| icons::button(ui, Icon::History, 20.0, tip, shown)).inner;
         toggle_bottom = resp.clicked();
         rx -= 32.0;
+        let tris = app.stats().budget_tris;
         let doc = app.doc();
-        let tris: usize = doc.objects().filter_map(|(k, _)| doc.object_mesh(k)).map(|m| m.triangle_count()).sum();
         let budget = doc.settings.tri_budget() as usize;
         let jobs = app.running_jobs();
         // Right to left: fps, jobs, class and profile, snap, units, triangles.
@@ -691,7 +691,8 @@ pub fn start_page(app: &mut PixelApp, ui: &mut egui::Ui) {
     }
 }
 
-/// Overlays drawn over the viewport image: the view name.
+/// Overlays drawn over the viewport image: the view name and, when on,
+/// the scene statistics under it (selected against visible totals).
 pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
     let rect = app.viewport.rect;
@@ -699,6 +700,31 @@ pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
         return;
     }
     let p = ui.painter_at(rect);
+    if app.ui.view.stats {
+        let s = app.stats();
+        let any = s.selected.objects > 0;
+        let pair = |sel: usize, total: usize| if any { format!("{} / {}", thousands(sel), thousands(total)) } else { thousands(total) };
+        let rows = [
+            (t("Objects"), format!("{} / {}", thousands(s.selected.objects), thousands(s.total.objects))),
+            (t("Vertices"), pair(s.selected.verts, s.total.verts)),
+            (t("Edges"), pair(s.selected.edges, s.total.edges)),
+            (t("Faces"), pair(s.selected.faces, s.total.faces)),
+            (t("Triangles"), pair(s.selected.tris, s.total.tris)),
+        ];
+        // A soft shadow keeps the text readable over geometry.
+        let shadow = if theme::active() == egui::Theme::Dark { egui::Color32::from_black_alpha(150) } else { egui::Color32::from_white_alpha(170) };
+        let label_w = rows.iter().map(|(l, _)| p.layout_no_wrap((*l).to_owned(), theme::small(), tk.text_dim).size().x).fold(0.0, f32::max);
+        let mut y = rect.top() + 28.0;
+        for (label, value) in rows {
+            let at = pos2(rect.left() + 10.0, y);
+            let vx = at.x + label_w + 14.0;
+            p.text(at + vec2(1.0, 1.0), Align2::LEFT_TOP, label, theme::small(), shadow);
+            p.text(at, Align2::LEFT_TOP, label, theme::small(), tk.text_dim);
+            p.text(pos2(vx + 1.0, y + 1.0), Align2::LEFT_TOP, &value, theme::small(), shadow);
+            p.text(pos2(vx, y), Align2::LEFT_TOP, &value, theme::small(), tk.text);
+            y += 16.0;
+        }
+    }
     let label = format!(
         "{}, {}",
         if app.ui.view.ortho { t("Orthographic") } else { t("Perspective") },

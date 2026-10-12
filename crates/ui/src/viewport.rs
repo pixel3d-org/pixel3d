@@ -41,11 +41,21 @@ pub struct ViewSettings {
     pub show_nav_gizmo: bool,
     /// Snap transform drags to the grid and to 15 degree steps.
     pub snap: bool,
+    /// Scene statistics in the top left corner (View > Statistics).
+    pub stats: bool,
 }
 
 impl Default for ViewSettings {
     fn default() -> Self {
-        ViewSettings { shading: Shading::Solid.name().into(), grid: true, ortho: false, nav: NavPreset::Default, show_nav_gizmo: true, snap: false }
+        ViewSettings {
+            shading: Shading::Solid.name().into(),
+            grid: true,
+            ortho: false,
+            nav: NavPreset::Default,
+            show_nav_gizmo: true,
+            snap: false,
+            stats: true,
+        }
     }
 }
 
