@@ -1,6 +1,6 @@
 //! `edit.*`: mesh edits addressed by selectors and groups.
 
-use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, extrude, inset};
+use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, QuadSpec, extrude, inset};
 use p3d_mesh::{ElementKind, Mesh};
 use p3d_query::{Filter, Selector, select as evaluate};
 use p3d_scene::{Document, ObjectKey};
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::{group_label, label, thousands};
 use crate::error::{ErrorCode, OpError};
 use crate::op::{Category, GroupInfo, Op, OpCtx, OpExample, OpFlags, OpMeta, OpOutput, Warning};
-use crate::params::Length;
+use crate::params::{Angle, Length};
 use crate::tx::Tx;
 
 const EDIT: OpFlags = OpFlags::UNDOABLE;
@@ -325,6 +325,271 @@ impl Op for Inset {
         ));
         out.changed.push(key);
         out.groups = vec![inner, rim];
+        Ok(out)
+    }
+}
+
+/// Faces picked by an optional selector: every face without one.
+///
+/// Complexity: O(n).
+fn faces_or_all(mesh: &Mesh, select: Option<&Selector>, op: &str) -> Result<Vec<u32>, OpError> {
+    match select {
+        Some(s) => selected_faces(mesh, s, op),
+        None => Ok(mesh.faces().collect()),
+    }
+}
+
+// ---- edit.poke -------------------------------------------------------------------------
+
+/// Parameters of `edit.poke`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PokeParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Faces to poke; every face when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+    /// Moves each new center vertex along its face normal (a pyramid when positive).
+    #[serde(default)]
+    pub offset: Length,
+}
+
+/// `edit.poke`.
+pub struct Poke;
+
+impl Op for Poke {
+    const ID: &'static str = "edit.poke";
+    type Params = PokeParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Poke",
+            category: Category::Edit,
+            summary: "Splits each face into a fan of triangles around a new center vertex, optionally raised into a pyramid.",
+            docs: "Every selected face is replaced by one triangle per edge, meeting at a new vertex at the face center; `offset` moves \
+                   that vertex along the normal (spikes, studs, low-poly gems, pyramid roofs). Triangles keep the face's groups and \
+                   are also `<label>.faces`.\n\n\
+                   **Not for** general triangulation (use `edit.triangulate`: it adds no vertices).",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "select": {"faces": {"group": "top"}}, "offset": "5cm"}"#,
+                result: "crate (o:1): poked 1 face into 4 triangles; group poke_1.faces",
+            }],
+            aliases: &["poke faces", "pyramid", "spike", "fan triangulate", "poke"],
+            complexity: "O(c log c) for the c corners of the selected faces, plus the selector",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &PokeParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        check_signed_length("/offset", p.offset, "offset")
+    }
+
+    fn apply(tx: &mut Tx, p: &PokeParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let faces = faces_or_all(tx.mesh(key, "/target")?, p.select.as_ref(), "edit.poke")?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "poke");
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let tris = p3d_geo::edit::poke(mesh, &faces, p.offset.0 as f32).map_err(kernel_error)?;
+        let g = face_group(mesh, key, format!("{glabel}.faces"), &tris)?;
+        let mut out = OpOutput::summary(format!(
+            "{}: poked {} face{} into {} triangles; group {}",
+            label(tx.doc(), key),
+            thousands(faces.len()),
+            plural(faces.len()),
+            thousands(tris.len()),
+            g.name
+        ));
+        out.changed.push(key);
+        out.groups = vec![g];
+        Ok(out)
+    }
+}
+
+// ---- edit.triangulate --------------------------------------------------------------------
+
+/// Parameters of `edit.triangulate`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TriangulateParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Faces to triangulate; every face when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+}
+
+/// `edit.triangulate`.
+pub struct Triangulate;
+
+impl Op for Triangulate {
+    const ID: &'static str = "edit.triangulate";
+    type Params = TriangulateParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Triangulate",
+            category: Category::Edit,
+            summary: "Splits quads and n-gons into triangles with the diagonals that keep angles largest (beauty), adding no vertices.",
+            docs: "Each face with more than three corners becomes triangles; diagonals are flipped until the smallest angles are as \
+                   large as possible. Triangles keep their face's groups and material and are also `<label>.faces`.\n\n\
+                   **Use for** fixing how a non-planar quad or a concave n-gon is cut before export, or preparing a mesh for an \
+                   engine that needs exact triangulation control. Exporters triangulate anyway, so do not triangulate meshes you will \
+                   still edit (quads are easier to cut, loop and subdivide).",
+            examples: &[OpExample {
+                args: r#"{"target": "crate"}"#,
+                result: "crate (o:1): split 6 faces into 12 triangles; group triangulate_1.faces",
+            }],
+            aliases: &["triangulate faces", "ctrl t", "quads to tris", "polyTriangulate", "beauty fill"],
+            complexity: "O(c log c) for the c corners, plus O(k^2) per face of k corners (k <= 256)",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &TriangulateParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target).map(|_| ())
+    }
+
+    fn apply(tx: &mut Tx, p: &TriangulateParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let faces = faces_or_all(tx.mesh(key, "/target")?, p.select.as_ref(), "edit.triangulate")?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "triangulate");
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let (tris, split) = p3d_geo::edit::triangulate(mesh, &faces).map_err(kernel_error)?;
+        let mut out = OpOutput::default();
+        if split == 0 {
+            out.summary = format!("{}: the {} selected faces are triangles already", label(tx.doc(), key), thousands(faces.len()));
+            return Ok(out);
+        }
+        let g = face_group(mesh, key, format!("{glabel}.faces"), &tris)?;
+        out.summary = format!(
+            "{}: split {} face{} into {} triangles; group {}",
+            label(tx.doc(), key),
+            thousands(split),
+            plural(split),
+            thousands(tris.len() - (faces.len() - split)),
+            g.name
+        );
+        out.changed.push(key);
+        out.groups = vec![g];
+        Ok(out)
+    }
+}
+
+// ---- edit.tris_to_quads -------------------------------------------------------------------
+
+/// Advanced settings of `edit.tris_to_quads`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct TrisToQuadsAdvanced {
+    /// Also join across sharp edges, UV seams and material borders.
+    pub ignore_boundaries: bool,
+}
+
+/// Parameters of `edit.tris_to_quads`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct TrisToQuadsParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Triangles to join; every face when omitted (other faces are skipped).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+    /// Largest angle between the two triangles (degrees); larger folds stay triangles.
+    #[serde(default = "forty_deg")]
+    pub max_face_angle: Angle,
+    /// Largest difference of a quad corner from a right angle (degrees).
+    #[serde(default = "forty_deg")]
+    pub max_shape_angle: Angle,
+    /// Rarely needed settings.
+    #[serde(default)]
+    pub advanced: TrisToQuadsAdvanced,
+}
+
+fn forty_deg() -> Angle {
+    Angle::from_degrees(40.0)
+}
+
+impl Default for TrisToQuadsParams {
+    fn default() -> Self {
+        TrisToQuadsParams {
+            target: String::new(),
+            select: None,
+            max_face_angle: forty_deg(),
+            max_shape_angle: forty_deg(),
+            advanced: TrisToQuadsAdvanced::default(),
+        }
+    }
+}
+
+/// `edit.tris_to_quads`.
+pub struct TrisToQuads;
+
+impl Op for TrisToQuads {
+    const ID: &'static str = "edit.tris_to_quads";
+    type Params = TrisToQuadsParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Tris to quads",
+            category: Category::Edit,
+            summary: "Joins pairs of adjacent triangles into quads, best-shaped pairs first, where the result is flat and square enough.",
+            docs: "Candidate pairs are ranked by how close the quad's corners are to right angles and how flat the pair is; the best \
+                   pairs join first (greedy matching). Sharp edges, UV seams and material borders are kept unless \
+                   `advanced.ignore_boundaries` is true. New quads are `<label>.faces`.\n\n\
+                   **Use for** cleaning imported or triangulated meshes before more modelling, UV straightening or subdivision. \
+                   Loosen the angles (up to 60 to 90 degrees) for curved, coarse meshes.",
+            examples: &[OpExample {
+                args: r#"{"target": "tiles"}"#,
+                result: "tiles (o:6): joined 16 triangle pairs into quads; 0 triangles left; group quads_1.faces",
+            }],
+            aliases: &["tris to quads", "alt j", "join triangles", "quadrangulate", "polyQuad"],
+            complexity: "O(n log n) for n selected triangles, plus the selector",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &TrisToQuadsParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        for (path, a, max) in [("/max_face_angle", p.max_face_angle, 180.0), ("/max_shape_angle", p.max_shape_angle, 90.0)] {
+            if !(0.0..=max).contains(&a.degrees()) {
+                return Err(OpError::out_of_range(path, format!("{} degrees is outside 0 to {max}", a.degrees())));
+            }
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &TrisToQuadsParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let faces = faces_or_all(tx.mesh(key, "/target")?, p.select.as_ref(), "edit.tris_to_quads")?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "quads");
+        let spec = QuadSpec {
+            max_face_angle_deg: p.max_face_angle.degrees() as f32,
+            max_shape_angle_deg: p.max_shape_angle.degrees() as f32,
+            ignore_boundaries: p.advanced.ignore_boundaries,
+        };
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let quads = p3d_geo::edit::tris_to_quads(mesh, &faces, &spec).map_err(kernel_error)?;
+        let mut out = OpOutput::default();
+        if quads.is_empty() {
+            out.summary = format!("{}: the {} selected faces have no triangle pairs to join", label(tx.doc(), key), thousands(faces.len()));
+            return Ok(out);
+        }
+        let left = mesh.faces().filter(|&f| mesh.face_len(f) == 3).count();
+        let g = face_group(mesh, key, format!("{glabel}.faces"), &quads)?;
+        out.summary = format!(
+            "{}: joined {} triangle pairs into quads; {} triangles left; group {}",
+            label(tx.doc(), key),
+            thousands(quads.len()),
+            thousands(left),
+            g.name
+        );
+        out.changed.push(key);
+        out.groups = vec![g];
         Ok(out)
     }
 }

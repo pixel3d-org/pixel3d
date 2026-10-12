@@ -204,6 +204,12 @@ export type Selector = {
 /** How to split a mesh. */
 export type SeparateBy = "loose_parts" | "material" | "groups";
 
+/** Advanced settings of `edit.tris_to_quads`. */
+export type TrisToQuadsAdvanced = {
+  /** Also join across sharp edges, UV seams and material borders. */
+  ignore_boundaries?: boolean;
+};
+
 /** Advanced tube settings. */
 export type TubeAdvanced = {
   /** Segments along the height. */
@@ -651,6 +657,38 @@ export type EditInsetParams = {
   thickness?: Length;
 };
 
+/** `edit.poke`: Splits each face into a fan of triangles around a new center vertex, optionally raised into a pyramid. */
+export type EditPokeParams = {
+  /** Moves each new center vertex along its face normal (a pyramid when positive). */
+  offset?: Length;
+  /** Faces to poke; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.triangulate`: Splits quads and n-gons into triangles with the diagonals that keep angles largest (beauty), adding no vertices. */
+export type EditTriangulateParams = {
+  /** Faces to triangulate; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.tris_to_quads`: Joins pairs of adjacent triangles into quads, best-shaped pairs first, where the result is flat and square enough. */
+export type EditTrisToQuadsParams = {
+  /** Rarely needed settings. */
+  advanced?: TrisToQuadsAdvanced;
+  /** Largest angle between the two triangles (degrees); larger folds stay triangles. */
+  max_face_angle?: Angle;
+  /** Largest difference of a quad corner from a right angle (degrees). */
+  max_shape_angle?: Angle;
+  /** Triangles to join; every face when omitted (other faces are skipped). */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
 /** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
 export type EditFillParams = {
   /**
@@ -728,6 +766,9 @@ export interface OpParams {
   "select.group_rename": SelectGroupRenameParams;
   "edit.extrude": EditExtrudeParams;
   "edit.inset": EditInsetParams;
+  "edit.poke": EditPokeParams;
+  "edit.triangulate": EditTriangulateParams;
+  "edit.tris_to_quads": EditTrisToQuadsParams;
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;

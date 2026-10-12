@@ -1,7 +1,7 @@
 //! Property tests for the edit kernels on random meshes: the result is
 //! always a valid mesh, and a refused edit changes nothing.
 
-use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, extrude, inset};
+use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, QuadSpec, extrude, inset, poke, triangulate, tris_to_quads};
 use p3d_mesh::Mesh;
 use p3d_testdata::strategy;
 use proptest::prelude::*;
@@ -53,5 +53,33 @@ proptest! {
             prop_assert_eq!(n.face_count(), m.face_count() + r.rim.len());
         }
         check(&m, &n, r.map(|_| ()))?;
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+
+    #[test]
+    fn poke_triangulate_and_requad(m in strategy::mesh(), picks in prop::collection::vec(any::<u32>(), 1..12), offset in -0.1f32..0.1) {
+        let faces = pick_faces(&m, &picks);
+        prop_assume!(!faces.is_empty());
+        let mut n = m.clone();
+        let tris = poke(&mut n, &faces, offset).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(n.validate(), Ok(()));
+        let corners: usize = faces.iter().map(|&f| m.face_len(f)).sum();
+        prop_assert_eq!(tris.len(), corners);
+
+        let mut t = m.clone();
+        let all: Vec<u32> = t.faces().collect();
+        let (out, _) = triangulate(&mut t, &all).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(t.validate(), Ok(()));
+        prop_assert!(t.faces().all(|f| t.face_len(f) == 3));
+        prop_assert_eq!(out.len(), m.triangle_count());
+        prop_assert_eq!(t.triangle_count(), m.triangle_count());
+
+        let all: Vec<u32> = t.faces().collect();
+        let quads = tris_to_quads(&mut t, &all, &QuadSpec::default()).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(t.validate(), Ok(()));
+        prop_assert_eq!(t.face_count(), m.triangle_count() - quads.len());
     }
 }

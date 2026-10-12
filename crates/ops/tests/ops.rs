@@ -53,11 +53,14 @@ fn expect_fixture() -> Tx {
     tx
 }
 
-/// The fixture plus bin (o:5), an open box without its top, for `edit.*` examples.
+/// The fixture plus bin (o:5), an open box without its top, and tiles (o:6),
+/// a triangulated 4 x 4 grid, for `edit.*` examples.
 fn edit_fixture() -> Tx {
     let mut tx = fixture();
     ok(&mut tx, "prim.box", json!({ "name": "bin", "width": 0.4, "height": 0.3, "depth": 0.4, "position": [-2, 0, 0] }));
     ok(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": { "group": "top" } } }));
+    ok(&mut tx, "prim.plane", json!({ "name": "tiles", "width": 2, "depth": 2, "position": [0, 0, 3], "advanced": { "segments": [4, 4] } }));
+    ok(&mut tx, "edit.triangulate", json!({ "target": "tiles" }));
     tx
 }
 

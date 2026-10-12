@@ -3,9 +3,11 @@
 //! depends on the edited region, not on the mesh size.
 
 mod extrude;
+mod faces;
 mod inset;
 
 pub use extrude::{ExtrudeMode, ExtrudeResult, ExtrudeSpec, extrude};
+pub use faces::{QuadSpec, poke, triangulate, tris_to_quads};
 pub use inset::{InsetMode, InsetResult, InsetSpec, inset};
 
 use glam::Vec3;
