@@ -30,3 +30,7 @@ harness = false
 [[bench]]
 name = "scale"
 harness = false
+
+[[bench]]
+name = "edit"
+harness = false

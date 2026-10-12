@@ -3,7 +3,7 @@
 
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use glam::{Affine3A, DVec3, Vec3};
 use p3d_geo::bvh::TriBvh;
 use p3d_geo::prim::{
@@ -11,6 +11,9 @@ use p3d_geo::prim::{
     cuboid, ico_sphere, plane, quad_sphere, torus, tube, uv_sphere,
 };
 use p3d_testdata::{scale_sizes, sphere};
+
+#[path = "workloads/edit.rs"]
+mod workloads;
 
 fn scale(c: &mut Criterion) {
     let sizes = scale_sizes(4_000, 100_000);
@@ -84,6 +87,19 @@ fn scale(c: &mut Criterion) {
         g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| capsule(black_box(spec), Origin::Center)));
     }
     g.finish();
+
+    // Edit kernels: the selection grows with the mesh.
+    let edit_sets: Vec<(usize, Vec<_>)> = sizes.iter().map(|&t| (t, workloads::workloads(t))).collect();
+    for i in 0..edit_sets[0].1.len() {
+        let mut g = c.benchmark_group(format!("scale_edit_{}", edit_sets[0].1[i].0));
+        for (t, sets) in &edit_sets {
+            let (name, m, faces) = &sets[i];
+            g.bench_with_input(BenchmarkId::from_parameter(t), &(m, faces), |b, (m, faces)| {
+                b.iter_batched(|| (*m).clone(), |x| workloads::run(name, black_box(x), faces), BatchSize::LargeInput)
+            });
+        }
+        g.finish();
+    }
 
     // Tree queries start at 16k triangles: below that the whole tree sits in
     // L1 and L2 cache and the first step measures the cache, not the algorithm.

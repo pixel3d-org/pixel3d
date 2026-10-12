@@ -64,6 +64,8 @@ impl Registry {
             Arc::new(Typed::<select::Shrink>::new()),
             Arc::new(Typed::<select::GroupDelete>::new()),
             Arc::new(Typed::<select::GroupRename>::new()),
+            Arc::new(Typed::<edit::Extrude>::new()),
+            Arc::new(Typed::<edit::Inset>::new()),
             Arc::new(Typed::<edit::Fill>::new()),
             Arc::new(Typed::<edit::RecalcNormals>::new()),
             Arc::new(Typed::<edit::DeleteElements>::new()),

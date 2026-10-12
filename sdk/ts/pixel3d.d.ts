@@ -108,6 +108,9 @@ export type ExpectArgs = {
   };
 };
 
+/** How several faces are extruded. */
+export type ExtrudeModeParam = "region" | "individual";
+
 /** Conditions on elements; all given conditions must hold. */
 export type Filter = {
   /** On the mesh boundary (true) or not (false). Faces: having a boundary edge. */
@@ -134,6 +137,9 @@ export type Filter = {
   /** Edges whose faces meet at more than this angle in degrees (0 is flat). */
   sharper_than_deg?: number | null;
 };
+
+/** How several faces are inset. */
+export type InsetModeParam = "region" | "individual";
 
 /** Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. "30cm". */
 export type Length = number | string;
@@ -617,6 +623,34 @@ export type SelectGroupRenameParams = {
   to: string;
 };
 
+/** `edit.extrude`: Pulls faces out along their normals (or a direction) and joins them to the surface with side walls. */
+export type EditExtrudeParams = {
+  /** Move along this object-space direction instead of the face normals. */
+  direction?: [number, number, number] | null;
+  /** How far the faces move; negative pushes them in. */
+  distance?: Length;
+  /** `region` (default) or `individual`. */
+  mode?: ExtrudeModeParam;
+  /** Faces to extrude. */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.inset`: Shrinks faces inward within their surface, leaving a rim of quads, and optionally pushes the inner part in or out. */
+export type EditInsetParams = {
+  /** Moves the inner faces along their normals; negative makes a recess. */
+  depth?: Length;
+  /** `region` (default) or `individual`. */
+  mode?: InsetModeParam;
+  /** Faces to inset. */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Width of the rim, measured inside the faces. */
+  thickness?: Length;
+};
+
 /** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
 export type EditFillParams = {
   /**
@@ -692,6 +726,8 @@ export interface OpParams {
   "select.shrink": SelectShrinkParams;
   "select.group_delete": SelectGroupDeleteParams;
   "select.group_rename": SelectGroupRenameParams;
+  "edit.extrude": EditExtrudeParams;
+  "edit.inset": EditInsetParams;
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;

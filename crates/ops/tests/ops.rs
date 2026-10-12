@@ -444,6 +444,33 @@ fn delete_elements_by_faces_edges_and_vertices() {
 }
 
 #[test]
+fn extrude_and_inset_make_labelled_groups() {
+    let mut tx = edit_fixture();
+    let a = run(&mut tx, "edit.inset", json!({ "target": "crate", "select": { "faces": { "group": "top" } }, "thickness": "5cm" })).unwrap();
+    let names: Vec<&str> = a.output.groups.iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, vec!["inset_1.inner", "inset_1.rim"]);
+    let a =
+        run(&mut tx, "edit.extrude", json!({ "target": "crate", "select": { "faces": { "group": "inset_1.inner" } }, "distance": "-2cm" })).unwrap();
+    assert_eq!(a.output.groups.iter().map(|g| (g.name.as_str(), g.count)).collect::<Vec<_>>(), vec![("extrude_1.cap", 1), ("extrude_1.side", 4)]);
+    let t = topo(&tx, "crate");
+    assert!(t.is_watertight() && t.volume > 0.0, "{t:?}");
+    let key = tx.doc().resolve("crate").unwrap();
+    let m = tx.doc().object_mesh(key).unwrap();
+    assert!((m.face_centroid(m.group("extrude_1.cap").unwrap().iter().next().unwrap()).y - 0.58).abs() < 1e-5);
+    assert_eq!(m.group("top").unwrap().count(), 5, "the recess floor and the rim stay in top");
+
+    let e = err(&mut tx, "edit.extrude", json!({ "target": "crate", "select": { "edges": { "sharp": true } } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select")));
+    let e = err(&mut tx, "edit.extrude", json!({ "target": "crate", "select": { "faces": {} }, "distance": 0 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/distance")));
+    let e = err(&mut tx, "edit.inset", json!({ "target": "crate", "select": { "faces": { "group": "front" } }, "thickness": "40cm" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/thickness")));
+    assert!(e.hint.as_deref().is_some_and(|h| h.contains("shortest edge")), "{e}");
+    let e = err(&mut tx, "edit.extrude", json!({ "target": "crate", "select": { "faces": { "group": "nope" } } }));
+    assert_eq!(e.code, ErrorCode::NotFound);
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

@@ -1,5 +1,6 @@
 //! `edit.*`: mesh edits addressed by selectors and groups.
 
+use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, extrude, inset};
 use p3d_mesh::{ElementKind, Mesh};
 use p3d_query::{Filter, Selector, select as evaluate};
 use p3d_scene::{Document, ObjectKey};
@@ -9,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::common::{group_label, label, thousands};
 use crate::error::{ErrorCode, OpError};
 use crate::op::{Category, GroupInfo, Op, OpCtx, OpExample, OpFlags, OpMeta, OpOutput, Warning};
+use crate::params::Length;
 use crate::tx::Tx;
 
 const EDIT: OpFlags = OpFlags::UNDOABLE;
@@ -45,6 +47,286 @@ fn boundary_starts(mesh: &Mesh, select: Option<&Selector>) -> Result<Vec<u32>, O
             },
         })
         .collect())
+}
+
+/// Maps an edit kernel refusal to an op error.
+fn kernel_error(e: KernelError) -> OpError {
+    match e {
+        KernelError::Topology(t) => OpError::new(ErrorCode::Topology, t.to_string())
+            .with_hint("the result would not be a clean manifold mesh; select fewer or different faces"),
+        KernelError::OutOfRange { param, message, hint } => OpError::out_of_range(&format!("/{param}"), message).with_hint(hint),
+        KernelError::Empty(m) => empty_selection(&m, "select faces, for example {\"faces\": {\"group\": \"top\"}}"),
+    }
+}
+
+/// Faces picked by a selector; other element kinds are refused.
+///
+/// Complexity: O(n) for the selector.
+fn selected_faces(mesh: &Mesh, select: &Selector, op: &str) -> Result<Vec<u32>, OpError> {
+    let sel = evaluate(mesh, select).map_err(|e| OpError::from_query(e, "/select"))?;
+    if sel.kind != ElementKind::Face {
+        return Err(OpError::invalid("/select", format!("{op} works on faces, but the selector picks {}", sel.kind.as_str()))
+            .with_hint("select faces, for example {\"faces\": {\"group\": \"top\"}}"));
+    }
+    if sel.is_empty() {
+        return Err(empty_selection("the selector matched no faces", "check group names; perceive structure lists the groups"));
+    }
+    Ok(sel.iter().collect())
+}
+
+/// Creates or replaces a face group and reports it.
+fn face_group(mesh: &mut Mesh, key: ObjectKey, name: String, faces: &[u32]) -> Result<GroupInfo, OpError> {
+    let n = mesh.set_group(&name, ElementKind::Face, faces.iter().copied()).map_err(|e| OpError::internal(e.to_string()))?;
+    Ok(GroupInfo { object: key, name, kind: ElementKind::Face, count: n as u32 })
+}
+
+/// A non-zero finite length check that allows negative values.
+fn check_signed_length(path: &str, l: Length, what: &str) -> Result<(), OpError> {
+    if l.0.is_finite() && l.0.abs() <= p3d_geo::prim::MAX_SIZE {
+        Ok(())
+    } else {
+        Err(OpError::out_of_range(path, format!("{what} {} is outside -10 km to 10 km", l.0)))
+    }
+}
+
+// ---- edit.extrude --------------------------------------------------------------------
+
+/// How several faces are extruded.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExtrudeModeParam {
+    /// Connected faces move together with walls only around the outside.
+    #[default]
+    Region,
+    /// Every face moves on its own with walls all around it.
+    Individual,
+}
+
+/// Parameters of `edit.extrude`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExtrudeParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Faces to extrude.
+    pub select: Selector,
+    /// How far the faces move; negative pushes them in.
+    #[serde(default = "default_extrude_distance")]
+    pub distance: Length,
+    /// `region` (default) or `individual`.
+    #[serde(default)]
+    pub mode: ExtrudeModeParam,
+    /// Move along this object-space direction instead of the face normals.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<[f32; 3]>,
+}
+
+fn default_extrude_distance() -> Length {
+    Length(0.1)
+}
+
+impl Default for ExtrudeParams {
+    fn default() -> Self {
+        ExtrudeParams {
+            target: String::new(),
+            select: Selector::Faces(Filter::default()),
+            distance: default_extrude_distance(),
+            mode: ExtrudeModeParam::Region,
+            direction: None,
+        }
+    }
+}
+
+/// `edit.extrude`.
+pub struct Extrude;
+
+impl Op for Extrude {
+    const ID: &'static str = "edit.extrude";
+    type Params = ExtrudeParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Extrude",
+            category: Category::Edit,
+            summary: "Pulls faces out along their normals (or a direction) and joins them to the surface with side walls.",
+            docs: "The selected faces move by `distance`; new side walls connect them to where they were. In `region` mode connected \
+                   faces move together (even thickness: every face moves the full distance, creases stretch); in `individual` mode \
+                   each face moves along its own normal with walls all around.\n\n\
+                   **Groups:** the moved faces keep their groups and are also `<label>.cap`; the walls are `<label>.side`. New edges \
+                   where faces meet at more than 30 degrees become sharp.\n\n\
+                   **Use for** raised panels, buttons, legs, bosses, wall thickness on open shells (negative distance pushes in: \
+                   recesses, vents). For a recess with a border, `edit.inset` first, then extrude the inner faces with a negative \
+                   distance. Typical distances: 2 to 10 mm for panel details on 0.5 to 1 m props.\n\n\
+                   **Not for** whole closed objects (that inflates them: use `scene.set_transform` scale) or making solid walls from \
+                   a plane (use `edit.thicken`).",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "select": {"faces": {"group": "top"}}, "distance": "5cm"}"#,
+                result: "crate (o:1): extruded 1 face by 50 mm: +4 side faces; groups extrude_1.cap, extrude_1.side",
+            }],
+            aliases: &["extrude region", "extrude faces", "e", "extrude individual", "push pull", "polyExtrudeFacet", "inflate"],
+            complexity: "O(c log c) for the c corners of the selected faces, plus the selector",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &ExtrudeParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        check_signed_length("/distance", p.distance, "distance")?;
+        if p.distance.0.abs() < 1e-7 {
+            return Err(
+                OpError::out_of_range("/distance", "extrusion distance must not be 0").with_hint("for example \"5mm\", or \"-5mm\" to push in")
+            );
+        }
+        if let Some(d) = p.direction
+            && !(d.iter().all(|x| x.is_finite()) && d.iter().any(|x| *x != 0.0))
+        {
+            return Err(OpError::invalid("/direction", "direction must be a finite, non-zero vector").with_hint("for example [0, 1, 0] for up"));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &ExtrudeParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let faces = selected_faces(tx.mesh(key, "/target")?, &p.select, "edit.extrude")?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "extrude");
+        let mode = match p.mode {
+            ExtrudeModeParam::Region => ExtrudeMode::Region,
+            ExtrudeModeParam::Individual => ExtrudeMode::Individual,
+        };
+        let spec = ExtrudeSpec { mode, distance: p.distance.0 as f32, direction: p.direction.map(glam::Vec3::from) };
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = extrude(mesh, &faces, &spec).map_err(kernel_error)?;
+        let cap = face_group(mesh, key, format!("{glabel}.cap"), &r.cap)?;
+        let side = face_group(mesh, key, format!("{glabel}.side"), &r.side)?;
+        let mut out = OpOutput::summary(format!(
+            "{}: extruded {} face{} by {}: +{} side faces; groups {}, {}",
+            label(tx.doc(), key),
+            thousands(faces.len()),
+            plural(faces.len()),
+            p3d_math::format_length(p.distance.0),
+            thousands(r.side.len()),
+            cap.name,
+            side.name
+        ));
+        out.changed.push(key);
+        out.groups = vec![cap, side];
+        Ok(out)
+    }
+}
+
+// ---- edit.inset ------------------------------------------------------------------------
+
+/// How several faces are inset.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InsetModeParam {
+    /// Connected faces shrink together with one rim around the outside.
+    #[default]
+    Region,
+    /// Every face shrinks on its own with a rim all around it.
+    Individual,
+}
+
+/// Parameters of `edit.inset`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct InsetParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Faces to inset.
+    pub select: Selector,
+    /// Width of the rim, measured inside the faces.
+    #[serde(default = "default_inset_thickness")]
+    pub thickness: Length,
+    /// Moves the inner faces along their normals; negative makes a recess.
+    #[serde(default)]
+    pub depth: Length,
+    /// `region` (default) or `individual`.
+    #[serde(default)]
+    pub mode: InsetModeParam,
+}
+
+fn default_inset_thickness() -> Length {
+    Length(0.01)
+}
+
+impl Default for InsetParams {
+    fn default() -> Self {
+        InsetParams {
+            target: String::new(),
+            select: Selector::Faces(Filter::default()),
+            thickness: default_inset_thickness(),
+            depth: Length(0.0),
+            mode: InsetModeParam::Region,
+        }
+    }
+}
+
+/// `edit.inset`.
+pub struct Inset;
+
+impl Op for Inset {
+    const ID: &'static str = "edit.inset";
+    type Params = InsetParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Inset",
+            category: Category::Edit,
+            summary: "Shrinks faces inward within their surface, leaving a rim of quads, and optionally pushes the inner part in or out.",
+            docs: "Each selected region (or face, in `individual` mode) gets a rim of width `thickness` along its border; the inner \
+                   faces replace the originals. `depth` moves the inner part along the normals: negative for recessed panels, \
+                   positive for raised plates.\n\n\
+                   **Groups:** inner faces are `<label>.inner`, the rim `<label>.rim`; both keep the groups of the original faces.\n\n\
+                   **Use for** panel borders, door and window frames, screen bezels, vents (inset then extrude in), keeping a \
+                   crisp edge loop before subdivision. Typical thickness: 5 to 30 mm on 0.5 to 2 m props.\n\n\
+                   **Refuses** a thickness that would fold the rim over (more than about half the shortest edge).",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "select": {"faces": {"group": "front"}}, "thickness": "4cm", "depth": "-1cm"}"#,
+                result: "crate (o:1): inset 1 face by 40 mm, depth -10 mm: +4 rim faces; groups inset_1.inner, inset_1.rim",
+            }],
+            aliases: &["inset faces", "i", "inset region", "inset individual", "polyExtrudeFacet offset", "frame", "border"],
+            complexity: "O(c log c) for the c corners of the selected faces, plus the selector",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &InsetParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        crate::common::check_length("/thickness", p.thickness, 1e-6, p3d_geo::prim::MAX_SIZE)?;
+        check_signed_length("/depth", p.depth, "depth")
+    }
+
+    fn apply(tx: &mut Tx, p: &InsetParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let faces = selected_faces(tx.mesh(key, "/target")?, &p.select, "edit.inset")?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "inset");
+        let mode = match p.mode {
+            InsetModeParam::Region => InsetMode::Region,
+            InsetModeParam::Individual => InsetMode::Individual,
+        };
+        let spec = InsetSpec { mode, thickness: p.thickness.0 as f32, depth: p.depth.0 as f32 };
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = inset(mesh, &faces, &spec).map_err(kernel_error)?;
+        let inner = face_group(mesh, key, format!("{glabel}.inner"), &r.inner)?;
+        let rim = face_group(mesh, key, format!("{glabel}.rim"), &r.rim)?;
+        let depth = if p.depth.0 == 0.0 { String::new() } else { format!(", depth {}", p3d_math::format_length(p.depth.0)) };
+        let mut out = OpOutput::summary(format!(
+            "{}: inset {} face{} by {}{depth}: +{} rim faces; groups {}, {}",
+            label(tx.doc(), key),
+            thousands(faces.len()),
+            plural(faces.len()),
+            p3d_math::format_length(p.thickness.0),
+            thousands(r.rim.len()),
+            inner.name,
+            rim.name
+        ));
+        out.changed.push(key);
+        out.groups = vec![inner, rim];
+        Ok(out)
+    }
 }
 
 // ---- edit.fill -------------------------------------------------------------------------

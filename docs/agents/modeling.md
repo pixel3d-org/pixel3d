@@ -7,7 +7,7 @@ Build assets as several named parts in a hierarchy (`crate`, `crate/lid`, `crate
 - `prim.box`, `prim.cylinder`, `prim.cone`, `prim.quad_sphere`, `prim.uv_sphere`, `prim.ico_sphere`, `prim.torus`, `prim.tube`, `prim.capsule`, `prim.wedge`, `prim.plane`: real-size primitives with clean quads and semantic groups. Boxes take `bevel` (`{"width": "8mm", "segments": 2}`); round primitives adapt their segment count to the asset class. Prefer `quad_sphere` for balls, `capsule` for limbs, `torus` for hoops and rings, `tube` for pipes with wall thickness.
 - `scene.*`: `create_empty`, `delete`, `duplicate` (copy or instance), `rename`, `parent`, `unparent`, `set_transform` (absolute, or `relative: true` to move by an offset), `apply_transform`, `set_origin`, `tag`, `set_metadata`, `join`, `separate`.
 - `select.*`: `save` (selector to a group), `grow`, `shrink`, `group_delete`, `group_rename`.
-- `edit.*`: `fill` (close holes), `recalc_normals` (make parts face outward), `delete_elements` (faces, or faces using selected edges or vertices).
+- `edit.*`: `extrude` (pull faces out or push them in, groups `<label>.cap` and `<label>.side`), `inset` (a rim inside faces, optional depth for recesses, groups `<label>.inner` and `<label>.rim`), `fill` (close holes), `recalc_normals` (make parts face outward), `delete_elements` (faces, or faces using selected edges or vertices). Panel detail: `inset` the face, then `extrude` its `.inner` group by a few millimeters, in or out.
 - `expect.add`, `expect.remove`: model tests.
 
 `list_ops` with `search` finds ops by Blender or Maya names too (`cube`, `separate by loose parts`, `shift n`).
