@@ -2,7 +2,7 @@
 
 Progress checklist for the roadmap. Tick a box in the commit that completes it; acceptance items record their evidence (test names, numbers, report links). Each completed phase gets a local tag `phase-N`.
 
-**Current phase: 0 (Bootstrap)**
+**Current phase: 1 (Kernel)**
 
 ## Phase 0: Bootstrap
 
@@ -37,7 +37,7 @@ Acceptance:
 
 ## Phase 1: Kernel
 
-- [ ] `math`: unit parser, transforms, axis conventions
+- [x] `math`: unit parser, transforms, axis conventions
 - [ ] `mesh`: half-edge kernel, attributes, groups, validation, compaction, triangle buffers
 - [ ] `scene`: document, ids, names, hierarchy, settings
 - [ ] `query`: selectors
