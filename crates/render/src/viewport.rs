@@ -8,9 +8,10 @@
 //! (egui's pass has no depth buffer, so 3D cannot draw into it directly).
 //!
 //! The renderer works on a device it is given, so the desktop app shares
-//! eframe's device and tests use a headless one. Geometry is uploaded only
-//! when the scene key (the document revision) changes; every other frame
-//! writes one small uniform.
+//! eframe's device and tests use a headless one. Geometry lives in object
+//! space and is uploaded only when the meshes change; each part's world
+//! matrix sits in a storage buffer, so moving an object (or dragging it with
+//! the gizmo) rewrites one small array; every frame writes one uniform.
 
 use std::sync::{Arc, Mutex};
 
@@ -20,7 +21,7 @@ use wgpu::util::DeviceExt;
 
 use crate::camera::OrbitCamera;
 use crate::image::Image;
-use crate::scene::{LineVertex, RenderScene, Vertex};
+use crate::scene::{LineVertex, Vertex, ViewScene};
 use crate::{MAX_SIZE, RenderError};
 
 const HDR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
@@ -211,6 +212,9 @@ pub struct ViewportRenderer {
     globals_bind: wgpu::BindGroup,
     selection: wgpu::Buffer,
     selection_words: usize,
+    /// Per-part world transforms ([`PartTransform`]).
+    transforms: wgpu::Buffer,
+    transform_slots: usize,
     composite_layout: wgpu::BindGroupLayout,
     background: wgpu::RenderPipeline,
     surfaces: wgpu::RenderPipeline,
@@ -229,6 +233,52 @@ impl std::fmt::Debug for ViewportRenderer {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ViewportRenderer").field("output", &self.output).field("key", &self.key).finish()
     }
+}
+
+/// A part's world transform as the shaders read it: the model matrix, the
+/// normal matrix (inverse transpose) and whether it mirrors (flips winding).
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+struct PartTransform {
+    model: [[f32; 4]; 4],
+    normal: [[f32; 4]; 4],
+    flags: [u32; 4],
+}
+
+impl PartTransform {
+    fn new(model: Mat4) -> Self {
+        let m3 = glam::Mat3::from_mat4(model);
+        let det = m3.determinant();
+        let normal = if det.abs() > 1e-20 { Mat4::from_mat3(m3.inverse().transpose()) } else { Mat4::IDENTITY };
+        PartTransform { model: model.to_cols_array_2d(), normal: normal.to_cols_array_2d(), flags: [u32::from(det < 0.0), 0, 0, 0] }
+    }
+}
+
+fn storage(device: &wgpu::Device, label: &str, size: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: size.max(16),
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    })
+}
+
+fn bind_globals(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    globals: &wgpu::Buffer,
+    selection: &wgpu::Buffer,
+    transforms: &wgpu::Buffer,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("viewport globals"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry { binding: 0, resource: globals.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: selection.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: transforms.as_entire_binding() },
+        ],
+    })
 }
 
 fn depth_state(write: bool, compare: wgpu::CompareFunction, bias: wgpu::DepthBiasState) -> Option<wgpu::DepthStencilState> {
@@ -251,7 +301,11 @@ impl ViewportRenderer {
         };
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("viewport globals"),
-            entries: &[buffer_entry(0, wgpu::BufferBindingType::Uniform), buffer_entry(1, wgpu::BufferBindingType::Storage { read_only: true })],
+            entries: &[
+                buffer_entry(0, wgpu::BufferBindingType::Uniform),
+                buffer_entry(1, wgpu::BufferBindingType::Storage { read_only: true }),
+                buffer_entry(2, wgpu::BufferBindingType::Storage { read_only: true }),
+            ],
         });
         let texture_entry = |binding, sample_type| wgpu::BindGroupLayoutEntry {
             binding,
@@ -269,7 +323,9 @@ impl ViewportRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let (selection, globals_bind) = Self::selection_buffer(device, &globals_layout, &globals, 1);
+        let selection = storage(device, "viewport selection", 4);
+        let transforms = storage(device, "viewport transforms", std::mem::size_of::<PartTransform>() as u64);
+        let globals_bind = bind_globals(device, &globals_layout, &globals, &selection, &transforms);
 
         let scene_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("viewport scene"),
@@ -387,6 +443,8 @@ impl ViewportRenderer {
             globals_bind,
             selection,
             selection_words: 1,
+            transforms,
+            transform_slots: 1,
             composite_layout,
             background,
             surfaces,
@@ -402,29 +460,6 @@ impl ViewportRenderer {
         }
     }
 
-    fn selection_buffer(
-        device: &wgpu::Device,
-        layout: &wgpu::BindGroupLayout,
-        globals: &wgpu::Buffer,
-        words: usize,
-    ) -> (wgpu::Buffer, wgpu::BindGroup) {
-        let selection = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("viewport selection"),
-            size: 4 * words.max(1) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("viewport globals"),
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: globals.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: selection.as_entire_binding() },
-            ],
-        });
-        (selection, bind)
-    }
-
     /// Where pick results appear; share it with the code that asks for picks.
     pub fn picks(&self) -> PickSlot {
         Arc::clone(&self.picks)
@@ -435,10 +470,11 @@ impl ViewportRenderer {
         self.key
     }
 
-    /// Uploads a scene unless `key` is already uploaded.
+    /// Uploads a scene's geometry unless `key` is already uploaded. Set the
+    /// part transforms with [`ViewportRenderer::set_transforms`].
     ///
     /// Complexity: O(vertices + indices + lines) when the key changed, O(1) otherwise.
-    pub fn upload(&mut self, device: &wgpu::Device, scene: &RenderScene, key: u64) {
+    pub fn upload(&mut self, device: &wgpu::Device, scene: &ViewScene, key: u64) {
         if self.key == Some(key) {
             return;
         }
@@ -464,14 +500,30 @@ impl ViewportRenderer {
     pub fn set_selection(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, bits: &[u32]) {
         let words = bits.len().max(1);
         if words > self.selection_words {
-            let (buffer, bind) = Self::selection_buffer(device, &self.globals_layout, &self.globals, words.next_power_of_two());
-            self.selection = buffer;
-            self.globals_bind = bind;
             self.selection_words = words.next_power_of_two();
+            self.selection = storage(device, "viewport selection", 4 * self.selection_words as u64);
+            self.globals_bind = bind_globals(device, &self.globals_layout, &self.globals, &self.selection, &self.transforms);
         }
         let mut data = vec![0u32; self.selection_words];
         data[..bits.len()].copy_from_slice(bits);
         queue.write_buffer(&self.selection, 0, bytemuck::cast_slice(&data));
+    }
+
+    /// Sets the world matrix of every part (index = part id). Cheap enough
+    /// to call every frame while an object is dragged.
+    ///
+    /// Complexity: O(parts).
+    pub fn set_transforms(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, models: &[Mat4]) {
+        let n = models.len().max(1);
+        if n > self.transform_slots {
+            self.transform_slots = n.next_power_of_two();
+            self.transforms = storage(device, "viewport transforms", (self.transform_slots * std::mem::size_of::<PartTransform>()) as u64);
+            self.globals_bind = bind_globals(device, &self.globals_layout, &self.globals, &self.selection, &self.transforms);
+        }
+        let data: Vec<PartTransform> = models.iter().map(|m| PartTransform::new(*m)).collect();
+        if !data.is_empty() {
+            queue.write_buffer(&self.transforms, 0, bytemuck::cast_slice(&data));
+        }
     }
 
     fn ensure_targets(&mut self, device: &wgpu::Device, width: u32, height: u32) {

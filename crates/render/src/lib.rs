@@ -18,7 +18,7 @@ pub mod viewport;
 pub use camera::{Camera, OrbitCamera, ViewKind};
 pub use gpu::Renderer;
 pub use image::Image;
-pub use scene::{RenderScene, prepare};
+pub use scene::{RenderScene, ViewPart, ViewScene, part_matrices, prepare, prepare_view, view_meshes, world_bounds};
 pub use viewport::{PickResult, Shading, ViewFrame, ViewStyle, ViewportRenderer};
 
 /// wgpu as this crate uses it, so frontends name the same types.

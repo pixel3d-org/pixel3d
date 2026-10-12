@@ -119,3 +119,111 @@ pub fn prepare(doc: &Document, root: Option<ObjectKey>) -> RenderScene {
     }
     s
 }
+
+/// One drawable part of a [`ViewScene`]: an object and its mesh bounds in
+/// object space.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ViewPart {
+    pub object: ObjectKey,
+    pub lo: Vec3,
+    pub hi: Vec3,
+}
+
+/// The viewport's geometry: every visible mesh object in object space, with
+/// its part index in the vertices. World transforms are separate (one
+/// matrix per part), so moving an object never rebuilds geometry. The
+/// meshes are kept alive so their pointers identify the geometry exactly
+/// (a mesh edit replaces the shared `Arc`).
+#[derive(Debug, Clone, Default)]
+pub struct ViewScene {
+    pub vertices: Vec<Vertex>,
+    pub indices: Vec<u32>,
+    pub lines: Vec<LineVertex>,
+    pub parts: Vec<ViewPart>,
+    pub meshes: Vec<std::sync::Arc<p3d_mesh::Mesh>>,
+}
+
+impl ViewScene {
+    pub fn is_empty(&self) -> bool {
+        self.indices.is_empty()
+    }
+
+    pub fn triangle_count(&self) -> usize {
+        self.indices.len() / 3
+    }
+
+    /// Whether this scene was built from exactly these meshes.
+    ///
+    /// Complexity: O(parts).
+    pub fn same_meshes(&self, list: &[(ObjectKey, std::sync::Arc<p3d_mesh::Mesh>)]) -> bool {
+        self.parts.len() == list.len()
+            && self.parts.iter().zip(&self.meshes).zip(list).all(|((p, m), (k, n))| p.object == *k && std::sync::Arc::ptr_eq(m, n))
+    }
+}
+
+/// Visible mesh objects with faces, parents first (the viewport's parts).
+///
+/// Complexity: O(objects).
+pub fn view_meshes(doc: &Document) -> Vec<(ObjectKey, std::sync::Arc<p3d_mesh::Mesh>)> {
+    let mut out = Vec::new();
+    for root in doc.roots() {
+        for key in doc.subtree(root) {
+            let Some(obj) = doc.object(key) else { continue };
+            if !obj.visible {
+                continue;
+            }
+            if let Some(m) = obj.mesh_key().and_then(|mk| doc.mesh_arc(mk))
+                && m.face_count() > 0
+            {
+                out.push((key, std::sync::Arc::clone(m)));
+            }
+        }
+    }
+    out
+}
+
+/// Builds the object-space geometry of `list` (from [`view_meshes`]).
+///
+/// Complexity: O(total mesh size).
+pub fn prepare_view(list: &[(ObjectKey, std::sync::Arc<p3d_mesh::Mesh>)]) -> ViewScene {
+    let mut s = ViewScene::default();
+    for (part, (key, mesh)) in list.iter().enumerate() {
+        let part = part as u32;
+        let tb = mesh.to_tri_buffers(&TriOptions { normals: true, uvs: false, colors: false });
+        let base = s.vertices.len() as u32;
+        s.vertices.extend(tb.positions.iter().zip(&tb.normals).map(|(p, n)| Vertex { pos: p.to_array(), normal: n.to_array(), part }));
+        s.indices.extend(tb.indices.iter().map(|i| base + i));
+        for e in mesh.edges() {
+            let [a, b] = mesh.edge_verts(e);
+            s.lines.push(LineVertex { pos: mesh.positions[a as usize].to_array(), part });
+            s.lines.push(LineVertex { pos: mesh.positions[b as usize].to_array(), part });
+        }
+        let (lo, hi) = mesh.bounds().unwrap_or((Vec3::ZERO, Vec3::ZERO));
+        s.parts.push(ViewPart { object: *key, lo, hi });
+        s.meshes.push(std::sync::Arc::clone(mesh));
+    }
+    s
+}
+
+/// World matrix of every part of `parts`.
+///
+/// Complexity: O(parts x depth).
+pub fn part_matrices(doc: &Document, parts: &[ViewPart]) -> Vec<glam::Mat4> {
+    parts.iter().map(|p| glam::Mat4::from(doc.world_affine(p.object).unwrap_or_default())).collect()
+}
+
+/// World bounds of a part under `model`.
+pub fn world_bounds(part: &ViewPart, model: glam::Mat4) -> (Vec3, Vec3) {
+    let (mut lo, mut hi) = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
+    for i in 0..8 {
+        let c = Vec3::new(
+            if i & 1 == 0 { part.lo.x } else { part.hi.x },
+            if i & 2 == 0 { part.lo.y } else { part.hi.y },
+            if i & 4 == 0 { part.lo.z } else { part.hi.z },
+        );
+        let w = model.transform_point3(c);
+        lo = lo.min(w);
+        hi = hi.max(w);
+    }
+    (lo, hi)
+}

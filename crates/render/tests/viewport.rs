@@ -1,5 +1,5 @@
 //! The interactive viewport path, rendered headless: background, surfaces,
-//! grid, selection outline and picking.
+//! grid, selection outline, picking and per-part transforms.
 //!
 //! These tests need a GPU or a software adapter (CI installs lavapipe on
 //! Linux and uses WARP on Windows).
@@ -9,8 +9,13 @@
 
 use std::sync::{Mutex, OnceLock};
 
+use glam::{Mat4, Vec3};
 use p3d_render::viewport::linear_hex;
-use p3d_render::{Image, OrbitCamera, RenderScene, Renderer, Shading, ViewFrame, ViewKind, ViewStyle, ViewportRenderer, prepare};
+use p3d_render::{
+    Image, OrbitCamera, Renderer, Shading, ViewFrame, ViewKind, ViewScene, ViewStyle, ViewportRenderer, part_matrices, prepare_view, view_meshes,
+    world_bounds,
+};
+use p3d_scene::Document;
 use p3d_testdata::scenes;
 
 fn gpu() -> &'static Renderer {
@@ -27,17 +32,47 @@ fn viewport() -> std::sync::MutexGuard<'static, ViewportRenderer> {
         .unwrap_or_else(|e| e.into_inner())
 }
 
-fn frame(scene: &RenderScene, view: ViewKind) -> ViewFrame {
+/// A document prepared for the viewport: geometry, matrices, bounds and names.
+struct Scene {
+    view: ViewScene,
+    models: Vec<Mat4>,
+    lo: Vec3,
+    hi: Vec3,
+    names: Vec<String>,
+}
+
+fn scene(doc: &Document) -> Scene {
+    let view = prepare_view(&view_meshes(doc));
+    let models = part_matrices(doc, &view.parts);
+    let (mut lo, mut hi) = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
+    for (p, m) in view.parts.iter().zip(&models) {
+        let (a, b) = world_bounds(p, *m);
+        lo = lo.min(a);
+        hi = hi.max(b);
+    }
+    if view.parts.is_empty() {
+        (lo, hi) = (Vec3::ZERO, Vec3::ONE);
+    }
+    let names = view.parts.iter().map(|p| doc.object(p.object).map(|o| o.name().to_owned()).unwrap_or_default()).collect();
+    Scene { view, models, lo, hi, names }
+}
+
+fn frame(s: &Scene, view: ViewKind) -> ViewFrame {
     let mut camera = OrbitCamera::default();
     camera.set_view(view);
-    camera.frame(scene.lo, scene.hi, 4.0 / 3.0);
+    camera.frame(s.lo, s.hi, 4.0 / 3.0);
     ViewFrame { width: 160, height: 120, camera, shading: Shading::Solid, grid: false, style: ViewStyle::default(), ids: false, pick: None }
 }
 
-fn shot(v: &mut ViewportRenderer, scene: &RenderScene, key: u64, f: &ViewFrame) -> Image {
+fn shot_with(v: &mut ViewportRenderer, s: &Scene, models: &[Mat4], key: u64, f: &ViewFrame) -> Image {
     let r = gpu();
-    v.upload(r.device(), scene, key);
+    v.upload(r.device(), &s.view, key);
+    v.set_transforms(r.device(), r.queue(), models);
     v.snapshot(r.device(), r.queue(), f).unwrap()
+}
+
+fn shot(v: &mut ViewportRenderer, s: &Scene, key: u64, f: &ViewFrame) -> Image {
+    shot_with(v, s, &s.models, key, f)
 }
 
 fn srgb(c: [f32; 4]) -> [u8; 3] {
@@ -52,13 +87,16 @@ fn near(a: [u8; 4], b: [u8; 3], tol: u8) -> bool {
     a[..3].iter().zip(b).all(|(x, y)| x.abs_diff(y) <= tol)
 }
 
+fn differing(a: &Image, b: &Image) -> usize {
+    (0..a.height).flat_map(|y| (0..a.width).map(move |x| (x, y))).filter(|&(x, y)| a.get(x, y) != b.get(x, y)).count()
+}
+
 #[test]
 fn background_surfaces_and_determinism() {
-    let doc = scenes::crate_scene();
-    let scene = prepare(&doc, None);
+    let s = scene(&scenes::crate_scene());
     let mut v = viewport();
-    let f = frame(&scene, ViewKind::ThreeQuarter);
-    let img = shot(&mut v, &scene, 1, &f);
+    let f = frame(&s, ViewKind::ThreeQuarter);
+    let img = shot(&mut v, &s, 1, &f);
     let style = ViewStyle::default();
     // The gradient runs from the top color to the bottom color.
     assert!(near(img.get(1, 0), srgb(style.bg_top), 3), "top {:?}", img.get(1, 0));
@@ -67,26 +105,24 @@ fn background_surfaces_and_determinism() {
     let mid = img.get(img.width / 2, img.height / 2);
     assert!(!near(mid, srgb(style.bg_top), 12) && !near(mid, srgb(style.bg_bottom), 12), "center {mid:?}");
     // Same input, same pixels.
-    assert_eq!(shot(&mut v, &scene, 1, &f), img);
+    assert_eq!(shot(&mut v, &s, 1, &f), img);
     // Wire mode draws dark edges on paper surfaces: the image changes.
-    let wire = shot(&mut v, &scene, 1, &ViewFrame { shading: Shading::Wire, ..f });
+    let wire = shot(&mut v, &s, 1, &ViewFrame { shading: Shading::Wire, ..f });
     assert_ne!(wire, img);
 }
 
 #[test]
 fn grid_draws_on_the_ground_only() {
-    let doc = scenes::crate_scene();
-    let scene = prepare(&doc, None);
+    let s = scene(&scenes::crate_scene());
     let mut v = viewport();
-    let f = frame(&scene, ViewKind::ThreeQuarter);
-    let without = shot(&mut v, &scene, 1, &f);
-    let with = shot(&mut v, &scene, 1, &ViewFrame { grid: true, ..f });
-    let changed = (0..with.height).flat_map(|y| (0..with.width).map(move |x| (x, y))).filter(|&(x, y)| with.get(x, y) != without.get(x, y)).count();
-    assert!(changed > 50, "the grid shows ({changed} px changed)");
+    let f = frame(&s, ViewKind::ThreeQuarter);
+    let without = shot(&mut v, &s, 1, &f);
+    let with = shot(&mut v, &s, 1, &ViewFrame { grid: true, ..f });
+    assert!(differing(&with, &without) > 50, "the grid shows");
     // Looking level from the front, the sky above the horizon stays untouched.
-    let level = frame(&scene, ViewKind::Front);
-    let without = shot(&mut v, &scene, 1, &level);
-    let with = shot(&mut v, &scene, 1, &ViewFrame { grid: true, ..level });
+    let level = frame(&s, ViewKind::Front);
+    let without = shot(&mut v, &s, 1, &level);
+    let with = shot(&mut v, &s, 1, &ViewFrame { grid: true, ..level });
     let rows = |from: u32, to: u32| {
         (from..to).flat_map(|y| (0..with.width).map(move |x| (x, y))).filter(|&(x, y)| with.get(x, y) != without.get(x, y)).count()
     };
@@ -96,15 +132,14 @@ fn grid_draws_on_the_ground_only() {
 
 #[test]
 fn selection_outline_and_tint() {
-    let doc = scenes::crate_scene();
-    let scene = prepare(&doc, None);
+    let s = scene(&scenes::crate_scene());
     let r = gpu();
     let mut v = viewport();
-    let f = ViewFrame { ids: true, ..frame(&scene, ViewKind::Front) };
+    let f = ViewFrame { ids: true, ..frame(&s, ViewKind::Front) };
     v.set_selection(r.device(), r.queue(), &[0]);
-    let plain = shot(&mut v, &scene, 1, &f);
+    let plain = shot(&mut v, &s, 1, &f);
     v.set_selection(r.device(), r.queue(), &[1]);
-    let selected = shot(&mut v, &scene, 1, &f);
+    let selected = shot(&mut v, &s, 1, &f);
     v.set_selection(r.device(), r.queue(), &[0]);
     let blue = srgb(linear_hex(0x4a8fff, 1.0));
     let count =
@@ -115,28 +150,53 @@ fn selection_outline_and_tint() {
 
 #[test]
 fn picks_return_the_part_under_the_pixel() {
-    let doc = scenes::crate_scene();
-    let scene = prepare(&doc, None);
+    let s = scene(&scenes::crate_scene());
     let mut v = viewport();
-    let base = frame(&scene, ViewKind::Front);
+    let base = frame(&s, ViewKind::Front);
     let slot = v.picks();
     // The middle of the front view is the crate body (part 0).
     let (cx, cy) = (base.width / 2, base.height / 2 + 10);
-    shot(&mut v, &scene, 1, &ViewFrame { pick: Some((cx, cy, 7)), ..base });
+    shot(&mut v, &s, 1, &ViewFrame { pick: Some((cx, cy, 7)), ..base });
     let got = slot.lock().unwrap().take();
-    let part = got.and_then(|p| p.part).map(|i| scene.parts[i as usize].name.clone());
+    let part = got.and_then(|p| p.part).map(|i| s.names[i as usize].clone());
     assert_eq!(got.map(|p| p.request), Some(7));
     assert_eq!(part.as_deref(), Some("crate"), "{got:?}");
-    shot(&mut v, &scene, 1, &ViewFrame { pick: Some((0, 0, 8)), ..base });
+    shot(&mut v, &s, 1, &ViewFrame { pick: Some((0, 0, 8)), ..base });
     assert_eq!(slot.lock().unwrap().take().map(|p| (p.request, p.part)), Some((8, None)), "background");
 }
 
 #[test]
-fn empty_scenes_draw_background_and_grid() {
-    let scene = RenderScene::default();
+fn transforms_move_parts_without_new_geometry() {
+    let s = scene(&scenes::crate_scene());
     let mut v = viewport();
-    let f = ViewFrame { grid: true, ..frame(&scene, ViewKind::ThreeQuarter) };
-    let img = shot(&mut v, &scene, 2, &f);
+    let f = frame(&s, ViewKind::Front);
+    let base = shot(&mut v, &s, 1, &f);
+    // Mirroring the left-right symmetric crate across X keeps its picture:
+    // normals and front faces follow the flipped winding.
+    let mirror = Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0));
+    let mirrored: Vec<Mat4> = s.models.iter().map(|m| mirror * *m).collect();
+    let img = shot_with(&mut v, &s, &mirrored, 1, &f);
+    // Mirrored quads split along the other diagonal and edges rasterize a
+    // little differently; a wrong normal or front face would change whole
+    // faces by 30% (back faces shade darker).
+    let far_off = (0..img.height)
+        .flat_map(|y| (0..img.width).map(move |x| (x, y)))
+        .filter(|&(x, y)| img.get(x, y).iter().zip(base.get(x, y)).any(|(a, b)| a.abs_diff(b) > 24))
+        .count();
+    assert!(far_off < 120, "mirrored crate differs strongly in {far_off} px");
+    // Moving every part right moves the picture; same geometry key.
+    let moved: Vec<Mat4> = s.models.iter().map(|m| Mat4::from_translation(Vec3::X * 0.2) * *m).collect();
+    let img = shot_with(&mut v, &s, &moved, 1, &f);
+    assert!(differing(&img, &base) > 500);
+    assert_eq!(v.key(), Some(1));
+}
+
+#[test]
+fn empty_scenes_draw_background_and_grid() {
+    let s = scene(&Document::new());
+    let mut v = viewport();
+    let f = ViewFrame { grid: true, ..frame(&s, ViewKind::ThreeQuarter) };
+    let img = shot(&mut v, &s, 2, &f);
     assert_eq!((img.width, img.height), (160, 120));
     assert!(v.key() == Some(2));
 }

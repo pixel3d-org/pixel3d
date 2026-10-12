@@ -34,6 +34,16 @@ struct View {
 // Selection bitset over part ids (part index, not id + 1).
 @group(0) @binding(1) var<storage, read> selected: array<u32>;
 
+// A part's world transform; geometry is in object space.
+struct PartTransform {
+    model: mat4x4<f32>,
+    // Inverse transpose of the model matrix (for normals).
+    normal: mat4x4<f32>,
+    // x: 1 when the transform mirrors (winding flips).
+    flags: vec4<u32>,
+};
+@group(0) @binding(2) var<storage, read> parts: array<PartTransform>;
+
 fn is_selected(part: u32) -> bool {
     let w = part >> 5u;
     if (w >= arrayLength(&selected)) {
@@ -75,20 +85,26 @@ struct SurfaceOut {
     @location(0) normal: vec3<f32>,
     @location(1) world: vec3<f32>,
     @location(2) @interpolate(flat) part: u32,
+    @location(3) @interpolate(flat) mirrored: u32,
 };
 
 @vertex
 fn vs_surface(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) part: u32) -> SurfaceOut {
+    let xf = parts[part];
+    let world = (xf.model * vec4<f32>(pos, 1.0)).xyz;
     var o: SurfaceOut;
-    o.clip = v.view_proj * vec4<f32>(pos, 1.0);
-    o.normal = normal;
-    o.world = pos;
+    o.clip = v.view_proj * vec4<f32>(world, 1.0);
+    o.normal = (xf.normal * vec4<f32>(normal, 0.0)).xyz;
+    o.world = world;
     o.part = part;
+    o.mirrored = xf.flags.x;
     return o;
 }
 
 @fragment
-fn fs_surface(i: SurfaceOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+fn fs_surface(i: SurfaceOut, @builtin(front_facing) facing: bool) -> @location(0) vec4<f32> {
+    // A mirroring transform flips the winding: front stays front.
+    let front = facing != (i.mirrored == 1u);
     var n = normalize(i.normal);
     if (!front) {
         n = -n;
@@ -144,7 +160,8 @@ struct LineOut {
 };
 
 @vertex
-fn vs_line(@location(0) pos: vec3<f32>, @location(1) part: u32) -> LineOut {
+fn vs_line(@location(0) local: vec3<f32>, @location(1) part: u32) -> LineOut {
+    let pos = (parts[part].model * vec4<f32>(local, 1.0)).xyz;
     // Pull edges toward the camera by a small fraction of their distance so
     // they win over their own faces; along the pixel's ray, so they do not
     // move on screen. Surfaces get no depth bias: slope-scaled bias let back

@@ -4,14 +4,16 @@
 //! Rendering happens offscreen in `p3d_render::ViewportRenderer` (stored in
 //! egui_wgpu's callback resources): `prepare` encodes the 3D passes, `paint`
 //! composites the image into egui's pass. Geometry is rebuilt and uploaded
-//! only when the document revision changes; each frame sends a camera.
+//! only when a mesh changes; transforms when the document changes (or every
+//! frame while a drag previews new ones); each frame sends a camera.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use egui::{Pos2, Rect, Sense, Vec2};
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use p3d_render::viewport::PickSlot;
-use p3d_render::{OrbitCamera, RenderScene, Shading, ViewFrame, ViewKind, ViewportRenderer};
+use p3d_render::{OrbitCamera, Shading, ViewFrame, ViewKind, ViewScene, ViewportRenderer};
 use p3d_scene::{Document, ObjectKey};
 use serde::{Deserialize, Serialize};
 
@@ -50,17 +52,27 @@ impl ViewSettings {
     }
 }
 
-/// The world-space scene built for one document state.
+/// The viewport scene for one document state.
 #[derive(Debug, Clone)]
 pub struct SceneCache {
+    /// The document state the matrices belong to.
     pub key: u64,
-    pub scene: Arc<RenderScene>,
+    pub view: Arc<ViewScene>,
+    /// Bumped whenever the geometry is rebuilt (the upload key).
+    pub geometry: u64,
+    /// World matrix of every part.
+    pub models: Arc<Vec<Mat4>>,
 }
 
 /// Per-window viewport state (not persisted).
 pub struct ViewportState {
     pub camera: OrbitCamera,
     cache: Option<SceneCache>,
+    geometry_counter: u64,
+    /// World matrices that override the document while a drag previews
+    /// them (cleared when the drag ends).
+    pub preview: BTreeMap<ObjectKey, Mat4>,
+    models_version: u64,
     /// Selection as a bitset over the cached scene's parts, and its version.
     selection_bits: Arc<Vec<u32>>,
     selection_version: u64,
@@ -82,6 +94,9 @@ impl Default for ViewportState {
         ViewportState {
             camera: OrbitCamera::default(),
             cache: None,
+            geometry_counter: 0,
+            preview: BTreeMap::new(),
+            models_version: 0,
             selection_bits: Arc::new(Vec::new()),
             selection_version: 0,
             picks: None,
@@ -109,20 +124,23 @@ pub enum ViewportEvent {
 struct Gpu {
     renderer: ViewportRenderer,
     selection_version: u64,
+    models_version: u64,
 }
 
 /// Creates the viewport renderer on eframe's device. Call once at startup.
 pub fn install(rs: &egui_wgpu::RenderState) -> PickSlot {
     let renderer = ViewportRenderer::new(&rs.device, rs.target_format, 1);
     let picks = renderer.picks();
-    rs.renderer.write().callback_resources.insert(Gpu { renderer, selection_version: u64::MAX });
+    rs.renderer.write().callback_resources.insert(Gpu { renderer, selection_version: u64::MAX, models_version: u64::MAX });
     picks
 }
 
 struct Callback {
     frame: ViewFrame,
-    scene: Arc<RenderScene>,
-    key: u64,
+    view: Arc<ViewScene>,
+    geometry: u64,
+    models: Arc<Vec<Mat4>>,
+    models_version: u64,
     selection: Arc<Vec<u32>>,
     selection_version: u64,
 }
@@ -137,7 +155,11 @@ impl egui_wgpu::CallbackTrait for Callback {
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<egui_wgpu::wgpu::CommandBuffer> {
         let Some(gpu) = resources.get_mut::<Gpu>() else { return Vec::new() };
-        gpu.renderer.upload(device, &self.scene, self.key);
+        gpu.renderer.upload(device, &self.view, self.geometry);
+        if gpu.models_version != self.models_version {
+            gpu.renderer.set_transforms(device, queue, &self.models);
+            gpu.models_version = self.models_version;
+        }
         if gpu.selection_version != self.selection_version {
             gpu.renderer.set_selection(device, queue, &self.selection);
             gpu.selection_version = self.selection_version;
@@ -163,9 +185,11 @@ impl ViewportState {
         self.gpu = true;
     }
 
-    /// The scene for the current document, rebuilt when `key` changes.
+    /// The scene for the current document. When `key` changes the part
+    /// matrices are recomputed, and the geometry only if a mesh changed.
     ///
-    /// Complexity: O(objects + total mesh size) when rebuilt, O(1) otherwise.
+    /// Complexity: O(objects) when only transforms changed, plus O(total
+    /// mesh size) when a mesh changed, O(1) otherwise.
     pub fn scene(&mut self, doc: &Document, key: u64) -> SceneCache {
         if let Some(c) = &self.cache
             && c.key == key
@@ -173,11 +197,42 @@ impl ViewportState {
             return c.clone();
         }
         let _span = tracing::info_span!("viewport scene", key).entered();
-        let c = SceneCache { key, scene: Arc::new(p3d_render::prepare(doc, None)) };
+        let list = p3d_render::view_meshes(doc);
+        let (view, geometry) = match &self.cache {
+            Some(c) if c.view.same_meshes(&list) => (Arc::clone(&c.view), c.geometry),
+            _ => {
+                self.geometry_counter += 1;
+                (Arc::new(p3d_render::prepare_view(&list)), self.geometry_counter)
+            }
+        };
+        let models = Arc::new(p3d_render::part_matrices(doc, &view.parts));
+        let c = SceneCache { key, view, geometry, models };
         self.cache = Some(c.clone());
-        // Part indices changed: the selection bitset must be rebuilt.
+        self.models_version = self.models_version.wrapping_add(1);
+        // Part indices may have changed: the selection bitset must be rebuilt.
         self.selection_version = self.selection_version.wrapping_add(1);
         c
+    }
+
+    /// The part matrices with the drag preview applied.
+    ///
+    /// Complexity: O(parts) while previewing, O(1) otherwise.
+    fn effective_models(&mut self, cache: &SceneCache) -> (Arc<Vec<Mat4>>, u64) {
+        if self.preview.is_empty() {
+            return (Arc::clone(&cache.models), self.models_version);
+        }
+        let models: Vec<Mat4> =
+            cache.view.parts.iter().zip(cache.models.iter()).map(|(p, m)| self.preview.get(&p.object).copied().unwrap_or(*m)).collect();
+        self.models_version = self.models_version.wrapping_add(1);
+        (Arc::new(models), self.models_version)
+    }
+
+    /// The world matrix of an object's part, if it is drawn.
+    ///
+    /// Complexity: O(parts).
+    pub fn part_matrix(&self, object: ObjectKey) -> Option<Mat4> {
+        let c = self.cache.as_ref()?;
+        c.view.parts.iter().position(|p| p.object == object).map(|i| c.models[i])
     }
 
     /// Rebuilds the selection bitset over the cached scene's parts.
@@ -185,8 +240,8 @@ impl ViewportState {
     /// Complexity: O(parts + selection log selection).
     pub fn set_selection(&mut self, selected: &std::collections::BTreeSet<ObjectKey>) {
         let Some(c) = &self.cache else { return };
-        let mut bits = vec![0u32; c.scene.parts.len().div_ceil(32)];
-        for (i, part) in c.scene.parts.iter().enumerate() {
+        let mut bits = vec![0u32; c.view.parts.len().div_ceil(32)];
+        for (i, part) in c.view.parts.iter().enumerate() {
             if selected.contains(&part.object) {
                 bits[i / 32] |= 1 << (i % 32);
             }
@@ -206,9 +261,12 @@ impl ViewportState {
     /// Complexity: O(parts).
     pub fn bounds(&self, only: Option<&std::collections::BTreeSet<ObjectKey>>) -> Option<(Vec3, Vec3)> {
         let c = self.cache.as_ref()?;
-        let mut parts = c.scene.parts.iter().filter(|p| only.is_none_or(|s| s.contains(&p.object))).peekable();
+        let mut parts = c.view.parts.iter().zip(c.models.iter()).filter(|(p, _)| only.is_none_or(|s| s.contains(&p.object))).peekable();
         parts.peek()?;
-        Some(parts.fold((Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY)), |(lo, hi), p| (lo.min(p.lo), hi.max(p.hi))))
+        Some(parts.fold((Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY)), |(lo, hi), (p, m)| {
+            let (a, b) = p3d_render::world_bounds(p, *m);
+            (lo.min(a), hi.max(b))
+        }))
     }
 
     /// Frames the selection, or everything when nothing is selected.
@@ -280,12 +338,15 @@ impl ViewportState {
             pick,
         };
         if self.gpu {
+            let (models, models_version) = self.effective_models(&cache);
             ui.painter().add(egui_wgpu::Callback::new_paint_callback(
                 rect,
                 Callback {
                     frame,
-                    scene: Arc::clone(&cache.scene),
-                    key: cache.key,
+                    view: Arc::clone(&cache.view),
+                    geometry: cache.geometry,
+                    models,
+                    models_version,
                     selection: Arc::clone(&self.selection_bits),
                     selection_version: self.selection_version,
                 },
@@ -316,7 +377,7 @@ impl ViewportState {
             && r.request == request
         {
             self.pending_pick = None;
-            let object = r.part.and_then(|i| cache.scene.parts.get(i as usize)).map(|p| p.object);
+            let object = r.part.and_then(|i| cache.view.parts.get(i as usize)).map(|p| p.object);
             events.push(ViewportEvent::Picked { object, add });
         }
     }
