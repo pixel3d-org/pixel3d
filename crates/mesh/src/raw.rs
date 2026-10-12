@@ -37,6 +37,38 @@ pub struct RawMesh {
     pub groups: Vec<RawGroup>,
 }
 
+impl RawMesh {
+    /// Rebuilds `he_prev` and `he_face` from `he_next`, `he_vert` and
+    /// `face_he` (they are fully determined by them), for formats that do not
+    /// store them. Corrupt input yields arrays that [`Mesh::from_raw`] rejects.
+    ///
+    /// Complexity: O(H + F).
+    pub fn rebuild_links(&mut self) {
+        let nh = self.he_next.len();
+        self.he_prev = vec![crate::INVALID; nh];
+        for (h, &n) in self.he_next.iter().enumerate() {
+            if let Some(p) = self.he_prev.get_mut(n as usize) {
+                *p = h as u32;
+            }
+        }
+        self.he_face = vec![crate::INVALID; nh];
+        for (f, &start) in self.face_he.iter().enumerate() {
+            let mut h = start;
+            // At most nh steps: a corrupt loop cannot spin forever.
+            for _ in 0..nh {
+                match self.he_face.get_mut(h as usize) {
+                    Some(slot) => *slot = f as u32,
+                    None => break,
+                }
+                h = self.he_next[h as usize];
+                if h == start {
+                    break;
+                }
+            }
+        }
+    }
+}
+
 fn kind_code(k: ElementKind) -> u8 {
     match k {
         ElementKind::Vert => 0,
@@ -164,6 +196,20 @@ mod tests {
         assert_eq!(back.to_raw(), raw, "raw form is canonical");
         assert_eq!((back.face_count(), back.face_material[1]), (3, 7));
         assert_eq!(back.group("left").unwrap().count(), 2);
+    }
+
+    #[test]
+    fn links_rebuild_exactly() {
+        let p = (0..9).map(|i| Vec3::new((i % 3) as f32, (i / 3) as f32, 0.0)).collect();
+        let corners = [0, 1, 4, 3, 1, 2, 5, 4, 3, 4, 7, 6, 4, 5, 8, 7];
+        let mut m = Mesh::from_polygons(p, &[4; 4], &corners).unwrap();
+        m.delete_faces(&[3]).unwrap();
+        let raw = m.to_raw();
+        let mut stripped = raw.clone();
+        stripped.he_prev.clear();
+        stripped.he_face.clear();
+        stripped.rebuild_links();
+        assert_eq!(stripped, raw);
     }
 
     #[test]

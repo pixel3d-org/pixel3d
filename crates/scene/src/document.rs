@@ -50,6 +50,9 @@ pub struct Document {
     graphs: Arc<SlotMap<GraphKey, Arc<OpGraph>>>,
     next_id: u32,
     pub settings: DocSettings,
+    /// Unknown top-level fields of the file this document came from, kept so
+    /// newer files survive a load and save by an older version.
+    pub extras: BTreeMap<String, serde_json::Value>,
     /// Set by the engine on every committed transaction.
     pub revision: u64,
 }
@@ -66,6 +69,7 @@ impl Default for Document {
             graphs: Arc::default(),
             next_id: 1,
             settings: DocSettings::default(),
+            extras: BTreeMap::new(),
             revision: 0,
         }
     }

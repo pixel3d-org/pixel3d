@@ -9,3 +9,27 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+blake3 = { workspace = true, features = ["pure"] }
+glam = { workspace = true }
+p3d-math = { workspace = true }
+p3d-mesh = { workspace = true }
+p3d-scene = { workspace = true }
+rkyv = { workspace = true, features = ["little_endian", "pointer_width_32"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+zip = { workspace = true, features = ["deflate-flate2-zlib-rs"] }
+
+[dev-dependencies]
+p3d-geo = { workspace = true }
+serde_json = { workspace = true }
+zip = { workspace = true, features = ["deflate-flate2-zlib-rs"] }
+criterion = { workspace = true }
+p3d-testdata = { workspace = true }
+
+[[bench]]
+name = "p3d"
+harness = false
