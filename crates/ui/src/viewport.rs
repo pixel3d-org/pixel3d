@@ -87,7 +87,20 @@ pub struct ViewportState {
     pub gpu: bool,
     pub fps: f32,
     last_frame: Option<std::time::Instant>,
+    /// A view change in progress: start angles, end angles, start time.
+    anim: Option<ViewAnim>,
 }
+
+/// A smooth turn of the camera to new angles.
+#[derive(Debug, Clone, Copy)]
+struct ViewAnim {
+    from: (f32, f32),
+    to: (f32, f32),
+    start: std::time::Instant,
+}
+
+/// How long a view change takes.
+const VIEW_ANIM: f32 = 0.22;
 
 impl Default for ViewportState {
     fn default() -> Self {
@@ -108,6 +121,7 @@ impl Default for ViewportState {
             gpu: false,
             fps: 0.0,
             last_frame: None,
+            anim: None,
         }
     }
 }
@@ -285,7 +299,42 @@ impl ViewportState {
     }
 
     pub fn set_view(&mut self, view: ViewKind) {
-        self.camera.set_view(view);
+        self.look_from(view.frame().0);
+    }
+
+    /// Turns the camera smoothly to look from `toward` (the shorter way
+    /// around).
+    pub fn look_from(&mut self, toward: Vec3) {
+        let to = OrbitCamera::angles_from(toward);
+        self.anim = Some(ViewAnim { from: (self.camera.yaw, self.camera.pitch), to, start: std::time::Instant::now() });
+    }
+
+    /// Whether the camera looks from `toward` (within a degree).
+    pub fn looks_from(&self, toward: Vec3) -> bool {
+        let target = self.anim.map_or((self.camera.yaw, self.camera.pitch), |a| a.to);
+        let (yaw, pitch) = OrbitCamera::angles_from(toward);
+        let dyaw = (yaw - target.0 + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        // Straight up or down: yaw does not matter.
+        (pitch - target.1).abs() < 0.02 && (dyaw.abs() < 0.02 || pitch.abs() > 1.55)
+    }
+
+    /// Advances a view animation; returns whether one is running.
+    fn step_anim(&mut self) -> bool {
+        let Some(a) = self.anim else { return false };
+        let t = (a.start.elapsed().as_secs_f32() / VIEW_ANIM).min(1.0);
+        let s = t * t * (3.0 - 2.0 * t);
+        let dyaw = (a.to.0 - a.from.0 + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+        self.camera.yaw = (a.from.0 + dyaw * s).rem_euclid(std::f32::consts::TAU);
+        self.camera.pitch = a.from.1 + (a.to.1 - a.from.1) * s;
+        if t >= 1.0 {
+            self.anim = None;
+        }
+        true
+    }
+
+    /// Stops a view animation (the user took over the camera).
+    pub fn cancel_anim(&mut self) {
+        self.anim = None;
     }
 
     /// Lays out the viewport in `ui`: handles navigation and clicks and adds
@@ -301,6 +350,9 @@ impl ViewportState {
             self.frame(&Default::default());
         }
         self.camera.ortho = settings.ortho;
+        if self.step_anim() {
+            ui.ctx().request_repaint();
+        }
         self.navigate(ui, &resp, settings.nav);
         let mut events = Vec::new();
         self.poll_pick(&cache, &mut events);
@@ -388,6 +440,7 @@ impl ViewportState {
         let orbit_speed = 0.008;
         let (modifiers, delta) = ui.input(|i| (i.modifiers, i.pointer.delta()));
         if resp.dragged() && delta != Vec2::ZERO {
+            self.anim = None;
             let middle = resp.dragged_by(egui::PointerButton::Middle);
             let primary = resp.dragged_by(egui::PointerButton::Primary);
             let secondary = resp.dragged_by(egui::PointerButton::Secondary);
@@ -421,6 +474,9 @@ impl ViewportState {
                 .collect();
             (wheels, i.zoom_delta())
         });
+        if !scroll_events.is_empty() {
+            self.anim = None;
+        }
         for (unit, d, m) in scroll_events {
             match unit {
                 egui::MouseWheelUnit::Point if !m.command && !m.ctrl => {

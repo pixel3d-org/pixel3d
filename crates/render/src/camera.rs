@@ -39,7 +39,7 @@ impl ViewKind {
     }
 
     /// Direction from the scene toward the camera, and the camera's up.
-    fn frame(self) -> (Vec3, Vec3) {
+    pub fn frame(self) -> (Vec3, Vec3) {
         match self {
             ViewKind::Front => (Vec3::Z, Vec3::Y),
             ViewKind::Back => (Vec3::NEG_Z, Vec3::Y),
@@ -224,13 +224,21 @@ impl OrbitCamera {
 
     /// Looks from one of the fixed views (keeps target and distance).
     pub fn set_view(&mut self, view: ViewKind) {
-        let (toward, _) = view.frame();
-        self.pitch = toward.y.clamp(-1.0, 1.0).asin().clamp(-MAX_PITCH, MAX_PITCH);
-        if toward.x.abs() + toward.z.abs() > 1e-6 {
-            self.yaw = toward.x.atan2(toward.z).rem_euclid(std::f32::consts::TAU);
-        } else {
-            self.yaw = 0.0;
-        }
+        self.look_from(view.frame().0);
+    }
+
+    /// Yaw and pitch that look from direction `toward` (from the target
+    /// toward the camera). Straight up or down keeps the front at the bottom.
+    pub fn angles_from(toward: Vec3) -> (f32, f32) {
+        let t = toward.normalize_or(Vec3::Z);
+        let pitch = t.y.clamp(-1.0, 1.0).asin().clamp(-MAX_PITCH, MAX_PITCH);
+        let yaw = if t.x.abs() + t.z.abs() > 1e-6 { t.x.atan2(t.z).rem_euclid(std::f32::consts::TAU) } else { 0.0 };
+        (yaw, pitch)
+    }
+
+    /// Looks from direction `toward` (keeps target and distance).
+    pub fn look_from(&mut self, toward: Vec3) {
+        (self.yaw, self.pitch) = Self::angles_from(toward);
     }
 
     /// World ray through a pixel (`x`, `y` from the top-left) of a `w` x `h`

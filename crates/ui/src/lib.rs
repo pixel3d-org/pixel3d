@@ -14,6 +14,7 @@ pub mod docking;
 pub mod i18n;
 pub mod icons;
 pub mod menus;
+pub mod navgizmo;
 pub mod panels;
 pub mod screenshot;
 pub mod theme;
@@ -606,6 +607,7 @@ impl PixelApp {
     fn dock(&mut self, ui: &mut egui::Ui) {
         let workspace = self.ui.docking.clone();
         let mut viewport_events = Vec::new();
+        let mut nav = None;
         let actions = docking::show(ui, &workspace, |ui, panel| match panel {
             docking::Panel::Viewport => {
                 let doc = std::sync::Arc::clone(self.session.doc());
@@ -618,6 +620,7 @@ impl PixelApp {
                 viewport_events =
                     ui.scope_builder(egui::UiBuilder::new().max_rect(view_rect), |ui| self.viewport.show(ui, &doc, key, &self.ui.view, style)).inner;
                 chrome::viewport_overlay(self, ui);
+                nav = navgizmo::show(ui, view_rect, &mut self.viewport, self.ui.view.ortho);
             }
             other => {
                 egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| match other {
@@ -629,6 +632,15 @@ impl PixelApp {
             }
         });
         self.handle_viewport(viewport_events);
+        match nav {
+            Some(navgizmo::NavCommand::ToggleOrtho) => {
+                let _ = self.run("view.ortho", Value::Null);
+            }
+            Some(navgizmo::NavCommand::Frame) => {
+                let _ = self.run("view.frame", Value::Null);
+            }
+            None => {}
+        }
         for action in actions {
             if let Err(e) = self.ui.docking.apply(action) {
                 self.set_status(format!("{}: {e}", t("Panel move was not applied")));
