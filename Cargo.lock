@@ -813,6 +813,10 @@ version = "0.1.0"
 [[package]]
 name = "pixel3d-cli"
 version = "0.1.0"
+dependencies = [
+ "p3d-ops",
+ "serde_json",
+]
 
 [[package]]
 name = "proc-macro-crate"

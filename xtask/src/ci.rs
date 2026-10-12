@@ -104,6 +104,7 @@ pub fn ci() -> Result<(), String> {
             ("clippy", cargo_step(&["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"])),
             ("test", cargo_step(&["test", "--workspace", "--locked"])),
             ("layers", Box::new(layers_step)),
+            ("codegen", Box::new(|| crate::codegen::run(&["--check"]))),
             ("emdash", Box::new(emdash_step)),
             ("deny", Box::new(deny_step)),
             ("release build", cargo_step(&["build", "--workspace", "--release", "--locked"])),
@@ -112,7 +113,8 @@ pub fn ci() -> Result<(), String> {
     )
 }
 
-/// The pre-commit subset: fmt, clippy, tests of changed crates, layers, emdash.
+/// The pre-commit subset: fmt, clippy, tests of changed crates, layers,
+/// generated files, emdash.
 pub fn ci_fast() -> Result<(), String> {
     run_steps(
         "ci-fast",
@@ -121,6 +123,7 @@ pub fn ci_fast() -> Result<(), String> {
             ("clippy", cargo_step(&["clippy", "--workspace", "--all-targets", "--", "-D", "warnings"])),
             ("test (changed crates)", Box::new(changed_tests_step)),
             ("layers", Box::new(layers_step)),
+            ("codegen", Box::new(|| crate::codegen::run(&["--check"]))),
             ("emdash", Box::new(emdash_step)),
         ],
     )

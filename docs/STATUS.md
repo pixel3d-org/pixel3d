@@ -45,7 +45,7 @@ Acceptance:
 - [x] `engine`: Session, transactions, undo and redo, checkpoints, `catch_unwind` rollback, jobs, linear history graph
 - [x] `.p3d` save and load (`docs/file-format.md`; 1M triangles: save 200 ms, load 116 ms)
 - [x] Ops: `scene.*` (13), `prim.box`, `prim.cylinder`, `prim.quad_sphere`, `prim.plane`, `select.save/grow/shrink/group_delete/group_rename`
-- [ ] `cargo xtask codegen`
+- [x] `cargo xtask codegen` (`docs/ops/*.md`, `sdk/ts/pixel3d.d.ts` (checked with `tsc --strict`), `sdk/wit/pixel3d.wit`; `--check` runs in `ci` and `ci-fast`)
 - [x] `cargo xtask bench-scale` (criterion `scale_*` groups at n, 4n, 16n; log-log slope <= 1.25)
 
 Acceptance:

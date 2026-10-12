@@ -6,6 +6,7 @@
 mod bench_scale;
 mod changed;
 mod ci;
+mod codegen;
 mod emdash;
 mod layers;
 
@@ -16,10 +17,12 @@ const USAGE: &str = "\
 usage: cargo xtask <command>
 
 commands:
-  ci       everything CI runs: fmt, clippy, test, layers, emdash, deny, release build, bench-scale
-  ci-fast  run before every commit: fmt, clippy, tests of changed crates, layers, emdash
+  ci       everything CI runs: fmt, clippy, test, layers, codegen --check, emdash, deny, release build, bench-scale
+  ci-fast  run before every commit: fmt, clippy, tests of changed crates, layers, codegen --check, emdash
   bench-scale [--large] [--kernel <name>]
            run the scale_* benches at n, 4n, 16n and fail if a kernel grows faster than n^1.25
+  codegen [--check]
+           regenerate docs/ops, sdk/ts/pixel3d.d.ts and sdk/wit/pixel3d.wit from the op registry
   layers   enforce the crate layer table (docs/architecture.md)
   emdash   fail if any tracked or untracked file contains an em dash (U+2014) or en dash (U+2013)
   help     print this help
@@ -30,6 +33,7 @@ fn main() -> ExitCode {
     let rest: Vec<&str> = args.iter().skip(1).map(String::as_str).collect();
     let result = match args.first().map(String::as_str) {
         Some("bench-scale") => bench_scale::run(&rest),
+        Some("codegen") => codegen::run(&rest),
         Some("ci") => ci::ci(),
         Some("ci-fast") => ci::ci_fast(),
         Some("layers") => cmd_layers(),

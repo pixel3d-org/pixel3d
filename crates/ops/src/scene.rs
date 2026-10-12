@@ -180,6 +180,7 @@ pub struct DuplicateParams {
     /// Name of the duplicate; a free variant of the source name when omitted.
     #[serde(default)]
     pub name: Option<String>,
+    /// `copy` (independent mesh, default) or `instance` (shares the mesh).
     #[serde(default)]
     pub mode: DuplicateMode,
     /// Added to the duplicate's position.
@@ -637,6 +638,7 @@ pub enum OriginMode {
 pub struct SetOriginParams {
     /// Mesh object (name, path or id).
     pub target: String,
+    /// Where to put the origin: `bottom_center` (default), `center`, `bbox` or `point`.
     #[serde(default)]
     pub to: OriginMode,
     /// For `bbox`: fractions of the bounding box per axis (0 is the minimum,
@@ -953,6 +955,7 @@ pub enum SeparateBy {
 pub struct SeparateParams {
     /// Mesh object (name, path or id).
     pub target: String,
+    /// How to split: `loose_parts` (default), `material` or `groups`.
     #[serde(default)]
     pub by: SeparateBy,
     /// Face groups for `by: groups`; faces in none of them stay in the target.

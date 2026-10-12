@@ -76,7 +76,7 @@ pub struct Filter {
     pub in_box: Option<BoxFilter>,
 }
 
-/// Direction and tolerance for [`Filter::normal`].
+/// Direction and tolerance for the `normal` filter.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct NormalFilter {
@@ -86,7 +86,7 @@ pub struct NormalFilter {
     pub within_deg: f32,
 }
 
-/// Axis-aligned box for [`Filter::in_box`], in meters.
+/// Axis-aligned box for the `in_box` filter, in meters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BoxFilter {

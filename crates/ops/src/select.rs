@@ -256,7 +256,7 @@ impl Op for GroupDelete {
             label: "Delete group",
             category: Category::Select,
             summary: "Removes a named group; the geometry stays.",
-            docs: "Removes the group only. To delete geometry use `edit.delete_elements` (Phase 3).",
+            docs: "Removes the group only; the faces, edges or vertices stay in the mesh.",
             examples: &[OpExample { args: r#"{"target": "crate", "group": "bottom"}"#, result: "crate (o:1): deleted group bottom" }],
             aliases: &["remove vertex group", "delete face map"],
             complexity: "O(groups)",

@@ -5,6 +5,7 @@
 //! Every action in pixel3d is an op in one registry: the GUI, CLI, MCP
 //! server, scripts, addons and the node graph all call the same code.
 
+pub mod catalog;
 mod common;
 mod dynop;
 mod error;

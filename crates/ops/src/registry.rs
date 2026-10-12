@@ -182,6 +182,12 @@ mod tests {
             }
             let schema = op.params_schema();
             assert_eq!(schema["additionalProperties"], serde_json::Value::Bool(false), "{id}: schema must be strict");
+            if let Some(props) = schema["properties"].as_object() {
+                for (name, p) in props {
+                    assert!(p.get("description").is_some(), "{id}: parameter `{name}` needs a doc comment (agents read it)");
+                }
+            }
+            assert!(!m.docs.contains("Phase "), "{id}: user docs must not mention roadmap phases");
             assert!(op.meta().version >= 1);
         }
     }

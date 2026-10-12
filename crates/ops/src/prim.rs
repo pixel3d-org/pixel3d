@@ -95,6 +95,7 @@ pub struct BoxParams {
     pub origin: OriginParam,
     /// Origin position in the parent's space.
     pub position: [Length; 3],
+    /// Rarely needed settings.
     pub advanced: BoxAdvanced,
 }
 
@@ -233,17 +234,20 @@ pub struct CylinderParams {
     pub name: Option<String>,
     /// Parent object (name, path or id); top level when omitted.
     pub parent: Option<String>,
+    /// Radius in the XZ plane.
     pub radius: Length,
     /// Size along Y.
     pub height: Length,
     /// Segments around; when omitted, derived from the circumference and the
     /// asset class's target edge length (8 to 64, a multiple of 4 for quad-grid caps).
     pub segments: Option<u32>,
+    /// Cap fill: `quad_grid` (default, quads only), `ngon`, `fan` or `none`.
     pub cap: CapParam,
     /// Origin at the bottom center (stands on the ground) or the center.
     pub origin: OriginParam,
     /// Origin position in the parent's space.
     pub position: [Length; 3],
+    /// Rarely needed settings.
     pub advanced: CylinderAdvanced,
 }
 
@@ -284,7 +288,7 @@ impl Op for Cylinder {
                    **Caps:** `quad_grid` (default) is quads only and needs a multiple of 4 segments; `ngon` is one polygon (fine for flat \
                    low-poly caps); `fan` is triangles around a center; `none` leaves the ends open (pipes).\n\n\
                    **Segments** default to the circumference divided by the asset class's target edge length, clamped to 8 to 64.\n\n\
-                   **Use for** posts, pipes, wheels, barrels (or `gen.lathe` for curved profiles, Phase 3).",
+                   **Use for** posts, pipes, wheels, barrels (or `gen.lathe` for curved profiles).",
             examples: &[
                 OpExample {
                     args: r#"{"name": "post", "radius": "5cm", "height": 2}"#,
@@ -342,6 +346,7 @@ pub struct QuadSphereParams {
     pub name: Option<String>,
     /// Parent object (name, path or id); top level when omitted.
     pub parent: Option<String>,
+    /// Sphere radius.
     pub radius: Length,
     /// Quads along each edge of the underlying cube (the equator has 4x as
     /// many); derived from the circumference when omitted.
@@ -430,6 +435,7 @@ pub struct PlaneParams {
     pub depth: Length,
     /// Center position in the parent's space.
     pub position: [Length; 3],
+    /// Rarely needed settings.
     pub advanced: PlaneAdvanced,
 }
 
