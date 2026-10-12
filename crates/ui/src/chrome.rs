@@ -774,6 +774,8 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num4), "ui.mode", || json!({ "mode": "face" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num5), "view.ortho", || Value::Null),
         (KeyboardShortcut::new(Modifiers::ALT, Key::Z), "view.xray", || Value::Null),
+        (KeyboardShortcut::new(cmd, Key::K), "ui.palette", || Value::Null),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::F3), "ui.palette", || Value::Null),
     ];
     for (shortcut, command, params) in table {
         if ctx.input_mut(|i| i.consume_shortcut(shortcut)) {

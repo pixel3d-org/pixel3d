@@ -101,6 +101,8 @@ pub fn menus() -> Vec<Menu> {
                 None,
                 icon(Icon::Select, keyed("Select all", "edit.select_all", key(cmd, Key::A))),
                 keyed("Select none", "edit.select_none", key(Modifiers::NONE, Key::Escape)),
+                None,
+                icon(Icon::Search, keyed("Command palette...", "ui.palette", key(cmd, Key::K))),
             ],
         },
         Menu {

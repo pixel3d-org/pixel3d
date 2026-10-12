@@ -53,15 +53,30 @@ pub fn history(app: &mut PixelApp, ui: &mut egui::Ui) {
 /// Console: op results and messages, newest last.
 pub fn console(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
-    let lines = &app.console;
-    egui::ScrollArea::vertical().id_salt("console").auto_shrink([false, false]).stick_to_bottom(true).show_rows(
-        ui,
-        16.0,
-        lines.len(),
-        |ui, range| {
-            for line in &lines[range] {
-                ui.label(egui::RichText::new(line).font(theme::mono()).color(tk.text_dim));
-            }
-        },
-    );
+    let full = ui.available_rect_before_wrap();
+    let input_h = crate::widgets::SEARCH + 8.0;
+    let list = egui::Rect::from_min_max(full.min, pos2(full.right(), full.bottom() - input_h));
+    ui.scope_builder(egui::UiBuilder::new().max_rect(list), |ui| {
+        let lines = &app.console;
+        egui::ScrollArea::vertical().id_salt("console").auto_shrink([false, false]).stick_to_bottom(true).show_rows(
+            ui,
+            16.0,
+            lines.len(),
+            |ui, range| {
+                for line in &lines[range] {
+                    // Typed commands stand out; errors in the error color.
+                    let color = if line.starts_with("> ") {
+                        tk.text
+                    } else if line.trim_start().starts_with(t("error")) {
+                        tk.health_error
+                    } else {
+                        tk.text_dim
+                    };
+                    ui.label(egui::RichText::new(line).font(theme::mono()).color(color));
+                }
+            },
+        );
+    });
+    let input = egui::Rect::from_min_max(pos2(full.left(), full.bottom() - input_h + 6.0), full.max);
+    ui.scope_builder(egui::UiBuilder::new().max_rect(input), |ui| crate::cmdline::show(app, ui));
 }

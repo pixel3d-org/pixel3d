@@ -9,6 +9,8 @@
 //! data.
 
 pub mod chrome;
+pub mod cmdline;
+pub mod commands;
 pub mod control;
 pub mod docking;
 pub mod health;
@@ -19,6 +21,7 @@ pub mod inspector;
 pub mod menus;
 pub mod navgizmo;
 pub mod outliner;
+pub mod palette;
 pub mod panels;
 pub mod schema_form;
 pub mod screenshot;
@@ -240,6 +243,10 @@ pub struct PixelApp {
     pub health: health::HealthState,
     /// Scene statistics for the overlay and the status bar.
     pub stats: stats::StatsCache,
+    /// The command palette while open.
+    pub palette: Option<palette::Palette>,
+    /// The Console's command line.
+    pub cmdline: cmdline::CmdLine,
     /// Quit once the pending screenshot is saved (`--screenshot`).
     pub quit_after_shot: bool,
 }
@@ -268,6 +275,8 @@ impl PixelApp {
             shots: screenshot::Shots::default(),
             health: health::HealthState::default(),
             stats: stats::StatsCache::default(),
+            palette: None,
+            cmdline: cmdline::CmdLine::default(),
             quit_after_shot: false,
         }
     }
@@ -567,6 +576,7 @@ impl PixelApp {
                 let op = str_param("op").ok_or("op is required: an op that takes a target")?;
                 self.run_on_selection(&op)
             }
+            "ui.palette" => Ok(palette::toggle(self, params.get("on").and_then(Value::as_bool))),
             "ui.rail_labels" => {
                 self.ui.rail_labels = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.rail_labels);
                 Ok(json!({ "railLabels": self.ui.rail_labels }))
@@ -851,6 +861,7 @@ impl PixelApp {
                 self.dock(ui);
             }
         });
+        palette::show(self, ui);
         self.frame_ms = t0.elapsed().as_secs_f32() * 1000.0;
     }
 

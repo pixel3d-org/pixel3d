@@ -78,14 +78,12 @@ fn tip_body(ui: &mut egui::Ui, tip: Tip<'_>) {
     }
 }
 
-/// The platform name of a key in `Cmd+Shift+Z` notation.
+/// The platform name of a key in `Cmd+Shift+Z` notation, in words as egui
+/// writes shortcuts (the bundled fonts have no key symbols).
 fn key_name(key: &str, mac: bool) -> &str {
     match (key, mac) {
-        ("Cmd", true) => "\u{2318}",
         ("Cmd", false) => "Ctrl",
-        ("Shift", true) => "\u{21e7}",
-        ("Alt", true) => "\u{2325}",
-        ("Ctrl", true) => "\u{2303}",
+        ("Alt", true) => "Option",
         _ => key,
     }
 }
@@ -236,6 +234,11 @@ pub const SEARCH: f32 = 30.0;
 /// placeholder) centered vertically, an accent edge while focused, and a
 /// clear button once there is text.
 pub fn search_field(ui: &mut egui::Ui, text: &mut String, hint: &str) -> egui::Response {
+    icon_field(ui, text, hint, crate::icons::Icon::Search, theme::body())
+}
+
+/// A text field like [`search_field`] with another icon and font.
+pub fn icon_field(ui: &mut egui::Ui, text: &mut String, hint: &str, icon: crate::icons::Icon, font: FontId) -> egui::Response {
     let tk = Tokens::get();
     let bg = ui.painter().add(egui::Shape::Noop);
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), SEARCH), Sense::hover());
@@ -246,7 +249,8 @@ pub fn search_field(ui: &mut egui::Ui, text: &mut String, hint: &str) -> egui::R
     );
     let edit = egui::TextEdit::singleline(text)
         .frame(egui::Frame::NONE)
-        .hint_text(RichText::new(hint).color(tk.text_faint))
+        .hint_text(RichText::new(hint).color(tk.text_faint).font(font.clone()))
+        .font(font)
         .vertical_align(egui::Align::Center)
         .min_size(inner.size())
         .desired_width(inner.width())
@@ -257,8 +261,8 @@ pub fn search_field(ui: &mut egui::Ui, text: &mut String, hint: &str) -> egui::R
     let lit = ui.ctx().animate_bool_with_time(resp.id.with("focus"), focus, 0.12);
     let edge = mix(mix(tk.card_border, tk.text_faint, hot * 0.6), tk.accent, lit);
     ui.painter().set(bg, egui::epaint::RectShape::new(rect, 8, tk.field, Stroke::new(1.0, edge), StrokeKind::Inside));
-    let icon = Rect::from_center_size(pos2(rect.left() + 17.0, rect.center().y), vec2(15.0, 15.0));
-    crate::icons::paint_colored(ui.painter(), icon, crate::icons::Icon::Search, mix(tk.text_faint, tk.text_dim, hot.max(lit)), tk.accent);
+    let icon_rect = Rect::from_center_size(pos2(rect.left() + 17.0, rect.center().y), vec2(15.0, 15.0));
+    crate::icons::paint_colored(ui.painter(), icon_rect, icon, mix(tk.text_faint, tk.text_dim, hot.max(lit)), tk.accent);
     if !text.is_empty() {
         let c = ui.interact(clear, resp.id.with("clear"), Sense::click());
         let color = if c.hovered() { tk.text } else { tk.text_faint };
