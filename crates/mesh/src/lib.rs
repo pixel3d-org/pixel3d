@@ -7,6 +7,8 @@ mod build;
 mod edit;
 mod groups;
 mod mesh;
+mod normals;
+mod tri;
 mod validate;
 
 pub use attrs::{EdgeFlags, MAX_UV_LAYERS};
@@ -16,4 +18,5 @@ pub use fixedbitset::FixedBitSet;
 pub use glam::{Vec2, Vec3, Vec4};
 pub use groups::{ElementKind, Group, GroupError};
 pub use mesh::{INVALID, Loop, Mesh};
+pub use tri::{MAX_EAR_CLIP_CORNERS, Submesh, TriBuffers, TriOptions};
 pub use validate::ValidationError;

@@ -38,7 +38,7 @@ Acceptance:
 ## Phase 1: Kernel
 
 - [x] `math`: unit parser, transforms, axis conventions
-- [ ] `mesh`: half-edge kernel, attributes, groups, validation, compaction, triangle buffers
+- [x] `mesh`: half-edge kernel, attributes, groups, validation, compaction, triangle buffers
 - [ ] `scene`: document, ids, names, hierarchy, settings
 - [ ] `query`: selectors
 - [ ] `ops`: trait, registry, schemas, errors, outputs
