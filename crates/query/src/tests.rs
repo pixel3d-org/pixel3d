@@ -111,3 +111,29 @@ fn schema_is_strict() {
     assert!(text.contains("\"additionalProperties\":false"), "{text}");
     assert!(text.contains("sharper_than_deg"));
 }
+
+#[test]
+fn huge_step_counts_stop_when_nothing_changes() {
+    let m = cube();
+    let all = sel(&m, json!({ "grow": { "steps": u32::MAX, "of": { "faces": { "group": "top" } } } })).unwrap();
+    assert_eq!(all.len(), 6);
+    let none = sel(&m, json!({ "shrink": { "steps": u32::MAX, "of": { "not": { "faces": { "group": "top" } } } } })).unwrap();
+    assert!(none.is_empty());
+}
+
+#[test]
+fn edge_grow_from_a_fan_center_is_one_ring() {
+    // Triangle fan of 64 around vertex 0: growing all spokes reaches the rim.
+    let n = 64u32;
+    let mut p = vec![Vec3::ZERO];
+    p.extend((0..n).map(|i| {
+        let a = i as f32 * std::f32::consts::TAU / n as f32;
+        Vec3::new(a.cos(), 0.0, a.sin())
+    }));
+    let corners: Vec<u32> = (0..n).flat_map(|i| [0, 1 + (i + 1) % n, 1 + i]).collect();
+    let m = Mesh::from_polygons(p, &vec![3; n as usize], &corners).unwrap();
+    let spokes = sel(&m, json!({ "edges": { "boundary": false } })).unwrap();
+    assert_eq!(spokes.len(), n as usize);
+    let grown = sel(&m, json!({ "grow": { "steps": 1, "of": { "edges": { "boundary": false } } } })).unwrap();
+    assert_eq!(grown.len(), 2 * n as usize);
+}

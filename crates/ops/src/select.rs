@@ -184,7 +184,7 @@ impl Op for Grow {
                 result: "crate (o:1): grew group top_ring (5 faces)",
             }],
             aliases: &["select more", "grow selection", "ctrl plus"],
-            complexity: "O(steps x (n + neighbours))",
+            complexity: "O(n + H) for any step count",
             flags: OpFlags::UNDOABLE.union(OpFlags::CREATES_GROUPS),
             version: 1,
         }
@@ -217,7 +217,7 @@ impl Op for Shrink {
                 result: "crate (o:1): shrank group top_inner (0 faces)",
             }],
             aliases: &["select less", "shrink selection", "ctrl minus"],
-            complexity: "O(steps x (n + neighbours))",
+            complexity: "O(n + H) for any step count",
             flags: OpFlags::UNDOABLE.union(OpFlags::CREATES_GROUPS),
             version: 1,
         }

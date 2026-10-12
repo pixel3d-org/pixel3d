@@ -151,7 +151,7 @@ impl Selection {
 /// Evaluates a selector on a mesh.
 ///
 /// Complexity: O(n) per filter in elements of its kind; grow and shrink add
-/// O(n + neighbours) per step.
+/// O(n + H) whatever their step count.
 pub fn select(mesh: &Mesh, selector: &Selector) -> Result<Selection, QueryError> {
     eval(mesh, selector, "")
 }
@@ -193,21 +193,17 @@ fn eval(mesh: &Mesh, s: &Selector, path: &str) -> Result<Selection, QueryError> 
         }
         Selector::Grow { steps, of } => {
             let mut sel = eval(mesh, of, &format!("{path}/grow/of"))?;
-            for _ in 0..*steps {
-                grow(mesh, &mut sel);
-            }
+            grow(mesh, &mut sel, *steps);
             Ok(sel)
         }
         Selector::Shrink { steps, of } => {
             let mut sel = eval(mesh, of, &format!("{path}/shrink/of"))?;
-            for _ in 0..*steps {
-                // Shrink = not(grow(not(sel))) within live elements.
-                sel.bits.toggle_range(..);
-                clear_dead(mesh, &mut sel);
-                grow(mesh, &mut sel);
-                sel.bits.toggle_range(..);
-                clear_dead(mesh, &mut sel);
-            }
+            // shrink^s(S) = not(grow^s(not S)) within live elements: one pass.
+            sel.bits.toggle_range(..);
+            clear_dead(mesh, &mut sel);
+            grow(mesh, &mut sel, *steps);
+            sel.bits.toggle_range(..);
+            clear_dead(mesh, &mut sel);
             Ok(sel)
         }
     }
@@ -224,33 +220,59 @@ fn clear_dead(mesh: &Mesh, sel: &mut Selection) {
     }
 }
 
-/// One grow step.
+/// Grows a selection by up to `steps` rings of neighbours. Each step expands
+/// only the elements added by the previous one (the frontier) and growing
+/// stops once nothing new is added, so any step count costs at most one pass
+/// over the reachable elements. Edges grow through vertices, and each vertex
+/// fan is walked once.
 ///
-/// Complexity: O(selected x valence).
-fn grow(mesh: &Mesh, sel: &mut Selection) {
-    let current: Vec<u32> = sel.iter().collect();
-    for i in current {
+/// Complexity: O(n + H) for any `steps`.
+fn grow(mesh: &Mesh, sel: &mut Selection, steps: u32) {
+    let mut frontier: Vec<u32> = sel.iter().collect();
+    let mut next: Vec<u32> = Vec::new();
+    let mut verts: Vec<u32> = Vec::new();
+    for _ in 0..steps {
+        if frontier.is_empty() {
+            break;
+        }
+        next.clear();
+        let add = |bits: &mut FixedBitSet, i: u32, next: &mut Vec<u32>| {
+            if !bits.put(i as usize) {
+                next.push(i);
+            }
+        };
         match sel.kind {
             ElementKind::Face => {
-                for h in mesh.face_halfedges(i) {
-                    if let Some(f) = mesh.face(h ^ 1) {
-                        sel.bits.insert(f as usize);
+                for &f in &frontier {
+                    for h in mesh.face_halfedges(f) {
+                        if let Some(n) = mesh.face(h ^ 1) {
+                            add(&mut sel.bits, n, &mut next);
+                        }
                     }
                 }
             }
             ElementKind::Vert => {
-                for n in mesh.vert_neighbors(i) {
-                    sel.bits.insert(n as usize);
+                for &v in &frontier {
+                    for n in mesh.vert_neighbors(v) {
+                        add(&mut sel.bits, n, &mut next);
+                    }
                 }
             }
             ElementKind::Edge => {
-                for v in mesh.edge_verts(i) {
+                // Every edge at a frontier edge's endpoints: walk each endpoint
+                // fan once, however many frontier edges meet there.
+                verts.clear();
+                verts.extend(frontier.iter().flat_map(|&e| mesh.edge_verts(e)));
+                verts.sort_unstable();
+                verts.dedup();
+                for &v in &verts {
                     for h in mesh.vert_outgoing(v) {
-                        sel.bits.insert((h >> 1) as usize);
+                        add(&mut sel.bits, h >> 1, &mut next);
                     }
                 }
             }
         }
+        std::mem::swap(&mut frontier, &mut next);
     }
 }
 
