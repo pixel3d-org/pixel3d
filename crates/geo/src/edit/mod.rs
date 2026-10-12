@@ -5,10 +5,12 @@
 mod extrude;
 mod faces;
 mod inset;
+mod split;
 
 pub use extrude::{ExtrudeMode, ExtrudeResult, ExtrudeSpec, extrude};
 pub use faces::{QuadSpec, poke, triangulate, tris_to_quads};
 pub use inset::{InsetMode, InsetResult, InsetSpec, inset};
+pub use split::{MAX_SUBDIVIDE_LEVELS, SplitResult, SubdivideResult, split, subdivide};
 
 use glam::Vec3;
 use p3d_mesh::{EdgeFlags, EditError, FixedBitSet, Mesh, Patch};

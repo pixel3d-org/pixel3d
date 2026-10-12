@@ -1,6 +1,6 @@
 //! Edit workloads shared by the `edit` and `scale` benches.
 
-use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, QuadSpec, extrude, inset, poke, triangulate, tris_to_quads};
+use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, QuadSpec, extrude, inset, poke, split, subdivide, triangulate, tris_to_quads};
 use p3d_mesh::Mesh;
 use p3d_testdata::grid;
 
@@ -22,6 +22,8 @@ pub fn workloads(tris: usize) -> Vec<(&'static str, Mesh, Vec<u32>)> {
         ("poke_quarter", g.clone(), quarter),
         ("triangulate_all", g, all),
         ("tris_to_quads_all", tri_grid, all_tris),
+        ("split_half", grid(tris), half_again(tris)),
+        ("subdivide_quarter", grid(tris), quarter_again(tris)),
     ]
 }
 
@@ -38,6 +40,19 @@ pub fn run(name: &str, mut m: Mesh, faces: &[u32]) -> usize {
         }
         "poke_quarter" => poke(&mut m, faces, 0.01).map_or(0, |t| t.len()),
         "triangulate_all" => triangulate(&mut m, faces).map_or(0, |t| t.0.len()),
-        _ => tris_to_quads(&mut m, faces, &QuadSpec::default()).map_or(0, |q| q.len()),
+        "tris_to_quads_all" => tris_to_quads(&mut m, faces, &QuadSpec::default()).map_or(0, |q| q.len()),
+        "split_half" => split(&mut m, faces).map_or(0, |r| r.duplicated),
+        _ => subdivide(&mut m, faces, 1).map_or(0, |r| r.faces.len()),
     }
+}
+
+/// The first half of a grid's faces.
+fn half_again(tris: usize) -> Vec<u32> {
+    let g = grid(tris);
+    g.faces().take(g.face_count() / 2).collect()
+}
+
+/// Every fourth face of a grid.
+fn quarter_again(tris: usize) -> Vec<u32> {
+    grid(tris).faces().step_by(4).collect()
 }

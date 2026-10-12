@@ -594,6 +594,256 @@ impl Op for TrisToQuads {
     }
 }
 
+// ---- edit.split ------------------------------------------------------------------------
+
+/// Parameters of `edit.split`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SplitParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Faces to detach from the rest of the mesh.
+    pub select: Selector,
+}
+
+impl Default for SplitParams {
+    fn default() -> Self {
+        SplitParams { target: String::new(), select: Selector::Faces(Filter::default()) }
+    }
+}
+
+/// `edit.split`.
+pub struct Split;
+
+impl Op for Split {
+    const ID: &'static str = "edit.split";
+    type Params = SplitParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Split",
+            category: Category::Edit,
+            summary: "Detaches faces from the rest of the mesh by duplicating the vertices along the border, leaving them in place.",
+            docs: "The selected faces become their own piece inside the same object: vertices where they meet unselected faces are \
+                   duplicated, nothing moves. Faces keep their groups and are also `<label>.faces`.\n\n\
+                   **Use for** a lid, door or panel that must move separately (follow with `scene.separate` by groups to make it its \
+                   own object), hard splits for shading or UVs, or before flipping part of a surface.",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "select": {"faces": {"group": "top"}}}"#,
+                result: "crate (o:1): split 1 face off (4 vertices duplicated); group split_1.faces",
+            }],
+            aliases: &["split", "y", "detach", "rip faces", "polyChipOff", "extract"],
+            complexity: "O(c log c) for the c corners of the selected faces, plus the selector",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &SplitParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target).map(|_| ())
+    }
+
+    fn apply(tx: &mut Tx, p: &SplitParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let faces = selected_faces(tx.mesh(key, "/target")?, &p.select, "edit.split")?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "split");
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::split(mesh, &faces).map_err(kernel_error)?;
+        let mut out = OpOutput::default();
+        if r.duplicated == 0 {
+            out.summary = format!("{}: the {} selected faces are a separate piece already", label(tx.doc(), key), thousands(faces.len()));
+            return Ok(out);
+        }
+        let g = face_group(mesh, key, format!("{glabel}.faces"), &r.faces)?;
+        out.summary = format!(
+            "{}: split {} face{} off ({} vertices duplicated); group {}",
+            label(tx.doc(), key),
+            thousands(faces.len()),
+            plural(faces.len()),
+            thousands(r.duplicated),
+            g.name
+        );
+        out.changed.push(key);
+        out.groups = vec![g];
+        Ok(out)
+    }
+}
+
+// ---- edit.flip -------------------------------------------------------------------------
+
+/// Parameters of `edit.flip`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FlipParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Faces whose connected parts are flipped; every part when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+}
+
+/// `edit.flip`.
+pub struct Flip;
+
+impl Op for Flip {
+    const ID: &'static str = "edit.flip";
+    type Params = FlipParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Flip normals",
+            category: Category::Edit,
+            summary: "Reverses the facing of every connected part that contains a selected face.",
+            docs: "Faces always agree with their neighbours, so whole connected parts flip: the inside becomes the outside. To flip \
+                   only some faces, `edit.split` them off first.\n\n\
+                   **Use for** rooms and interiors seen from inside, or deliberately inward shells. To make everything face outward, \
+                   use `edit.recalc_normals` instead.",
+            examples: &[OpExample { args: r#"{"target": "bin"}"#, result: "bin (o:5): flipped 1 part (5 faces)" }],
+            aliases: &["flip", "flip normals", "reverse normals", "invert normals", "polyNormal reverse"],
+            complexity: "O(V + F + C) to find parts plus O(c log c) per flipped part",
+            flags: EDIT,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &FlipParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target).map(|_| ())
+    }
+
+    fn apply(tx: &mut Tx, p: &FlipParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let mesh = tx.mesh(key, "/target")?;
+        let faces = faces_or_all(mesh, p.select.as_ref(), "edit.flip")?;
+        let (labels, _) = mesh.face_components();
+        let mut parts: Vec<u32> = faces.iter().map(|&f| labels[f as usize]).collect();
+        parts.sort_unstable();
+        parts.dedup();
+        // First face of each touched part, in face order.
+        let mut firsts: Vec<u32> = Vec::new();
+        for f in mesh.faces() {
+            if let Ok(i) = parts.binary_search(&labels[f as usize]) {
+                if firsts.len() <= i {
+                    firsts.resize(i + 1, u32::MAX);
+                }
+                if firsts[i] == u32::MAX {
+                    firsts[i] = f;
+                }
+            }
+        }
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let mut flipped = 0usize;
+        for f in firsts {
+            flipped += mesh.flip_part(f).map_err(|e| OpError::internal(e.to_string()))?;
+        }
+        let mut out = OpOutput::summary(format!(
+            "{}: flipped {} part{} ({} faces)",
+            label(tx.doc(), key),
+            parts.len(),
+            plural(parts.len()),
+            thousands(flipped)
+        ));
+        out.changed.push(key);
+        if flipped > faces.len() {
+            out.warnings.push(Warning {
+                message: format!(
+                    "{} faces outside the selection flipped too: faces cannot face against their neighbours (edit.split the selection first to flip only it)",
+                    thousands(flipped - faces.len())
+                ),
+                fix: None,
+            });
+        }
+        Ok(out)
+    }
+}
+
+// ---- edit.subdivide -----------------------------------------------------------------------
+
+/// Parameters of `edit.subdivide`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SubdivideParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Faces to subdivide; every face when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+    /// Times to split (1 to 6); each level makes about 4 times as many faces.
+    #[serde(default = "one_level")]
+    pub levels: u32,
+}
+
+fn one_level() -> u32 {
+    1
+}
+
+impl Default for SubdivideParams {
+    fn default() -> Self {
+        SubdivideParams { target: String::new(), select: None, levels: 1 }
+    }
+}
+
+/// `edit.subdivide`.
+pub struct Subdivide;
+
+impl Op for Subdivide {
+    const ID: &'static str = "edit.subdivide";
+    type Params = SubdivideParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Subdivide",
+            category: Category::Edit,
+            summary: "Splits faces into quads at edge and face middles without moving anything (flat subdivision).",
+            docs: "Every selected face is split into one quad per corner (quads into 4, triangles into 3, n-gons into n) through new \
+                   vertices at the middle of each edge and face; the shape stays exactly the same. Unselected neighbours gain the \
+                   new edge vertices so no cracks open. New faces keep their groups and are also `<label>.faces`; sharp edges and \
+                   seams stay on both halves.\n\n\
+                   **Use for** more resolution before deforming (`deform.*`) or displacing, and for quad-only meshes from triangles. \
+                   For smooth rounding use `subd.catmull_clark`.",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "select": {"faces": {"group": "front"}}}"#,
+                result: "crate (o:1): subdivided 1 face into 4 (1 level); 4 neighbours gained corners; group subdivide_1.faces",
+            }],
+            aliases: &["subdivide", "subdivide simple", "polySmooth linear", "tessellate", "split faces"],
+            complexity: "O(4^levels x c log c) for the c corners of the selected faces, plus the selector",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &SubdivideParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        crate::common::check_count("/levels", p.levels, 1, p3d_geo::edit::MAX_SUBDIVIDE_LEVELS)
+    }
+
+    fn apply(tx: &mut Tx, p: &SubdivideParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let faces = faces_or_all(tx.mesh(key, "/target")?, p.select.as_ref(), "edit.subdivide")?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "subdivide");
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::subdivide(mesh, &faces, p.levels).map_err(kernel_error)?;
+        let g = face_group(mesh, key, format!("{glabel}.faces"), &r.faces)?;
+        let neighbours = match r.neighbours {
+            0 => String::new(),
+            1 => "; 1 neighbour gained corners".into(),
+            n => format!("; {} neighbours gained corners", thousands(n)),
+        };
+        let mut out = OpOutput::summary(format!(
+            "{}: subdivided {} face{} into {} ({} level{}){neighbours}; group {}",
+            label(tx.doc(), key),
+            thousands(faces.len()),
+            plural(faces.len()),
+            thousands(r.faces.len()),
+            p.levels,
+            plural(p.levels as usize),
+            g.name
+        ));
+        out.changed.push(key);
+        out.groups = vec![g];
+        Ok(out)
+    }
+}
+
 // ---- edit.fill -------------------------------------------------------------------------
 
 /// Parameters of `edit.fill`.

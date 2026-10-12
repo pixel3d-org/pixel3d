@@ -689,6 +689,32 @@ export type EditTrisToQuadsParams = {
   target: string;
 };
 
+/** `edit.split`: Detaches faces from the rest of the mesh by duplicating the vertices along the border, leaving them in place. */
+export type EditSplitParams = {
+  /** Faces to detach from the rest of the mesh. */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.flip`: Reverses the facing of every connected part that contains a selected face. */
+export type EditFlipParams = {
+  /** Faces whose connected parts are flipped; every part when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.subdivide`: Splits faces into quads at edge and face middles without moving anything (flat subdivision). */
+export type EditSubdivideParams = {
+  /** Times to split (1 to 6); each level makes about 4 times as many faces. */
+  levels?: number;
+  /** Faces to subdivide; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
 /** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
 export type EditFillParams = {
   /**
@@ -769,6 +795,9 @@ export interface OpParams {
   "edit.poke": EditPokeParams;
   "edit.triangulate": EditTriangulateParams;
   "edit.tris_to_quads": EditTrisToQuadsParams;
+  "edit.split": EditSplitParams;
+  "edit.flip": EditFlipParams;
+  "edit.subdivide": EditSubdivideParams;
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;

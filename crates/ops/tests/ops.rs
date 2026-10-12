@@ -474,6 +474,25 @@ fn extrude_and_inset_make_labelled_groups() {
 }
 
 #[test]
+fn split_flip_and_subdivide() {
+    let mut tx = edit_fixture();
+    // Split the lid of the crate off and make it its own object.
+    ok(&mut tx, "edit.split", json!({ "target": "crate", "select": { "faces": { "group": "top" } } }));
+    let s = ok(&mut tx, "scene.separate", json!({ "target": "crate", "by": "groups", "groups": ["split_1.faces"] }));
+    assert!(s.contains("split_1.faces"), "{s}");
+    assert_eq!(topo(&tx, "crate").boundary_loops, 1);
+    // Flipping part of a part flips all of it, with a warning.
+    let a = run(&mut tx, "edit.flip", json!({ "target": "bin", "select": { "faces": { "group": "bottom" } } })).unwrap();
+    assert_eq!(a.output.summary, "bin (o:5): flipped 1 part (5 faces)");
+    assert!(a.output.warnings[0].message.contains("4 faces outside the selection"), "{:?}", a.output.warnings);
+    let a = run(&mut tx, "edit.subdivide", json!({ "target": "post", "levels": 2 })).unwrap();
+    assert!(a.output.summary.contains("into 512 (2 levels)"), "{}", a.output.summary);
+    assert!(topo(&tx, "post").is_watertight());
+    let e = err(&mut tx, "edit.subdivide", json!({ "target": "post", "levels": 7 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/levels")));
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

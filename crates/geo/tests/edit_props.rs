@@ -1,7 +1,9 @@
 //! Property tests for the edit kernels on random meshes: the result is
 //! always a valid mesh, and a refused edit changes nothing.
 
-use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, QuadSpec, extrude, inset, poke, triangulate, tris_to_quads};
+use p3d_geo::edit::{
+    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, QuadSpec, extrude, inset, poke, split, subdivide, triangulate, tris_to_quads,
+};
 use p3d_mesh::Mesh;
 use p3d_testdata::strategy;
 use proptest::prelude::*;
@@ -81,5 +83,36 @@ proptest! {
         let quads = tris_to_quads(&mut t, &all, &QuadSpec::default()).map_err(|e| TestCaseError::fail(e.to_string()))?;
         prop_assert_eq!(t.validate(), Ok(()));
         prop_assert_eq!(t.face_count(), m.triangle_count() - quads.len());
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+
+    #[test]
+    fn split_and_subdivide(m in strategy::mesh(), picks in prop::collection::vec(any::<u32>(), 1..12)) {
+        let faces = pick_faces(&m, &picks);
+        prop_assume!(!faces.is_empty());
+        let mut n = m.clone();
+        let r = split(&mut n, &faces).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(n.validate(), Ok(()));
+        prop_assert_eq!(n.face_count(), m.face_count());
+        // The unselected faces around a vertex can fall apart too (then the patch splits it).
+        prop_assert!(n.vert_count() >= m.vert_count() + r.duplicated);
+        // No selected face shares a vertex with an unselected one any more.
+        let sel: std::collections::BTreeSet<u32> = r.faces.iter().copied().collect();
+        for &f in &r.faces {
+            for v in n.face_verts(f) {
+                prop_assert!(n.vert_faces(v).all(|g| sel.contains(&g)));
+            }
+        }
+
+        let mut s = m.clone();
+        let r = subdivide(&mut s, &faces, 1).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(s.validate(), Ok(()));
+        let corners: usize = faces.iter().map(|&f| m.face_len(f)).sum();
+        prop_assert_eq!(r.faces.len(), corners);
+        let area = |x: &Mesh| x.faces().map(|f| x.face_area(f)).sum::<f32>();
+        prop_assert!((area(&s) - area(&m)).abs() <= 1e-3 * area(&m).max(1e-3), "{} vs {}", area(&s), area(&m));
     }
 }

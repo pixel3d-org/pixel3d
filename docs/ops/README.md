@@ -56,6 +56,9 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`edit.poke`](edit.poke.md) | Splits each face into a fan of triangles around a new center vertex, optionally raised into a pyramid. |
 | [`edit.triangulate`](edit.triangulate.md) | Splits quads and n-gons into triangles with the diagonals that keep angles largest (beauty), adding no vertices. |
 | [`edit.tris_to_quads`](edit.tris_to_quads.md) | Joins pairs of adjacent triangles into quads, best-shaped pairs first, where the result is flat and square enough. |
+| [`edit.split`](edit.split.md) | Detaches faces from the rest of the mesh by duplicating the vertices along the border, leaving them in place. |
+| [`edit.flip`](edit.flip.md) | Reverses the facing of every connected part that contains a selected face. |
+| [`edit.subdivide`](edit.subdivide.md) | Splits faces into quads at edge and face middles without moving anything (flat subdivision). |
 | [`edit.fill`](edit.fill.md) | Closes holes (loops of boundary edges) with one face each. |
 | [`edit.recalc_normals`](edit.recalc_normals.md) | Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way. |
 | [`edit.delete_elements`](edit.delete_elements.md) | Deletes the selected faces (or every face using the selected edges or vertices) and anything left unused. |
