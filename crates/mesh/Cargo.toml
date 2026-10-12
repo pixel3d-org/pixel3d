@@ -9,3 +9,8 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+glam = { workspace = true }
+rustc-hash = { workspace = true }
+thiserror = { workspace = true }
