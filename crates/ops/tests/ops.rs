@@ -545,6 +545,28 @@ fn merge_weld_and_dissolve() {
 }
 
 #[test]
+fn cut_mirror_thicken_and_smooth() {
+    let mut tx = edit_fixture();
+    let e = err(&mut tx, "edit.plane_cut", json!({ "target": "crate", "normal": [0, 0, 0] }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/normal")));
+    let s = ok(&mut tx, "edit.plane_cut", json!({ "target": "crate", "point": [0, 5, 0] }));
+    assert!(s.contains("misses the mesh"), "{s}");
+    // Shift the crate's mesh right, then symmetrize: it is centered again.
+    ok(&mut tx, "edit.plane_cut", json!({ "target": "crate", "point": ["10cm", 0, 0], "normal": [1, 0, 0], "keep": "below", "fill": true }));
+    ok(&mut tx, "edit.symmetrize", json!({ "target": "crate" }));
+    let key = tx.doc().resolve("crate").unwrap();
+    let (lo, hi) = tx.doc().object_mesh(key).unwrap().bounds().unwrap();
+    assert!((lo.x + 0.1).abs() < 1e-5 && (hi.x - 0.1).abs() < 1e-5, "{lo} {hi}");
+    assert!(topo(&tx, "crate").is_watertight());
+    let e = err(&mut tx, "edit.thicken", json!({ "target": "crate", "select": { "faces": { "group": "top" } } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/select")));
+    let s = ok(&mut tx, "edit.smooth", json!({ "target": "panels" }));
+    assert!(s.contains("smoothed 0 vertices"), "{s}");
+    let a = run(&mut tx, "edit.smooth", json!({ "target": "panels" })).unwrap();
+    assert_eq!(a.output.warnings.len(), 1, "all border vertices are pinned");
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

@@ -64,6 +64,10 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`edit.merge`](edit.merge.md) | Merges selected vertices into one point (center) or each connected run into its own point (collapse). |
 | [`edit.merge_by_distance`](edit.merge_by_distance.md) | Welds vertices that lie closer together than a distance, closing seams between joined or mirrored parts. |
 | [`edit.dissolve`](edit.dissolve.md) | Removes vertices, edges or faces while keeping the surface closed, merging the faces around them into polygons. |
+| [`edit.plane_cut`](edit.plane_cut.md) | Cuts the mesh along a plane, optionally removing one side and capping the opening. |
+| [`edit.symmetrize`](edit.symmetrize.md) | Makes a mesh mirror-symmetric: keeps one half and replaces the other with its mirror image, welded at the seam. |
+| [`edit.thicken`](edit.thicken.md) | Gives surfaces a wall thickness: an offset back side joined to the front along open borders. |
+| [`edit.smooth`](edit.smooth.md) | Smooths vertex positions without shrinking the shape (Taubin smoothing). |
 | [`edit.fill`](edit.fill.md) | Closes holes (loops of boundary edges) with one face each. |
 | [`edit.recalc_normals`](edit.recalc_normals.md) | Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way. |
 | [`edit.delete_elements`](edit.delete_elements.md) | Deletes the selected faces (or every face using the selected edges or vertices) and anything left unused. |

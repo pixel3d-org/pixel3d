@@ -4,6 +4,9 @@
 /** Angle: degrees as a number, or a string with a unit (deg, rad), e.g. "45deg". */
 export type Angle = number | string;
 
+/** An axis of object space. */
+export type AxisParam = "x" | "y" | "z";
+
 /** Bevel of a box's edges. */
 export type BevelParams = {
   /**
@@ -144,6 +147,9 @@ export type Filter = {
 /** How several faces are inset. */
 export type InsetModeParam = "region" | "individual";
 
+/** Which side of the plane `edit.plane_cut` keeps. */
+export type KeepParam = "both" | "above" | "below";
+
 /** Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. "30cm". */
 export type Length = number | string;
 
@@ -209,6 +215,14 @@ export type Selector = {
 
 /** How to split a mesh. */
 export type SeparateBy = "loose_parts" | "material" | "groups";
+
+/** Advanced settings of `edit.smooth`. */
+export type SmoothAdvanced = {
+  /** Keep open-border vertices in place. */
+  pin_boundary?: boolean;
+  /** Keep vertices on sharp edges in place. */
+  pin_sharp?: boolean;
+};
 
 /** Advanced settings of `edit.tris_to_quads`. */
 export type TrisToQuadsAdvanced = {
@@ -784,6 +798,58 @@ export type EditDissolveParams = {
   target: string;
 };
 
+/** `edit.plane_cut`: Cuts the mesh along a plane, optionally removing one side and capping the opening. */
+export type EditPlaneCutParams = {
+  /** Close the holes the cut leaves on the plane (when one side is removed). */
+  fill?: boolean;
+  /** `both` (default), `above` (the side the normal points to) or `below`. */
+  keep?: KeepParam;
+  /** Plane normal in object space; [0, 1, 0] cuts horizontally. */
+  normal?: [number, number, number];
+  /** A point on the plane, in object space. */
+  point?: [Length, Length, Length];
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.symmetrize`: Makes a mesh mirror-symmetric: keeps one half and replaces the other with its mirror image, welded at the seam. */
+export type EditSymmetrizeParams = {
+  /** Mirror across the plane through the origin normal to this axis. */
+  axis?: AxisParam;
+  /** Keep the positive half (default) and mirror it onto the negative one; false does the opposite. */
+  keep_positive?: boolean;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Vertices this close to the plane weld into the seam. */
+  weld?: Length;
+};
+
+/** `edit.thicken`: Gives surfaces a wall thickness: an offset back side joined to the front along open borders. */
+export type EditThickenParams = {
+  /** Where the wall goes: -1 behind the surface (default), 0 centered, 1 in front. */
+  offset?: number;
+  /** Whole surfaces to thicken; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Wall thickness. */
+  thickness?: Length;
+};
+
+/** `edit.smooth`: Smooths vertex positions without shrinking the shape (Taubin smoothing). */
+export type EditSmoothParams = {
+  /** Rarely needed settings. */
+  advanced?: SmoothAdvanced;
+  /** Strength per round, 0 to 1. */
+  factor?: number;
+  /** Rounds of smoothing (1 to 1000). */
+  iterations?: number;
+  /** Vertices to smooth (edges and faces select their vertices); all when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
 /** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
 export type EditFillParams = {
   /**
@@ -872,6 +938,10 @@ export interface OpParams {
   "edit.merge": EditMergeParams;
   "edit.merge_by_distance": EditMergeByDistanceParams;
   "edit.dissolve": EditDissolveParams;
+  "edit.plane_cut": EditPlaneCutParams;
+  "edit.symmetrize": EditSymmetrizeParams;
+  "edit.thicken": EditThickenParams;
+  "edit.smooth": EditSmoothParams;
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;

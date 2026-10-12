@@ -1,11 +1,11 @@
 //! Edit workloads shared by the `edit` and `scale` benches.
 
 use p3d_geo::edit::{
-    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, QuadSpec, dissolve_limited, dissolve_verts, extrude, inset, loop_cut, merge_by_distance, poke,
-    split, subdivide, triangulate, tris_to_quads,
+    Axis, ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, Keep, PlaneCutSpec, QuadSpec, SmoothSpec, ThickenSpec, dissolve_limited, dissolve_verts,
+    extrude, inset, loop_cut, merge_by_distance, plane_cut, poke, smooth, split, subdivide, symmetrize, thicken, triangulate, tris_to_quads,
 };
 use p3d_mesh::Mesh;
-use p3d_testdata::grid;
+use p3d_testdata::{grid, sphere, terrain};
 
 /// Workload names with their mesh and selected faces (edges for loop cuts), for a grid of about `tris` triangles.
 pub fn workloads(tris: usize) -> Vec<(&'static str, Mesh, Vec<u32>)> {
@@ -31,6 +31,10 @@ pub fn workloads(tris: usize) -> Vec<(&'static str, Mesh, Vec<u32>)> {
         ("weld_checkerboard_split", split_checkerboard(tris), Vec::new()),
         ("dissolve_limited_all", grid(tris), grid(tris).faces().collect()),
         ("dissolve_inner_verts", grid(tris), inner_verts(tris)),
+        ("plane_cut_sphere", sphere(tris), Vec::new()),
+        ("symmetrize_sphere", sphere(tris), Vec::new()),
+        ("thicken_grid", grid(tris), grid(tris).faces().collect()),
+        ("smooth_terrain", terrain(tris, 3), terrain(tris, 3).verts().collect()),
     ]
 }
 
@@ -53,7 +57,14 @@ pub fn run(name: &str, mut m: Mesh, faces: &[u32]) -> usize {
         "loop_cut_rows" => loop_cut(&mut m, faces, 1, 0.0).map_or(0, |r| r.faces.len()),
         "weld_checkerboard_split" => merge_by_distance(&mut m, None, 1e-5).map_or(0, |r| r.merged),
         "dissolve_limited_all" => dissolve_limited(&mut m, faces, 5.0).map_or(0, |r| r.removed_verts),
-        _ => dissolve_verts(&mut m, faces).map_or(0, |r| r.removed_verts),
+        "dissolve_inner_verts" => dissolve_verts(&mut m, faces).map_or(0, |r| r.removed_verts),
+        "plane_cut_sphere" => {
+            let spec = PlaneCutSpec { point: glam::Vec3::new(0.0, 0.1, 0.0), normal: glam::Vec3::new(0.3, 1.0, 0.2), keep: Keep::Above, fill: true };
+            plane_cut(&mut m, &spec).map_or(0, |r| r.faces_cut)
+        }
+        "symmetrize_sphere" => symmetrize(&mut m, Axis::X, true, 1e-5).map_or(0, |r| r.mirrored.len()),
+        "thicken_grid" => thicken(&mut m, faces, &ThickenSpec::default()).map_or(0, |r| r.inner.len()),
+        _ => smooth(&mut m, faces, &SmoothSpec { iterations: 4, ..SmoothSpec::default() }).unwrap_or(0),
     }
 }
 

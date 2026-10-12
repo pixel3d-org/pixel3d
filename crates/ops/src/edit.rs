@@ -1,6 +1,9 @@
 //! `edit.*`: mesh edits addressed by selectors and groups.
 
-use p3d_geo::edit::{ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, MergeMode, QuadSpec, extrude, inset};
+use p3d_geo::edit::{
+    Axis, ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, Keep, KernelError, MergeMode, PlaneCutSpec, QuadSpec, SmoothSpec, ThickenSpec, extrude,
+    inset,
+};
 use p3d_mesh::{ElementKind, Mesh};
 use p3d_query::{Filter, Selector, select as evaluate};
 use p3d_scene::{Document, ObjectKey};
@@ -1374,6 +1377,433 @@ impl Op for Dissolve {
                 message: format!("{} selected element(s) were left alone (on the boundary, or a merge would need a hole)", r.skipped),
                 fix: None,
             });
+        }
+        Ok(out)
+    }
+}
+
+// ---- edit.plane_cut -----------------------------------------------------------------------
+
+/// Which side of the plane `edit.plane_cut` keeps.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum KeepParam {
+    /// Both sides: just cut.
+    #[default]
+    Both,
+    /// The side the normal points to.
+    Above,
+    /// The other side.
+    Below,
+}
+
+/// Parameters of `edit.plane_cut`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PlaneCutParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// A point on the plane, in object space.
+    #[serde(default)]
+    pub point: [Length; 3],
+    /// Plane normal in object space; [0, 1, 0] cuts horizontally.
+    #[serde(default = "up")]
+    pub normal: [f32; 3],
+    /// `both` (default), `above` (the side the normal points to) or `below`.
+    #[serde(default)]
+    pub keep: KeepParam,
+    /// Close the holes the cut leaves on the plane (when one side is removed).
+    #[serde(default)]
+    pub fill: bool,
+}
+
+fn up() -> [f32; 3] {
+    [0.0, 1.0, 0.0]
+}
+
+impl Default for PlaneCutParams {
+    fn default() -> Self {
+        PlaneCutParams { target: String::new(), point: [Length(0.0); 3], normal: up(), keep: KeepParam::Both, fill: false }
+    }
+}
+
+/// `edit.plane_cut`.
+pub struct PlaneCut;
+
+impl Op for PlaneCut {
+    const ID: &'static str = "edit.plane_cut";
+    type Params = PlaneCutParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Plane cut",
+            category: Category::Edit,
+            summary: "Cuts the mesh along a plane, optionally removing one side and capping the opening.",
+            docs: "Every face crossing the plane is split along it (new vertices where edges cross; concave faces are triangulated \
+                   first). With `keep: \"above\"` or `\"below\"` the other side is deleted, and `fill` closes the resulting holes \
+                   with flat caps. The cut edges are `<label>.edges`, caps `<label>.cap`.\n\n\
+                   **Use for** cutting a shape in half (then `edit.symmetrize` or mirror), flattening a base so a prop stands, \
+                   adding an edge loop at an exact height, trimming terrain or architecture at a level.",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "point": [0, "40cm", 0], "keep": "below", "fill": true}"#,
+                result: "crate (o:1): cut 4 faces along the plane; removed 1 face; 1 cap; groups plane_cut_1.edges (4), plane_cut_1.cap (1)",
+            }],
+            aliases: &["bisect", "plane cut", "slice", "knife project plane", "polyCut", "cut in half"],
+            complexity: "O(V + F + C) to classify, plus O(c log c) for the corners of cut and removed faces",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &PlaneCutParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        if !(p.normal.iter().all(|x| x.is_finite()) && p.normal.iter().any(|x| *x != 0.0)) {
+            return Err(OpError::invalid("/normal", "normal must be a finite, non-zero vector").with_hint("[0, 1, 0] cuts horizontally"));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &PlaneCutParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "plane_cut");
+        let keep = match p.keep {
+            KeepParam::Both => Keep::Both,
+            KeepParam::Above => Keep::Above,
+            KeepParam::Below => Keep::Below,
+        };
+        let spec = PlaneCutSpec { point: crate::params::vec3(&p.point), normal: glam::Vec3::from(p.normal), keep, fill: p.fill };
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::plane_cut(mesh, &spec).map_err(kernel_error)?;
+        let mut out = OpOutput::default();
+        if r.faces_cut == 0 && r.faces_removed == 0 {
+            out.summary = format!("{}: the plane misses the mesh; nothing changed", label(tx.doc(), key));
+            return Ok(out);
+        }
+        let en =
+            mesh.set_group(&format!("{glabel}.edges"), ElementKind::Edge, r.edges.iter().copied()).map_err(|e| OpError::internal(e.to_string()))?;
+        out.groups.push(GroupInfo { object: key, name: format!("{glabel}.edges"), kind: ElementKind::Edge, count: en as u32 });
+        if !r.caps.is_empty() {
+            out.groups.push(face_group(mesh, key, format!("{glabel}.cap"), &r.caps)?);
+        }
+        let removed = match r.faces_removed {
+            0 => String::new(),
+            n => format!("; removed {} face{}", thousands(n), plural(n)),
+        };
+        let caps = match r.caps.len() {
+            0 => String::new(),
+            n => format!("; {n} cap{}", plural(n)),
+        };
+        let groups: Vec<String> = out.groups.iter().map(|g| format!("{} ({})", g.name, g.count)).collect();
+        out.summary = format!(
+            "{}: cut {} face{} along the plane{removed}{caps}; groups {}",
+            label(tx.doc(), key),
+            thousands(r.faces_cut),
+            plural(r.faces_cut),
+            groups.join(", ")
+        );
+        out.changed.push(key);
+        Ok(out)
+    }
+}
+
+// ---- edit.symmetrize -----------------------------------------------------------------------
+
+/// An axis of object space.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AxisParam {
+    #[default]
+    X,
+    Y,
+    Z,
+}
+
+/// Parameters of `edit.symmetrize`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SymmetrizeParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Mirror across the plane through the origin normal to this axis.
+    #[serde(default)]
+    pub axis: AxisParam,
+    /// Keep the positive half (default) and mirror it onto the negative one; false does the opposite.
+    #[serde(default = "yes")]
+    pub keep_positive: bool,
+    /// Vertices this close to the plane weld into the seam.
+    #[serde(default = "weld_distance")]
+    pub weld: Length,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Default for SymmetrizeParams {
+    fn default() -> Self {
+        SymmetrizeParams { target: String::new(), axis: AxisParam::X, keep_positive: true, weld: weld_distance() }
+    }
+}
+
+/// `edit.symmetrize`.
+pub struct Symmetrize;
+
+impl Op for Symmetrize {
+    const ID: &'static str = "edit.symmetrize";
+    type Params = SymmetrizeParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Symmetrize",
+            category: Category::Edit,
+            summary: "Makes a mesh mirror-symmetric: keeps one half and replaces the other with its mirror image, welded at the seam.",
+            docs: "The mesh is cut at the plane through the object origin normal to `axis`, the kept half (positive by default: +X is \
+                   the right side) is mirrored onto the other side and seam vertices within `weld` are merged. Mirrored faces are \
+                   `<label>.mirrored` and keep their groups.\n\n\
+                   **Use for** characters, vehicles, weapons and props that should be exactly symmetric after editing one side. \
+                   The object origin must lie on the symmetry plane (`scene.set_origin` first if needed).",
+            examples: &[OpExample {
+                args: r#"{"target": "post", "axis": "x"}"#,
+                result: "post (o:3): mirrored the +X half onto -X (16 faces); welded 10 seam vertices; group symmetrize_1.mirrored",
+            }],
+            aliases: &["symmetrize", "mirror mesh", "make symmetric", "polyMirrorFace", "symmetry"],
+            complexity: "O(V + F + C) plus the seam weld, O(n log n) in seam vertices",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &SymmetrizeParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        crate::common::check_length("/weld", p.weld, 1e-9, 1.0)
+    }
+
+    fn apply(tx: &mut Tx, p: &SymmetrizeParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "symmetrize");
+        let axis = match p.axis {
+            AxisParam::X => Axis::X,
+            AxisParam::Y => Axis::Y,
+            AxisParam::Z => Axis::Z,
+        };
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::symmetrize(mesh, axis, p.keep_positive, p.weld.0 as f32).map_err(kernel_error)?;
+        let g = face_group(mesh, key, format!("{glabel}.mirrored"), &r.mirrored)?;
+        let a = ["X", "Y", "Z"][axis as usize];
+        let (from, to) = if p.keep_positive { ("+", "-") } else { ("-", "+") };
+        let mut out = OpOutput::summary(format!(
+            "{}: mirrored the {from}{a} half onto {to}{a} ({} faces); welded {} seam vertices; group {}",
+            label(tx.doc(), key),
+            thousands(r.mirrored.len()),
+            thousands(r.welded),
+            g.name
+        ));
+        out.changed.push(key);
+        out.groups = vec![g];
+        Ok(out)
+    }
+}
+
+// ---- edit.thicken ------------------------------------------------------------------------
+
+/// Parameters of `edit.thicken`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ThickenParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Whole surfaces to thicken; every face when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+    /// Wall thickness.
+    #[serde(default = "default_inset_thickness")]
+    pub thickness: Length,
+    /// Where the wall goes: -1 behind the surface (default), 0 centered, 1 in front.
+    #[serde(default = "minus_one")]
+    pub offset: f32,
+}
+
+fn minus_one() -> f32 {
+    -1.0
+}
+
+impl Default for ThickenParams {
+    fn default() -> Self {
+        ThickenParams { target: String::new(), select: None, thickness: default_inset_thickness(), offset: -1.0 }
+    }
+}
+
+/// `edit.thicken`.
+pub struct Thicken;
+
+impl Op for Thicken {
+    const ID: &'static str = "edit.thicken";
+    type Params = ThickenParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Thicken",
+            category: Category::Edit,
+            summary: "Gives surfaces a wall thickness: an offset back side joined to the front along open borders.",
+            docs: "A reversed copy of the faces is offset along the vertex normals (stretched at creases so every face keeps the full \
+                   thickness) and joined to the original along open borders; closed parts become hollow shells. `offset` -1 keeps \
+                   the surface as the outside. Back faces are `<label>.inner`, border walls `<label>.rim`.\n\n\
+                   **Use for** sheet metal, cloth and paper with visible edges, walls and floors from planes, cups and containers \
+                   from open shells. Typical thickness: 2 to 10 mm for props, 0.1 to 0.3 m for architecture.\n\n\
+                   **Select whole surfaces** (or nothing): walls only grow along the mesh's open borders.",
+            examples: &[OpExample {
+                args: r#"{"target": "bin", "thickness": "1cm"}"#,
+                result: "bin (o:5): thickened 5 faces by 10 mm: +5 inner and 4 rim faces; groups thicken_1.inner, thicken_1.rim",
+            }],
+            aliases: &["solidify", "thicken", "shell", "polyExtrude thickness", "wall thickness"],
+            complexity: "O(c log c) for the c corners of the faces",
+            flags: EDIT.union(OpFlags::CREATES_GROUPS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &ThickenParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        crate::common::check_length("/thickness", p.thickness, 1e-6, p3d_geo::prim::MAX_SIZE)?;
+        if !(p.offset.is_finite() && (-1.0..=1.0).contains(&p.offset)) {
+            return Err(OpError::out_of_range("/offset", format!("offset {} is outside -1 to 1", p.offset)));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &ThickenParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let faces = faces_or_all(tx.mesh(key, "/target")?, p.select.as_ref(), "edit.thicken")?;
+        let glabel = group_label(tx.mesh(key, "/target")?, ctx, "thicken");
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let r = p3d_geo::edit::thicken(mesh, &faces, &ThickenSpec { thickness: p.thickness.0 as f32, offset: p.offset }).map_err(kernel_error)?;
+        let inner = face_group(mesh, key, format!("{glabel}.inner"), &r.inner)?;
+        let rim = face_group(mesh, key, format!("{glabel}.rim"), &r.rim)?;
+        let mut out = OpOutput::summary(format!(
+            "{}: thickened {} face{} by {}: +{} inner and {} rim faces; groups {}, {}",
+            label(tx.doc(), key),
+            thousands(faces.len()),
+            plural(faces.len()),
+            p3d_math::format_length(p.thickness.0),
+            thousands(r.inner.len()),
+            thousands(r.rim.len()),
+            inner.name,
+            rim.name
+        ));
+        out.changed.push(key);
+        out.groups = vec![inner, rim];
+        Ok(out)
+    }
+}
+
+// ---- edit.smooth ----------------------------------------------------------------------------
+
+/// Advanced settings of `edit.smooth`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct SmoothAdvanced {
+    /// Keep open-border vertices in place.
+    pub pin_boundary: bool,
+    /// Keep vertices on sharp edges in place.
+    pub pin_sharp: bool,
+}
+
+impl Default for SmoothAdvanced {
+    fn default() -> Self {
+        SmoothAdvanced { pin_boundary: true, pin_sharp: true }
+    }
+}
+
+/// Parameters of `edit.smooth`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SmoothParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Vertices to smooth (edges and faces select their vertices); all when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<Selector>,
+    /// Rounds of smoothing (1 to 1000).
+    #[serde(default = "ten")]
+    pub iterations: u32,
+    /// Strength per round, 0 to 1.
+    #[serde(default = "half")]
+    pub factor: f32,
+    /// Rarely needed settings.
+    #[serde(default)]
+    pub advanced: SmoothAdvanced,
+}
+
+fn ten() -> u32 {
+    10
+}
+
+fn half() -> f32 {
+    0.5
+}
+
+impl Default for SmoothParams {
+    fn default() -> Self {
+        SmoothParams { target: String::new(), select: None, iterations: 10, factor: 0.5, advanced: SmoothAdvanced::default() }
+    }
+}
+
+/// `edit.smooth`.
+pub struct Smooth;
+
+impl Op for Smooth {
+    const ID: &'static str = "edit.smooth";
+    type Params = SmoothParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Smooth",
+            category: Category::Edit,
+            summary: "Smooths vertex positions without shrinking the shape (Taubin smoothing).",
+            docs: "Each round moves every free vertex toward the average of its neighbours, then back by a slightly larger step, which \
+                   removes bumps and noise but keeps the overall size. Open borders and sharp edges stay pinned unless turned off \
+                   under `advanced`.\n\n\
+                   **Use for** relaxing lumpy organic shapes, after `deform.displace` with too much noise, and evening out edge \
+                   flow before subdivision. **Not for** rounding hard edges (use `edit.bevel` or `subd.catmull_clark`).",
+            examples: &[OpExample { args: r#"{"target": "tiles", "iterations": 5}"#, result: "tiles (o:6): smoothed 9 vertices (5 rounds)" }],
+            aliases: &["smooth vertices", "relax", "laplacian smooth", "polyAverageVertex", "taubin"],
+            complexity: "O(iterations x sum of valences) of the smoothed vertices",
+            flags: EDIT,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &SmoothParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        crate::common::check_count("/iterations", p.iterations, 1, p3d_geo::edit::MAX_SMOOTH_ITERATIONS)?;
+        if !(p.factor.is_finite() && p.factor > 0.0 && p.factor <= 1.0) {
+            return Err(OpError::out_of_range("/factor", format!("factor {} is outside 0 to 1", p.factor)));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &SmoothParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let mesh = tx.mesh(key, "/target")?;
+        let verts = match &p.select {
+            Some(s) => selected_verts(mesh, s)?,
+            None => mesh.verts().collect(),
+        };
+        let spec = SmoothSpec { iterations: p.iterations, factor: p.factor, pin_boundary: p.advanced.pin_boundary, pin_sharp: p.advanced.pin_sharp };
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let moved = p3d_geo::edit::smooth(mesh, &verts, &spec).map_err(kernel_error)?;
+        let mut out = OpOutput::summary(format!(
+            "{}: smoothed {} vert{} ({} round{})",
+            label(tx.doc(), key),
+            thousands(moved),
+            if moved == 1 { "ex" } else { "ices" },
+            p.iterations,
+            plural(p.iterations as usize)
+        ));
+        if moved == 0 {
+            out.warnings.push(Warning { message: "every selected vertex is pinned (border or sharp edge); see advanced settings".into(), fix: None });
+        } else {
+            out.changed.push(key);
         }
         Ok(out)
     }

@@ -2,8 +2,9 @@
 //! always a valid mesh, and a refused edit changes nothing.
 
 use p3d_geo::edit::{
-    ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, KernelError, MergeMode, QuadSpec, bridge, dissolve_edges, dissolve_limited, dissolve_verts,
-    extrude, inset, loop_cut, merge, merge_by_distance, poke, split, subdivide, triangulate, tris_to_quads,
+    Axis, ExtrudeMode, ExtrudeSpec, InsetMode, InsetSpec, Keep, KernelError, MergeMode, PlaneCutSpec, QuadSpec, SmoothSpec, ThickenSpec, bridge,
+    dissolve_edges, dissolve_limited, dissolve_verts, extrude, inset, loop_cut, merge, merge_by_distance, plane_cut, poke, smooth, split, subdivide,
+    symmetrize, thicken, triangulate, tris_to_quads,
 };
 use p3d_mesh::Mesh;
 use p3d_testdata::strategy;
@@ -181,5 +182,44 @@ proptest! {
                 if kind <= 2 { prop_assert_eq!(&n, &m, "{}", e); }
             }
         }
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(96))]
+
+    #[test]
+    fn plane_cuts_symmetrize_thicken_and_smooth(m in strategy::mesh(), nx in -1.0f32..1.0, ny in -1.0f32..1.0, nz in -1.0f32..1.0, keep in 0usize..3, fill in any::<bool>(), axis in 0usize..3) {
+        let normal = glam::Vec3::new(nx, ny, nz);
+        prop_assume!(normal.length() > 0.1);
+        let center = m.bounds().map_or(glam::Vec3::ZERO, |(lo, hi)| (lo + hi) / 2.0);
+        let keep = [Keep::Both, Keep::Above, Keep::Below][keep];
+        let mut c = m.clone();
+        let r = plane_cut(&mut c, &PlaneCutSpec { point: center, normal, keep, fill });
+        prop_assert!(r.is_ok(), "{:?}", r);
+        prop_assert_eq!(c.validate(), Ok(()));
+        if keep != Keep::Both {
+            let n = normal.normalize() * if keep == Keep::Above { 1.0 } else { -1.0 };
+            let size = m.bounds().map_or(1.0, |(lo, hi)| (hi - lo).max_element());
+            prop_assert!(c.verts().all(|v| (c.positions[v as usize] - center).dot(n) >= -1e-4 * size.max(1.0)));
+        }
+
+        let mut s = m.clone();
+        let axis = [Axis::X, Axis::Y, Axis::Z][axis];
+        if symmetrize(&mut s, axis, true, 1e-5).is_ok() {
+            prop_assert_eq!(s.validate(), Ok(()));
+        }
+
+        let mut t = m.clone();
+        let all: Vec<u32> = t.faces().collect();
+        let r = thicken(&mut t, &all, &ThickenSpec { thickness: 0.01, offset: -1.0 });
+        prop_assert!(r.is_ok(), "{:?}", r);
+        prop_assert_eq!(t.validate(), Ok(()));
+        prop_assert!(t.edges().all(|e| !t.is_boundary_edge(e)), "thickened surfaces are closed");
+
+        let mut sm = m.clone();
+        let verts: Vec<u32> = sm.verts().collect();
+        smooth(&mut sm, &verts, &SmoothSpec::default()).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(sm.validate(), Ok(()));
     }
 }
