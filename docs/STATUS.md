@@ -11,7 +11,7 @@ Progress checklist for the roadmap. Tick a box in the commit that completes it; 
 - [x] Reference study: cadcraft and craft-libs cloned outside the repository; craft-libs license confirmed as `MIT OR Apache-2.0` (craft-libs rev `3c9702725d88`), so `craft-ui` can be used directly
 - [x] Workspace skeleton: every crate of the layer table as an empty library with workspace lints, `apps/pixel3d`, `apps/pixel3d-cli`, `xtask`
 - [x] `rust-toolchain.toml` (1.98.1), `rustfmt.toml`, `clippy.toml`, build profiles
-- [ ] `deny.toml` with the license allow list and banned crates
+- [x] `deny.toml` with the license allow list and banned crates
 - [x] `cargo xtask emdash`
 - [x] `cargo xtask layers` (ranks inside layers: ADR 0001)
 - [ ] `cargo xtask ci` and `cargo xtask ci-fast`
