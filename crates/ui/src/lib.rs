@@ -153,7 +153,6 @@ pub struct PixelApp {
     /// macOS: the content extends under the title bar (traffic lights).
     pub integrated_titlebar: bool,
     shown_theme: Option<(egui::Theme, bool)>,
-    fonts_installed: bool,
     pub quit_requested: bool,
     pub frame_ms: f32,
     pub shots: screenshot::Shots,
@@ -176,7 +175,6 @@ impl PixelApp {
             console: Vec::new(),
             integrated_titlebar: false,
             shown_theme: None,
-            fonts_installed: false,
             quit_requested: false,
             frame_ms: 0.0,
             shots: screenshot::Shots::default(),
@@ -528,12 +526,8 @@ impl PixelApp {
 
     // ---- frame ------------------------------------------------------------------------------
 
-    /// Per-frame logic before layout: theme, fonts, shortcuts, dropped files.
+    /// Per-frame logic before layout: theme, shortcuts, screenshots, dropped files.
     pub fn logic(&mut self, ctx: &egui::Context) {
-        if !self.fonts_installed {
-            theme::install_fonts(ctx);
-            self.fonts_installed = true;
-        }
         let shown = self.ui.theme.resolve(ctx.system_theme());
         let follow = self.ui.theme == theme::ThemePref::System;
         theme::set_active(shown);

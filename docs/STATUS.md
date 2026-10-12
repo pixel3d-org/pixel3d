@@ -189,7 +189,7 @@ Acceptance:
 
 ## Phase 8: GUI shell
 
-- [ ] Title bar, toolbar, docking, theme, code-painted icons, status bar
+- [x] Title bar, toolbar, docking, theme, code-painted icons, status bar (`crates/ui`: `chrome.rs` integrated macOS title row and toolbar with craft-ui overflow, `docking.rs` craft-ui dock with a protected viewport, `theme.rs` dark and light tokens of project spec 20.3, `icons.rs` 44 icons painted in code; `apps/pixel3d`, run `cargo run -p pixel3d -- --sample`; `--screenshot <png>` saves the window)
 - [ ] Start page, command line and palette, shortcuts, menus (native on macOS)
 - [ ] Viewport (offscreen render plus composite), camera navigation, grid, view cube
 - [ ] Picking, object and element selection, gizmo
