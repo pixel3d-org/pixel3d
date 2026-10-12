@@ -584,6 +584,13 @@ version = "0.1.0"
 [[package]]
 name = "p3d-analyze"
 version = "0.1.0"
+dependencies = [
+ "criterion",
+ "glam",
+ "p3d-mesh",
+ "p3d-testdata",
+ "serde",
+]
 
 [[package]]
 name = "p3d-anim"
