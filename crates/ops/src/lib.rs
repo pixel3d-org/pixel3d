@@ -7,6 +7,7 @@
 
 pub mod catalog;
 mod common;
+pub mod deform;
 mod dynop;
 pub mod edit;
 mod error;

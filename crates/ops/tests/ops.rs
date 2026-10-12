@@ -622,6 +622,23 @@ fn catmull_clark_subdivides_and_guards_the_budget() {
 }
 
 #[test]
+fn deformers_move_vertices() {
+    let mut tx = edit_fixture();
+    let key = tx.doc().resolve("post").unwrap();
+    let before = tx.doc().object_mesh(key).unwrap().positions.clone();
+    ok(&mut tx, "deform.twist", json!({ "target": "post", "angle": 90 }));
+    ok(&mut tx, "deform.taper", json!({ "target": "post", "factor": 0.5 }));
+    ok(&mut tx, "deform.bend", json!({ "target": "post", "angle": 30, "toward": "z" }));
+    ok(&mut tx, "deform.displace", json!({ "target": "post", "strength": "5mm", "seed": 3 }));
+    assert_ne!(tx.doc().object_mesh(key).unwrap().positions, before);
+    assert!(topo(&tx, "post").is_watertight());
+    let e = err(&mut tx, "deform.bend", json!({ "target": "post", "axis": "x", "toward": "x" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/toward")));
+    let e = err(&mut tx, "deform.displace", json!({ "target": "post", "octaves": 9 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/octaves")));
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

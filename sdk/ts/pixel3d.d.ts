@@ -983,6 +983,60 @@ export type SubdCatmullClarkParams = {
   target: string;
 };
 
+/** `deform.bend`: Curls a shape along an axis onto a circular arc, turning by an angle over its length. */
+export type DeformBendParams = {
+  /** Total turn over the whole length (degrees). */
+  angle?: Angle;
+  /** The axis the shape runs along (it curls from its low end). */
+  axis?: AxisParam;
+  /** Vertices to bend (edges and faces select theirs); all when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** The axis it bends toward (positive side; a negative angle bends the other way). */
+  toward?: AxisParam;
+};
+
+/** `deform.twist`: Twists a shape around an axis, from no turn at its low end to `angle` at its high end. */
+export type DeformTwistParams = {
+  /** Turn at the far end (degrees; the low end stays). */
+  angle?: Angle;
+  /** Axis to twist around (through the object origin). */
+  axis?: AxisParam;
+  /** Vertices to twist (edges and faces select theirs); all when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `deform.taper`: Scales a shape toward its axis progressively, from full size at its low end to `factor` at its high end. */
+export type DeformTaperParams = {
+  /** Axis the taper runs along (scaling toward the axis line through the origin). */
+  axis?: AxisParam;
+  /** Scale at the far end (0 makes a point, 1 changes nothing, 2 doubles). */
+  factor?: number;
+  /** Vertices to taper (edges and faces select theirs); all when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `deform.displace`: Moves vertices along their normals by seeded fractal noise (bumps, rocks, terrain, organic variation). */
+export type DeformDisplaceParams = {
+  /** Noise layers (1 to 8): more adds finer detail. */
+  octaves?: number;
+  /** Size of the bumps. */
+  scale?: Length;
+  /** Noise seed: the same seed gives the same shape. The call's seed when omitted. */
+  seed?: number | null;
+  /** Vertices to displace (edges and faces select theirs); all when omitted. */
+  select?: Selector | null;
+  /** Largest offset along the normals. */
+  strength?: Length;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
 /** `expect.add`: Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. */
 export type ExpectAddParams = {
   /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight. */
@@ -1057,6 +1111,10 @@ export interface OpParams {
   "shade.weighted_normals": ShadeWeightedNormalsParams;
   "shade.crease": ShadeCreaseParams;
   "subd.catmull_clark": SubdCatmullClarkParams;
+  "deform.bend": DeformBendParams;
+  "deform.twist": DeformTwistParams;
+  "deform.taper": DeformTaperParams;
+  "deform.displace": DeformDisplaceParams;
   "expect.add": ExpectAddParams;
   "expect.remove": ExpectRemoveParams;
 }

@@ -105,6 +105,29 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Deformers over every vertex.
+    let mut g = c.benchmark_group("scale_deform_bend");
+    for (t, m) in &spheres {
+        let all: Vec<u32> = m.verts().collect();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &all, |b, all| {
+            b.iter_batched(
+                || m.clone(),
+                |mut x| p3d_geo::deform::bend(&mut x, all, p3d_geo::deform::DeformAxis::Y, p3d_geo::deform::DeformAxis::X, 1.0),
+                BatchSize::LargeInput,
+            )
+        });
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_deform_displace");
+    for (t, m) in &spheres {
+        let all: Vec<u32> = m.verts().collect();
+        let spec = p3d_geo::deform::DisplaceSpec { strength: 0.01, scale: 0.1, seed: 1, octaves: 3 };
+        g.bench_with_input(BenchmarkId::from_parameter(t), &all, |b, all| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::deform::displace(&mut x, all, &spec), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
     // One level of Catmull-Clark subdivision.
     let mut g = c.benchmark_group("scale_subd_catmull_clark");
     for (t, m) in &spheres {

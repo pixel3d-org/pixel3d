@@ -91,6 +91,15 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 |---|---|
 | [`subd.catmull_clark`](subd.catmull_clark.md) | Smooths the whole mesh by Catmull-Clark subdivision, keeping creased edges sharp. |
 
+## deform
+
+| Op | Summary |
+|---|---|
+| [`deform.bend`](deform.bend.md) | Curls a shape along an axis onto a circular arc, turning by an angle over its length. |
+| [`deform.twist`](deform.twist.md) | Twists a shape around an axis, from no turn at its low end to `angle` at its high end. |
+| [`deform.taper`](deform.taper.md) | Scales a shape toward its axis progressively, from full size at its low end to `factor` at its high end. |
+| [`deform.displace`](deform.displace.md) | Moves vertices along their normals by seeded fractal noise (bumps, rocks, terrain, organic variation). |
+
 ## expect
 
 | Op | Summary |

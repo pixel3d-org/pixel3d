@@ -264,3 +264,20 @@ proptest! {
         prop_assert_eq!(euler(&s), euler(&m), "topology type is kept");
     }
 }
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    #[test]
+    fn deformers_keep_topology(m in strategy::mesh(), angle in -3.0f32..3.0, factor in 0.0f32..2.0, seed in any::<u64>()) {
+        use p3d_geo::deform::{DeformAxis, DisplaceSpec, bend, displace, taper, twist};
+        let all: Vec<u32> = m.verts().collect();
+        let mut n = m.clone();
+        twist(&mut n, &all, DeformAxis::Y, angle).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        taper(&mut n, &all, DeformAxis::X, factor).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        bend(&mut n, &all, DeformAxis::Z, DeformAxis::Y, angle).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        displace(&mut n, &all, &DisplaceSpec { strength: 0.01, scale: 0.1, seed, octaves: 2 }).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        prop_assert_eq!(n.validate(), Ok(()));
+        prop_assert_eq!((n.vert_count(), n.edge_count(), n.face_count()), (m.vert_count(), m.edge_count(), m.face_count()));
+    }
+}
