@@ -13,6 +13,14 @@ pub enum EditError {
     NotBoundary(u32),
     #[error("a boundary loop of {edges} edges cannot become a face")]
     LoopTooShort { edges: usize },
+    #[error("new face {face} is malformed: {reason}")]
+    BadFace { face: usize, reason: String },
+    #[error("vertex {0} does not exist or the new vertex position is not finite")]
+    BadVertex(u32),
+    #[error("edge {a}-{b} is already used in this direction (the result would be non-manifold or inconsistently wound)")]
+    EdgeInUse { a: u32, b: u32 },
+    #[error("the mesh changed after the patch was made")]
+    StalePatch,
 }
 
 /// What [`Mesh::delete_faces`] removed.

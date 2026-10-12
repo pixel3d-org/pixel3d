@@ -3,4 +3,7 @@
 //! Layer L2 (algorithms). See `docs/architecture.md`.
 
 pub mod bvh;
+pub mod edit;
 pub mod prim;
+pub mod shade;
+pub mod subd;

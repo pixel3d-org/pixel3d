@@ -3,11 +3,17 @@
 
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use glam::{Affine3A, DVec3, Vec3};
 use p3d_geo::bvh::TriBvh;
-use p3d_geo::prim::{BoxSpec, Origin, PlaneSpec, QuadSphereSpec, cuboid, plane, quad_sphere};
+use p3d_geo::prim::{
+    BoxSpec, CapKind, CapsuleSpec, ConeSpec, IcoSphereSpec, Origin, PlaneSpec, QuadSphereSpec, TorusSpec, TubeSpec, UvSphereSpec, capsule, cone,
+    cuboid, ico_sphere, plane, quad_sphere, torus, tube, uv_sphere,
+};
 use p3d_testdata::{scale_sizes, sphere};
+
+#[path = "workloads/edit.rs"]
+mod workloads;
 
 fn scale(c: &mut Criterion) {
     let sizes = scale_sizes(4_000, 100_000);
@@ -34,6 +40,91 @@ fn scale(c: &mut Criterion) {
         g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| cuboid(black_box(spec), Origin::Center)));
     }
     g.finish();
+    let mut g = c.benchmark_group("scale_prim_uv_sphere");
+    for &tris in &sizes {
+        let s = ((tris as f64).sqrt().round()) as u32;
+        let spec = UvSphereSpec { radius: 0.5, segments: s, rings: (s / 2).max(2) };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| uv_sphere(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    // Levels give exactly 4x steps; the parameter is the real triangle count.
+    let mut g = c.benchmark_group("scale_prim_ico_sphere");
+    let level = ((sizes[0] as f64 / 20.0).log(4.0).round().max(1.0)) as u32;
+    for l in level..level + 3 {
+        let spec = IcoSphereSpec { radius: 0.5, subdivisions: l };
+        g.bench_with_input(BenchmarkId::from_parameter(20 * 4usize.pow(l)), &spec, |b, spec| b.iter(|| ico_sphere(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_prim_cone");
+    for &tris in &sizes {
+        // Side 2 s x s / 2 and caps about s^2 / 8 triangles: s = sqrt(tris)
+        // keeps both proportional to tris.
+        let s = (((tris as f64).sqrt() / 4.0).round().max(1.0) as u32) * 4;
+        let spec = ConeSpec { radius_bottom: 0.5, radius_top: 0.2, height: 1.0, segments: s, height_segments: s / 2, cap: CapKind::QuadGrid };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| cone(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_prim_torus");
+    for &tris in &sizes {
+        let t = ((tris as f64 / 2.0).sqrt().round()) as u32;
+        let spec = TorusSpec { major_radius: 0.5, minor_radius: 0.1, segments: t, sides: t };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| torus(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_prim_tube");
+    for &tris in &sizes {
+        // 4 s (rows + 1) triangles with rows = s / 4.
+        let s = ((tris as f64).sqrt().round()) as u32;
+        let spec = TubeSpec { outer_radius: 0.5, inner_radius: 0.4, height: 1.0, segments: s, height_segments: (s / 4).max(1) };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| tube(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_prim_capsule");
+    for &tris in &sizes {
+        // Ends about s^2 / 4 triangles plus 2 s rows on the side, rows = s / 8.
+        let s = (((tris as f64 * 2.0).sqrt() / 8.0).round().max(1.0) as u32) * 8;
+        let spec = CapsuleSpec { radius: 0.2, height: 1.0, segments: s, height_segments: s / 8 };
+        g.bench_with_input(BenchmarkId::from_parameter(tris), &spec, |b, spec| b.iter(|| capsule(black_box(spec), Origin::Center)));
+    }
+    g.finish();
+
+    // Shading over whole meshes.
+    let spheres: Vec<(usize, p3d_mesh::Mesh)> = sizes.iter().map(|&t| (t, sphere(t))).collect();
+    let mut g = c.benchmark_group("scale_shade_sharp_by_angle");
+    for (t, m) in &spheres {
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::shade::sharp_by_angle(&mut x, 30.0, true), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_shade_weighted_normals");
+    for (t, m) in &spheres {
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::shade::weighted_normals(&mut x, p3d_geo::shade::Weighting::Area), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
+    // One level of Catmull-Clark subdivision.
+    let mut g = c.benchmark_group("scale_subd_catmull_clark");
+    for (t, m) in &spheres {
+        let spec = p3d_geo::subd::SubdSpec::default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| b.iter(|| p3d_geo::subd::catmull_clark(black_box(m), &spec)));
+    }
+    g.finish();
+
+    // Edit kernels: the selection grows with the mesh.
+    let edit_sets: Vec<(usize, Vec<_>)> = sizes.iter().map(|&t| (t, workloads::workloads(t))).collect();
+    for i in 0..edit_sets[0].1.len() {
+        let mut g = c.benchmark_group(format!("scale_edit_{}", edit_sets[0].1[i].0));
+        for (t, sets) in &edit_sets {
+            let (name, m, faces) = &sets[i];
+            g.bench_with_input(BenchmarkId::from_parameter(t), &(m, faces), |b, (m, faces)| {
+                b.iter_batched(|| (*m).clone(), |x| workloads::run(name, black_box(x), faces), BatchSize::LargeInput)
+            });
+        }
+        g.finish();
+    }
 
     // Tree queries start at 16k triangles: below that the whole tree sits in
     // L1 and L2 cache and the first step measures the cache, not the algorithm.

@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{edit, expect, prim, scene, select};
+use crate::{edit, expect, prim, scene, select, shade, subd};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -50,16 +50,49 @@ impl Registry {
             Arc::new(Typed::<scene::Separate>::new()),
             Arc::new(Typed::<prim::BoxOp>::new()),
             Arc::new(Typed::<prim::Cylinder>::new()),
+            Arc::new(Typed::<prim::Cone>::new()),
             Arc::new(Typed::<prim::QuadSphere>::new()),
+            Arc::new(Typed::<prim::UvSphere>::new()),
+            Arc::new(Typed::<prim::IcoSphere>::new()),
+            Arc::new(Typed::<prim::Torus>::new()),
+            Arc::new(Typed::<prim::Tube>::new()),
+            Arc::new(Typed::<prim::Capsule>::new()),
+            Arc::new(Typed::<prim::Wedge>::new()),
             Arc::new(Typed::<prim::Plane>::new()),
             Arc::new(Typed::<select::Save>::new()),
             Arc::new(Typed::<select::Grow>::new()),
             Arc::new(Typed::<select::Shrink>::new()),
             Arc::new(Typed::<select::GroupDelete>::new()),
             Arc::new(Typed::<select::GroupRename>::new()),
+            Arc::new(Typed::<edit::Extrude>::new()),
+            Arc::new(Typed::<edit::Inset>::new()),
+            Arc::new(Typed::<edit::Poke>::new()),
+            Arc::new(Typed::<edit::Triangulate>::new()),
+            Arc::new(Typed::<edit::TrisToQuads>::new()),
+            Arc::new(Typed::<edit::Split>::new()),
+            Arc::new(Typed::<edit::Flip>::new()),
+            Arc::new(Typed::<edit::Subdivide>::new()),
+            Arc::new(Typed::<edit::LoopCut>::new()),
+            Arc::new(Typed::<edit::Bridge>::new()),
+            Arc::new(Typed::<edit::Merge>::new()),
+            Arc::new(Typed::<edit::MergeByDistance>::new()),
+            Arc::new(Typed::<edit::Dissolve>::new()),
+            Arc::new(Typed::<edit::PlaneCut>::new()),
+            Arc::new(Typed::<edit::Symmetrize>::new()),
+            Arc::new(Typed::<edit::Thicken>::new()),
+            Arc::new(Typed::<edit::Smooth>::new()),
+            Arc::new(Typed::<edit::Bevel>::new()),
             Arc::new(Typed::<edit::Fill>::new()),
             Arc::new(Typed::<edit::RecalcNormals>::new()),
             Arc::new(Typed::<edit::DeleteElements>::new()),
+            Arc::new(Typed::<shade::SmoothByAngle>::new()),
+            Arc::new(Typed::<shade::MarkSharp>::new()),
+            Arc::new(Typed::<shade::ClearSharp>::new()),
+            Arc::new(Typed::<shade::SetFlat>::new()),
+            Arc::new(Typed::<shade::SetSmooth>::new()),
+            Arc::new(Typed::<shade::WeightedNormals>::new()),
+            Arc::new(Typed::<shade::Crease>::new()),
+            Arc::new(Typed::<subd::CatmullClark>::new()),
             Arc::new(Typed::<expect::Add>::new()),
             Arc::new(Typed::<expect::Remove>::new()),
         ];

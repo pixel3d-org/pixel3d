@@ -4,6 +4,15 @@
 /** Angle: degrees as a number, or a string with a unit (deg, rad), e.g. "45deg". */
 export type Angle = number | string;
 
+/** An axis of object space. */
+export type AxisParam = "x" | "y" | "z";
+
+/** Advanced settings of `edit.bevel`. */
+export type BevelAdvanced = {
+  /** Shrink the width where it would overlap neighbouring edges instead of failing. */
+  clamp_overlap?: boolean;
+};
+
 /** Bevel of a box's edges. */
 export type BevelParams = {
   /**
@@ -30,11 +39,26 @@ export type BoxFilter = {
 /** How cylinder caps are filled. */
 export type CapParam = "quad_grid" | "ngon" | "fan" | "none";
 
+/** Advanced capsule settings. */
+export type CapsuleAdvanced = {
+  /** Segments along the straight part. */
+  height_segments?: number;
+};
+
+/** Advanced cone settings. */
+export type ConeAdvanced = {
+  /** Segments along the height. */
+  height_segments?: number;
+};
+
 /** Advanced cylinder settings. */
 export type CylinderAdvanced = {
   /** Segments along the height. */
   height_segments?: number;
 };
+
+/** What `edit.dissolve` removes. */
+export type DissolveModeParam = "auto" | "limited";
 
 /** Copy or instance. */
 export type DuplicateMode = "copy" | "instance";
@@ -96,6 +120,9 @@ export type ExpectArgs = {
   };
 };
 
+/** How several faces are extruded. */
+export type ExtrudeModeParam = "region" | "individual";
+
 /** Conditions on elements; all given conditions must hold. */
 export type Filter = {
   /** On the mesh boundary (true) or not (false). Faces: having a boundary edge. */
@@ -123,6 +150,12 @@ export type Filter = {
   sharper_than_deg?: number | null;
 };
 
+/** How several faces are inset. */
+export type InsetModeParam = "region" | "individual";
+
+/** Which side of the plane `edit.plane_cut` keeps. */
+export type KeepParam = "both" | "above" | "below";
+
 /** Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. "30cm". */
 export type Length = number | string;
 
@@ -131,6 +164,9 @@ export type LengthRange = {
   max?: Length | null;
   min?: Length | null;
 };
+
+/** How `edit.merge` groups vertices. */
+export type MergeModeParam = "center" | "collapse";
 
 /** A mirror axis. */
 export type MirrorAxis = "x" | "y" | "z";
@@ -185,6 +221,37 @@ export type Selector = {
 
 /** How to split a mesh. */
 export type SeparateBy = "loose_parts" | "material" | "groups";
+
+/** Advanced settings of `edit.smooth`. */
+export type SmoothAdvanced = {
+  /** Keep open-border vertices in place. */
+  pin_boundary?: boolean;
+  /** Keep vertices on sharp edges in place. */
+  pin_sharp?: boolean;
+};
+
+/** Advanced settings of `subd.catmull_clark`. */
+export type SubdAdvanced = {
+  /** Open-border corners (vertices with two edges) stay in place. */
+  keep_corners?: boolean;
+  /** Treat edges marked sharp like fully creased edges. */
+  sharp_as_crease?: boolean;
+};
+
+/** Advanced settings of `edit.tris_to_quads`. */
+export type TrisToQuadsAdvanced = {
+  /** Also join across sharp edges, UV seams and material borders. */
+  ignore_boundaries?: boolean;
+};
+
+/** Advanced tube settings. */
+export type TubeAdvanced = {
+  /** Segments along the height. */
+  height_segments?: number;
+};
+
+/** How `shade.weighted_normals` weighs faces. */
+export type WeightingParam = "area" | "angle" | "area_angle";
 
 /** `scene.create_empty`: Creates an empty object: a transform for grouping parts or marking a pivot. */
 export type SceneCreateEmptyParams = {
@@ -368,6 +435,33 @@ export type PrimCylinderParams = {
   segments?: number | null;
 };
 
+/** `prim.cone`: Creates a pointed cone or a frustum (truncated cone) along Y with groups side, cap_top, cap_bottom. */
+export type PrimConeParams = {
+  /** Rarely needed settings. */
+  advanced?: ConeAdvanced;
+  /** Cap fill of ends with a radius: `quad_grid` (default, quads only), `ngon`, `fan` or `none`. */
+  cap?: CapParam;
+  /** Size along Y. */
+  height?: Length;
+  /** Object name; a free name such as `cone_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom center (stands on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Radius at the bottom; 0 makes a point there. */
+  radius_bottom?: Length;
+  /** Radius at the top; 0 (default) makes a pointed cone, any other value a frustum. */
+  radius_top?: Length;
+  /**
+   * Segments around; when omitted, derived from the larger circumference and
+   * the asset class's target edge length (8 to 64, a multiple of 4 for quad-grid caps).
+   */
+  segments?: number | null;
+};
+
 /** `prim.quad_sphere`: Creates a sphere of even quads with no poles (a projected subdivided cube). */
 export type PrimQuadSphereParams = {
   /** Object name; a free name such as `sphere_1` is picked when omitted. */
@@ -385,6 +479,123 @@ export type PrimQuadSphereParams = {
    * many); derived from the circumference when omitted.
    */
   segments?: number | null;
+};
+
+/** `prim.uv_sphere`: Creates a latitude-longitude sphere with quads between parallels and triangle fans at both poles. */
+export type PrimUvSphereParams = {
+  /** Object name; a free name such as `sphere_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom (rests on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Sphere radius. */
+  radius?: Length;
+  /** Bands from pole to pole; half the segments when omitted. */
+  rings?: number | null;
+  /** Segments around Y; derived from the circumference when omitted (8 to 64, even). */
+  segments?: number | null;
+};
+
+/** `prim.ico_sphere`: Creates a geodesic sphere of nearly equal triangles (a subdivided icosahedron). */
+export type PrimIcoSphereParams = {
+  /** Object name; a free name such as `sphere_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom (rests on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Sphere radius. */
+  radius?: Length;
+  /**
+   * Subdivision level (0 to 8): 20 x 4^level triangles. Derived from the
+   * asset class's target edge length when omitted (1 to 5).
+   */
+  subdivisions?: number | null;
+};
+
+/** `prim.torus`: Creates a torus (ring, donut) lying flat in the XZ plane, all quads. */
+export type PrimTorusParams = {
+  /** Distance from the center to the middle of the ring. */
+  major_radius?: Length;
+  /** Radius of the ring's cross-section (half its thickness); less than the major radius. */
+  minor_radius?: Length;
+  /** Object name; a free name such as `torus_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom (rests on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Segments around Y; derived from the outer circumference when omitted (8 to 64). */
+  segments?: number | null;
+  /** Segments around the cross-section; derived from its circumference when omitted (8 to 64, even). */
+  sides?: number | null;
+};
+
+/** `prim.tube`: Creates a hollow cylinder (pipe with wall thickness) with groups outer, inner, cap_top, cap_bottom. */
+export type PrimTubeParams = {
+  /** Rarely needed settings. */
+  advanced?: TubeAdvanced;
+  /** Size along Y. */
+  height?: Length;
+  /** Radius of the hole; less than `radius` (wall thickness = radius - inner_radius). */
+  inner_radius?: Length;
+  /** Object name; a free name such as `tube_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom center (stands on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Outer radius. */
+  radius?: Length;
+  /** Segments around; derived from the outer circumference when omitted (8 to 64). */
+  segments?: number | null;
+};
+
+/** `prim.capsule`: Creates a capsule (a cylinder with round ends) of quads only, with groups side, cap_top, cap_bottom. */
+export type PrimCapsuleParams = {
+  /** Rarely needed settings. */
+  advanced?: CapsuleAdvanced;
+  /** Total height including both round ends; more than twice the radius. */
+  height?: Length;
+  /** Object name; a free name such as `capsule_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom (stands on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Radius of the body and the round ends. */
+  radius?: Length;
+  /** Segments around; a multiple of 8, derived from the circumference when omitted (8 to 64). */
+  segments?: number | null;
+};
+
+/** `prim.wedge`: Creates a wedge (ramp) whose slope runs down toward the front, with groups bottom, back, slope, left, right. */
+export type PrimWedgeParams = {
+  /** Size along Z (back to front); the slope runs down toward +Z. */
+  depth?: Length;
+  /** Height of the back (the slope's top edge). */
+  height?: Length;
+  /** Object name; a free name such as `wedge_1` is picked when omitted. */
+  name?: string | null;
+  /** Origin at the bottom center (stands on the ground) or the center. */
+  origin?: OriginParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Size along X (left to right). */
+  width?: Length;
 };
 
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
@@ -455,6 +666,223 @@ export type SelectGroupRenameParams = {
   to: string;
 };
 
+/** `edit.extrude`: Pulls faces out along their normals (or a direction) and joins them to the surface with side walls. */
+export type EditExtrudeParams = {
+  /** Move along this object-space direction instead of the face normals. */
+  direction?: [number, number, number] | null;
+  /** How far the faces move; negative pushes them in. */
+  distance?: Length;
+  /** `region` (default) or `individual`. */
+  mode?: ExtrudeModeParam;
+  /** Faces to extrude. */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.inset`: Shrinks faces inward within their surface, leaving a rim of quads, and optionally pushes the inner part in or out. */
+export type EditInsetParams = {
+  /** Moves the inner faces along their normals; negative makes a recess. */
+  depth?: Length;
+  /** `region` (default) or `individual`. */
+  mode?: InsetModeParam;
+  /** Faces to inset. */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Width of the rim, measured inside the faces. */
+  thickness?: Length;
+};
+
+/** `edit.poke`: Splits each face into a fan of triangles around a new center vertex, optionally raised into a pyramid. */
+export type EditPokeParams = {
+  /** Moves each new center vertex along its face normal (a pyramid when positive). */
+  offset?: Length;
+  /** Faces to poke; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.triangulate`: Splits quads and n-gons into triangles with the diagonals that keep angles largest (beauty), adding no vertices. */
+export type EditTriangulateParams = {
+  /** Faces to triangulate; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.tris_to_quads`: Joins pairs of adjacent triangles into quads, best-shaped pairs first, where the result is flat and square enough. */
+export type EditTrisToQuadsParams = {
+  /** Rarely needed settings. */
+  advanced?: TrisToQuadsAdvanced;
+  /** Largest angle between the two triangles (degrees); larger folds stay triangles. */
+  max_face_angle?: Angle;
+  /** Largest difference of a quad corner from a right angle (degrees). */
+  max_shape_angle?: Angle;
+  /** Triangles to join; every face when omitted (other faces are skipped). */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.split`: Detaches faces from the rest of the mesh by duplicating the vertices along the border, leaving them in place. */
+export type EditSplitParams = {
+  /** Faces to detach from the rest of the mesh. */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.flip`: Reverses the facing of every connected part that contains a selected face. */
+export type EditFlipParams = {
+  /** Faces whose connected parts are flipped; every part when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.subdivide`: Splits faces into quads at edge and face middles without moving anything (flat subdivision). */
+export type EditSubdivideParams = {
+  /** Times to split (1 to 6); each level makes about 4 times as many faces. */
+  levels?: number;
+  /** Faces to subdivide; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.loop_cut`: Cuts new edge loops across the ring of quads that runs through the selected edges. */
+export type EditLoopCutParams = {
+  /** Parallel loops per ring (1 to 64). */
+  cuts?: number;
+  /** Slides a single cut toward either side, from -1 to 1 (0 is the middle). */
+  offset?: number;
+  /**
+   * Edges that the cut crosses: each picks the ring of quads running
+   * across it (several edges of one ring cut it once).
+   */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.bridge`: Joins two holes (boundary loops) with a band of quads. */
+export type EditBridgeParams = {
+  /** Rings of quads along the bridge (1 to 64). */
+  segments?: number;
+  /**
+   * Boundary edges (or vertices, or faces next to them) of exactly two
+   * holes; when omitted the mesh must have exactly two holes.
+   */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.merge`: Merges selected vertices into one point (center) or each connected run into its own point (collapse). */
+export type EditMergeParams = {
+  /** `center` (default) or `collapse`. */
+  mode?: MergeModeParam;
+  /** Vertices to merge (edges and faces select their vertices). */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.merge_by_distance`: Welds vertices that lie closer together than a distance, closing seams between joined or mirrored parts. */
+export type EditMergeByDistanceParams = {
+  /** Vertices closer than this weld together. */
+  distance?: Length;
+  /** Vertices that may weld (edges and faces select their vertices); all when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.dissolve`: Removes vertices, edges or faces while keeping the surface closed, merging the faces around them into polygons. */
+export type EditDissolveParams = {
+  /** For `limited`: faces meeting flatter than this merge (degrees). */
+  angle?: Angle;
+  /** `auto` (by the selector's element kind) or `limited`. */
+  mode?: DissolveModeParam;
+  /**
+   * Vertices, edges or faces to dissolve; for `limited`, the faces to
+   * simplify (all when omitted).
+   */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.plane_cut`: Cuts the mesh along a plane, optionally removing one side and capping the opening. */
+export type EditPlaneCutParams = {
+  /** Close the holes the cut leaves on the plane (when one side is removed). */
+  fill?: boolean;
+  /** `both` (default), `above` (the side the normal points to) or `below`. */
+  keep?: KeepParam;
+  /** Plane normal in object space; [0, 1, 0] cuts horizontally. */
+  normal?: [number, number, number];
+  /** A point on the plane, in object space. */
+  point?: [Length, Length, Length];
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.symmetrize`: Makes a mesh mirror-symmetric: keeps one half and replaces the other with its mirror image, welded at the seam. */
+export type EditSymmetrizeParams = {
+  /** Mirror across the plane through the origin normal to this axis. */
+  axis?: AxisParam;
+  /** Keep the positive half (default) and mirror it onto the negative one; false does the opposite. */
+  keep_positive?: boolean;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Vertices this close to the plane weld into the seam. */
+  weld?: Length;
+};
+
+/** `edit.thicken`: Gives surfaces a wall thickness: an offset back side joined to the front along open borders. */
+export type EditThickenParams = {
+  /** Where the wall goes: -1 behind the surface (default), 0 centered, 1 in front. */
+  offset?: number;
+  /** Whole surfaces to thicken; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Wall thickness. */
+  thickness?: Length;
+};
+
+/** `edit.smooth`: Smooths vertex positions without shrinking the shape (Taubin smoothing). */
+export type EditSmoothParams = {
+  /** Rarely needed settings. */
+  advanced?: SmoothAdvanced;
+  /** Strength per round, 0 to 1. */
+  factor?: number;
+  /** Rounds of smoothing (1 to 1000). */
+  iterations?: number;
+  /** Vertices to smooth (edges and faces select their vertices); all when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `edit.bevel`: Rounds or chamfers edges: each edge becomes a strip of faces `width` wide, with caps where strips meet or end. */
+export type EditBevelParams = {
+  /** Rarely needed settings. */
+  advanced?: BevelAdvanced;
+  /** Profile for 2 or more segments: 0.5 round, toward 0 flat, toward 1 pointed. */
+  profile?: number;
+  /** Faces across the bevel: 1 is a flat chamfer, 2 or more round it. */
+  segments?: number;
+  /** Edges to bevel (faces select their edges); for example {"edges": {"sharp": true}}. */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Distance from each edge to the new edges, measured inside the faces. */
+  width?: Length;
+};
+
 /** `edit.fill`: Closes holes (loops of boundary edges) with one face each. */
 export type EditFillParams = {
   /**
@@ -481,6 +909,76 @@ export type EditDeleteElementsParams = {
    * uses them.
    */
   select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.smooth_by_angle`: Shades smoothly across gentle edges and keeps edges sharper than an angle hard. */
+export type ShadeSmoothByAngleParams = {
+  /** Edges whose faces meet at more than this many degrees become sharp. */
+  angle?: Angle;
+  /** Keep edges that are sharp already (marked by hand or by primitives). */
+  keep_sharp?: boolean;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.mark_sharp`: Marks edges sharp: shading breaks there (hard edges). */
+export type ShadeMarkSharpParams = {
+  /** Edges (faces select their edges, vertices the edges between them); every edge when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.clear_sharp`: Clears the sharp mark from edges so shading flows smoothly across them. */
+export type ShadeClearSharpParams = {
+  /** Edges (faces select their edges, vertices the edges between them); every edge when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.set_flat`: Shades faces flat (faceted) by marking all their edges sharp. */
+export type ShadeSetFlatParams = {
+  /** Faces to shade; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.set_smooth`: Shades faces smoothly by clearing the sharp mark on the edges between them. */
+export type ShadeSetSmoothParams = {
+  /** Faces to shade; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.weighted_normals`: Sets custom normals weighted by face area so large flat faces stay flat-shaded next to small bevel faces. */
+export type ShadeWeightedNormalsParams = {
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** `area` (default), `angle` or `area_angle`. */
+  weighting?: WeightingParam;
+};
+
+/** `shade.crease`: Sets how sharp edges stay under `subd.catmull_clark`: 0 rounds them, 1 keeps them sharp. */
+export type ShadeCreaseParams = {
+  /** Edges to crease (faces select their edges, vertices the edges between them). */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Crease weight from 0 (smooth) to 1 (stays sharp under subdivision). */
+  weight?: number;
+};
+
+/** `subd.catmull_clark`: Smooths the whole mesh by Catmull-Clark subdivision, keeping creased edges sharp. */
+export type SubdCatmullClarkParams = {
+  /** Rarely needed settings. */
+  advanced?: SubdAdvanced;
+  /** Subdivision levels (1 to 6); each makes about 4 times as many faces. */
+  levels?: number;
   /** Mesh object (name, path or id). */
   target: string;
 };
@@ -516,16 +1014,49 @@ export interface OpParams {
   "scene.separate": SceneSeparateParams;
   "prim.box": PrimBoxParams;
   "prim.cylinder": PrimCylinderParams;
+  "prim.cone": PrimConeParams;
   "prim.quad_sphere": PrimQuadSphereParams;
+  "prim.uv_sphere": PrimUvSphereParams;
+  "prim.ico_sphere": PrimIcoSphereParams;
+  "prim.torus": PrimTorusParams;
+  "prim.tube": PrimTubeParams;
+  "prim.capsule": PrimCapsuleParams;
+  "prim.wedge": PrimWedgeParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;
   "select.shrink": SelectShrinkParams;
   "select.group_delete": SelectGroupDeleteParams;
   "select.group_rename": SelectGroupRenameParams;
+  "edit.extrude": EditExtrudeParams;
+  "edit.inset": EditInsetParams;
+  "edit.poke": EditPokeParams;
+  "edit.triangulate": EditTriangulateParams;
+  "edit.tris_to_quads": EditTrisToQuadsParams;
+  "edit.split": EditSplitParams;
+  "edit.flip": EditFlipParams;
+  "edit.subdivide": EditSubdivideParams;
+  "edit.loop_cut": EditLoopCutParams;
+  "edit.bridge": EditBridgeParams;
+  "edit.merge": EditMergeParams;
+  "edit.merge_by_distance": EditMergeByDistanceParams;
+  "edit.dissolve": EditDissolveParams;
+  "edit.plane_cut": EditPlaneCutParams;
+  "edit.symmetrize": EditSymmetrizeParams;
+  "edit.thicken": EditThickenParams;
+  "edit.smooth": EditSmoothParams;
+  "edit.bevel": EditBevelParams;
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;
+  "shade.smooth_by_angle": ShadeSmoothByAngleParams;
+  "shade.mark_sharp": ShadeMarkSharpParams;
+  "shade.clear_sharp": ShadeClearSharpParams;
+  "shade.set_flat": ShadeSetFlatParams;
+  "shade.set_smooth": ShadeSetSmoothParams;
+  "shade.weighted_normals": ShadeWeightedNormalsParams;
+  "shade.crease": ShadeCreaseParams;
+  "subd.catmull_clark": SubdCatmullClarkParams;
   "expect.add": ExpectAddParams;
   "expect.remove": ExpectRemoveParams;
 }

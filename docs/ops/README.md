@@ -27,7 +27,14 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 |---|---|
 | [`prim.box`](prim.box.md) | Creates a box with optional rounded or chamfered edges and groups top, bottom, front, back, left, right. |
 | [`prim.cylinder`](prim.cylinder.md) | Creates a cylinder along Y with quad-grid, n-gon, fan or open caps and groups side, cap_top, cap_bottom. |
+| [`prim.cone`](prim.cone.md) | Creates a pointed cone or a frustum (truncated cone) along Y with groups side, cap_top, cap_bottom. |
 | [`prim.quad_sphere`](prim.quad_sphere.md) | Creates a sphere of even quads with no poles (a projected subdivided cube). |
+| [`prim.uv_sphere`](prim.uv_sphere.md) | Creates a latitude-longitude sphere with quads between parallels and triangle fans at both poles. |
+| [`prim.ico_sphere`](prim.ico_sphere.md) | Creates a geodesic sphere of nearly equal triangles (a subdivided icosahedron). |
+| [`prim.torus`](prim.torus.md) | Creates a torus (ring, donut) lying flat in the XZ plane, all quads. |
+| [`prim.tube`](prim.tube.md) | Creates a hollow cylinder (pipe with wall thickness) with groups outer, inner, cap_top, cap_bottom. |
+| [`prim.capsule`](prim.capsule.md) | Creates a capsule (a cylinder with round ends) of quads only, with groups side, cap_top, cap_bottom. |
+| [`prim.wedge`](prim.wedge.md) | Creates a wedge (ramp) whose slope runs down toward the front, with groups bottom, back, slope, left, right. |
 | [`prim.plane`](prim.plane.md) | Creates a flat grid of quads in the XZ plane facing up (+Y). |
 
 ## select
@@ -44,9 +51,45 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 
 | Op | Summary |
 |---|---|
+| [`edit.extrude`](edit.extrude.md) | Pulls faces out along their normals (or a direction) and joins them to the surface with side walls. |
+| [`edit.inset`](edit.inset.md) | Shrinks faces inward within their surface, leaving a rim of quads, and optionally pushes the inner part in or out. |
+| [`edit.poke`](edit.poke.md) | Splits each face into a fan of triangles around a new center vertex, optionally raised into a pyramid. |
+| [`edit.triangulate`](edit.triangulate.md) | Splits quads and n-gons into triangles with the diagonals that keep angles largest (beauty), adding no vertices. |
+| [`edit.tris_to_quads`](edit.tris_to_quads.md) | Joins pairs of adjacent triangles into quads, best-shaped pairs first, where the result is flat and square enough. |
+| [`edit.split`](edit.split.md) | Detaches faces from the rest of the mesh by duplicating the vertices along the border, leaving them in place. |
+| [`edit.flip`](edit.flip.md) | Reverses the facing of every connected part that contains a selected face. |
+| [`edit.subdivide`](edit.subdivide.md) | Splits faces into quads at edge and face middles without moving anything (flat subdivision). |
+| [`edit.loop_cut`](edit.loop_cut.md) | Cuts new edge loops across the ring of quads that runs through the selected edges. |
+| [`edit.bridge`](edit.bridge.md) | Joins two holes (boundary loops) with a band of quads. |
+| [`edit.merge`](edit.merge.md) | Merges selected vertices into one point (center) or each connected run into its own point (collapse). |
+| [`edit.merge_by_distance`](edit.merge_by_distance.md) | Welds vertices that lie closer together than a distance, closing seams between joined or mirrored parts. |
+| [`edit.dissolve`](edit.dissolve.md) | Removes vertices, edges or faces while keeping the surface closed, merging the faces around them into polygons. |
+| [`edit.plane_cut`](edit.plane_cut.md) | Cuts the mesh along a plane, optionally removing one side and capping the opening. |
+| [`edit.symmetrize`](edit.symmetrize.md) | Makes a mesh mirror-symmetric: keeps one half and replaces the other with its mirror image, welded at the seam. |
+| [`edit.thicken`](edit.thicken.md) | Gives surfaces a wall thickness: an offset back side joined to the front along open borders. |
+| [`edit.smooth`](edit.smooth.md) | Smooths vertex positions without shrinking the shape (Taubin smoothing). |
+| [`edit.bevel`](edit.bevel.md) | Rounds or chamfers edges: each edge becomes a strip of faces `width` wide, with caps where strips meet or end. |
 | [`edit.fill`](edit.fill.md) | Closes holes (loops of boundary edges) with one face each. |
 | [`edit.recalc_normals`](edit.recalc_normals.md) | Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way. |
 | [`edit.delete_elements`](edit.delete_elements.md) | Deletes the selected faces (or every face using the selected edges or vertices) and anything left unused. |
+
+## shade
+
+| Op | Summary |
+|---|---|
+| [`shade.smooth_by_angle`](shade.smooth_by_angle.md) | Shades smoothly across gentle edges and keeps edges sharper than an angle hard. |
+| [`shade.mark_sharp`](shade.mark_sharp.md) | Marks edges sharp: shading breaks there (hard edges). |
+| [`shade.clear_sharp`](shade.clear_sharp.md) | Clears the sharp mark from edges so shading flows smoothly across them. |
+| [`shade.set_flat`](shade.set_flat.md) | Shades faces flat (faceted) by marking all their edges sharp. |
+| [`shade.set_smooth`](shade.set_smooth.md) | Shades faces smoothly by clearing the sharp mark on the edges between them. |
+| [`shade.weighted_normals`](shade.weighted_normals.md) | Sets custom normals weighted by face area so large flat faces stay flat-shaded next to small bevel faces. |
+| [`shade.crease`](shade.crease.md) | Sets how sharp edges stay under `subd.catmull_clark`: 0 rounds them, 1 keeps them sharp. |
+
+## subd
+
+| Op | Summary |
+|---|---|
+| [`subd.catmull_clark`](subd.catmull_clark.md) | Smooths the whole mesh by Catmull-Clark subdivision, keeping creased edges sharp. |
 
 ## expect
 

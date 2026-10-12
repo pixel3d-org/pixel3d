@@ -4,10 +4,14 @@ Build assets as several named parts in a hierarchy (`crate`, `crate/lid`, `crate
 
 ## Ops you have
 
-- `prim.box`, `prim.cylinder`, `prim.quad_sphere`, `prim.plane`: real-size primitives with clean quads and semantic groups. Boxes take `bevel` (`{"width": "8mm", "segments": 2}`); cylinders adapt their segment count to the asset class.
+- `prim.box`, `prim.cylinder`, `prim.cone`, `prim.quad_sphere`, `prim.uv_sphere`, `prim.ico_sphere`, `prim.torus`, `prim.tube`, `prim.capsule`, `prim.wedge`, `prim.plane`: real-size primitives with clean quads and semantic groups. Boxes take `bevel` (`{"width": "8mm", "segments": 2}`); round primitives adapt their segment count to the asset class. Prefer `quad_sphere` for balls, `capsule` for limbs, `torus` for hoops and rings, `tube` for pipes with wall thickness.
 - `scene.*`: `create_empty`, `delete`, `duplicate` (copy or instance), `rename`, `parent`, `unparent`, `set_transform` (absolute, or `relative: true` to move by an offset), `apply_transform`, `set_origin`, `tag`, `set_metadata`, `join`, `separate`.
 - `select.*`: `save` (selector to a group), `grow`, `shrink`, `group_delete`, `group_rename`.
-- `edit.*`: `fill` (close holes), `recalc_normals` (make parts face outward), `delete_elements` (faces, or faces using selected edges or vertices).
+- `edit.*`, shaping: `extrude` (pull faces out or push them in, groups `<label>.cap` and `<label>.side`), `inset` (a rim inside faces, optional depth for recesses, `<label>.inner` and `<label>.rim`), `bevel` (round or chamfer edges, `<label>.faces`), `thicken` (wall thickness for planes and open shells), `symmetrize` (mirror one half onto the other), `plane_cut` (cut along a plane, optionally drop a side and cap it), `smooth` (relax lumpy surfaces without shrinking).
+- `edit.*`, topology: `loop_cut` (edge loops across a ring of quads), `bridge` (join two holes), `subdivide` (flat quad split), `poke`, `triangulate`, `tris_to_quads`, `split` (detach faces), `flip` (reverse whole parts), `merge`, `merge_by_distance` (weld seams after `scene.join`), `dissolve` (remove vertices, edges or faces; `mode: "limited"` simplifies flat areas), `fill` (close holes), `recalc_normals` (make parts face outward), `delete_elements`.
+- Hard-surface detail: `inset` a face, then `extrude` its `.inner` group by a few millimeters in or out; `bevel` the sharp edges (`{"edges": {"sharp": true}}`) at 2 to 5 mm, 1 segment for small props, 2 or 3 for hero assets.
+- `shade.*`: `smooth_by_angle` (30 degrees suits most props), `mark_sharp`, `clear_sharp`, `set_flat`, `set_smooth`, `weighted_normals` (run last on beveled hard-surface parts), `crease` (keeps edges sharp under subdivision).
+- `subd.catmull_clark`: smooth subdivision of the whole mesh; crease edges first to keep them sharp.
 - `expect.add`, `expect.remove`: model tests.
 
 `list_ops` with `search` finds ops by Blender or Maya names too (`cube`, `separate by loose parts`, `shift n`).
@@ -28,8 +32,8 @@ The document's asset class sets the triangle budget and adaptive detail:
 |---|---|
 | `prop_small` | 1,500 |
 | `prop_medium` (default) | 6,000 |
-| `prop_large` | 15,000 |
-| `hero_prop` | 30,000 |
+| `prop_large` | 25,000 |
+| `hero_prop` | 40,000 |
 
 `analyze` and `expect add budget` measure against it.
 

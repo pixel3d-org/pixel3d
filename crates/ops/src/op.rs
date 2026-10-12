@@ -36,6 +36,9 @@ pub enum Category {
     Prim,
     Select,
     Edit,
+    Shade,
+    Subd,
+    Deform,
     Expect,
 }
 
@@ -46,6 +49,9 @@ impl Category {
             Category::Prim => "prim",
             Category::Select => "select",
             Category::Edit => "edit",
+            Category::Shade => "shade",
+            Category::Subd => "subd",
+            Category::Deform => "deform",
             Category::Expect => "expect",
         }
     }

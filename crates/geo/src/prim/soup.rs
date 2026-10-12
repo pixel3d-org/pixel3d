@@ -42,6 +42,12 @@ impl Soup {
         (self.positions.len() - 1) as u32
     }
 
+    /// Position of a vertex added before.
+    #[inline]
+    pub(crate) fn position(&self, v: u32) -> DVec3 {
+        self.positions[v as usize].as_dvec3()
+    }
+
     /// Adds a vertex, or returns the existing one with the same position.
     ///
     /// Complexity: O(1) expected.

@@ -53,11 +53,23 @@ fn expect_fixture() -> Tx {
     tx
 }
 
-/// The fixture plus bin (o:5), an open box without its top, for `edit.*` examples.
+/// The fixture plus bin (o:5), an open box without its top, tiles (o:6), a
+/// triangulated 4 x 4 grid, and duct (o:7), two open tubes one above the
+/// other, and panels (o:9), two touching 1 m planes joined but not welded,
+/// for `edit.*` examples.
 fn edit_fixture() -> Tx {
     let mut tx = fixture();
     ok(&mut tx, "prim.box", json!({ "name": "bin", "width": 0.4, "height": 0.3, "depth": 0.4, "position": [-2, 0, 0] }));
     ok(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": { "group": "top" } } }));
+    ok(&mut tx, "prim.plane", json!({ "name": "tiles", "width": 2, "depth": 2, "position": [0, 0, 3], "advanced": { "segments": [4, 4] } }));
+    ok(&mut tx, "edit.triangulate", json!({ "target": "tiles" }));
+    let tube = |name: &str, y: f64| json!({ "name": name, "radius": 0.1, "height": 0.4, "segments": 8, "cap": "none", "position": [3, y, 0] });
+    ok(&mut tx, "prim.cylinder", tube("duct", 0.0));
+    ok(&mut tx, "prim.cylinder", tube("duct_top", 0.6));
+    ok(&mut tx, "scene.join", json!({ "targets": ["duct", "duct_top"] }));
+    ok(&mut tx, "prim.plane", json!({ "name": "panels", "position": [5, 0, 0] }));
+    ok(&mut tx, "prim.plane", json!({ "name": "panel_r", "position": [6, 0, 0] }));
+    ok(&mut tx, "scene.join", json!({ "targets": ["panels", "panel_r"] }));
     tx
 }
 
@@ -70,7 +82,7 @@ fn every_example_produces_its_documented_result() {
             let args: Value = serde_json::from_str(ex.args).unwrap();
             let mut tx = match op.meta().category {
                 Category::Prim => Tx::new(Document::new()),
-                Category::Edit => edit_fixture(),
+                Category::Edit | Category::Shade | Category::Subd | Category::Deform => edit_fixture(),
                 Category::Expect => expect_fixture(),
                 _ => fixture(),
             };
@@ -135,6 +147,46 @@ fn prim_errors_are_precise() {
     ok(&mut tx, "prim.box", json!({ "name": "a" }));
     let e = err(&mut tx, "prim.box", json!({ "name": "a" }));
     assert_eq!(e.suggestions, vec!["a_1"]);
+}
+
+#[test]
+fn prim_cone_points_and_frustums() {
+    let mut tx = Tx::new(Document::new());
+    let a = run(&mut tx, "prim.cone", json!({ "name": "spike", "radius_bottom": "2cm", "height": "10cm", "segments": 8, "cap": "ngon" })).unwrap();
+    let names: Vec<&str> = a.output.groups.iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, vec!["side", "cap_bottom"], "a point has no cap");
+    let m = tx.doc().object_mesh(a.output.created[0]).unwrap();
+    let (lo, hi) = m.bounds().unwrap();
+    assert!((hi - lo).abs_diff_eq(Vec3::new(0.04, 0.1, 0.04), 1e-5));
+    let e = err(&mut tx, "prim.cone", json!({ "radius_bottom": 0, "radius_top": 0 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/radius_top")));
+    let e = err(&mut tx, "prim.cone", json!({ "segments": 6 }));
+    assert_eq!(e.suggestions, vec!["4", "8"]);
+    let e = err(&mut tx, "prim.cone", json!({ "radius_top": "-1cm" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/radius_top")));
+}
+
+#[test]
+fn ring_and_round_primitives_check_their_sizes() {
+    let mut tx = Tx::new(Document::new());
+    let e = err(&mut tx, "prim.torus", json!({ "major_radius": 0.1, "minor_radius": 0.2 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/minor_radius")));
+    let e = err(&mut tx, "prim.tube", json!({ "radius": 0.1, "inner_radius": 0.1 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/inner_radius")));
+    let e = err(&mut tx, "prim.capsule", json!({ "radius": 0.2, "height": 0.4 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/height")));
+    let e = err(&mut tx, "prim.capsule", json!({ "segments": 12 }));
+    assert_eq!(e.suggestions, vec!["8", "16"]);
+    let groups = |a: &Applied| a.output.groups.iter().map(|g| g.name.clone()).collect::<Vec<_>>();
+    let a = run(&mut tx, "prim.tube", json!({ "name": "pipe" })).unwrap();
+    assert_eq!(groups(&a), vec!["outer", "inner", "cap_top", "cap_bottom"]);
+    let a = run(&mut tx, "prim.wedge", json!({ "name": "ramp" })).unwrap();
+    assert_eq!(groups(&a), vec!["bottom", "back", "slope", "left", "right"]);
+    let a = run(&mut tx, "prim.capsule", json!({ "name": "pill", "radius": 0.1, "height": 0.5 })).unwrap();
+    let m = tx.doc().object_mesh(a.output.created[0]).unwrap();
+    let (lo, hi) = m.bounds().unwrap();
+    assert!((hi - lo).abs_diff_eq(Vec3::new(0.2, 0.5, 0.2), 1e-5), "{}", hi - lo);
+    assert!(m.faces().all(|f| m.face_len(f) == 4));
 }
 
 #[test]
@@ -401,6 +453,172 @@ fn delete_elements_by_faces_edges_and_vertices() {
     assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/target")));
     let a = run(&mut tx, "edit.delete_elements", json!({ "target": "bin", "select": { "faces": {} } })).unwrap();
     assert_eq!(a.output.warnings[0].fix.as_ref().map(|f| f.op.as_str()), Some("scene.delete"));
+}
+
+#[test]
+fn extrude_and_inset_make_labelled_groups() {
+    let mut tx = edit_fixture();
+    let a = run(&mut tx, "edit.inset", json!({ "target": "crate", "select": { "faces": { "group": "top" } }, "thickness": "5cm" })).unwrap();
+    let names: Vec<&str> = a.output.groups.iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, vec!["inset_1.inner", "inset_1.rim"]);
+    let a =
+        run(&mut tx, "edit.extrude", json!({ "target": "crate", "select": { "faces": { "group": "inset_1.inner" } }, "distance": "-2cm" })).unwrap();
+    assert_eq!(a.output.groups.iter().map(|g| (g.name.as_str(), g.count)).collect::<Vec<_>>(), vec![("extrude_1.cap", 1), ("extrude_1.side", 4)]);
+    let t = topo(&tx, "crate");
+    assert!(t.is_watertight() && t.volume > 0.0, "{t:?}");
+    let key = tx.doc().resolve("crate").unwrap();
+    let m = tx.doc().object_mesh(key).unwrap();
+    assert!((m.face_centroid(m.group("extrude_1.cap").unwrap().iter().next().unwrap()).y - 0.58).abs() < 1e-5);
+    assert_eq!(m.group("top").unwrap().count(), 5, "the recess floor and the rim stay in top");
+
+    let e = err(&mut tx, "edit.extrude", json!({ "target": "crate", "select": { "edges": { "sharp": true } } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select")));
+    let e = err(&mut tx, "edit.extrude", json!({ "target": "crate", "select": { "faces": {} }, "distance": 0 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/distance")));
+    let e = err(&mut tx, "edit.inset", json!({ "target": "crate", "select": { "faces": { "group": "front" } }, "thickness": "40cm" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/thickness")));
+    assert!(e.hint.as_deref().is_some_and(|h| h.contains("shortest edge")), "{e}");
+    let e = err(&mut tx, "edit.extrude", json!({ "target": "crate", "select": { "faces": { "group": "nope" } } }));
+    assert_eq!(e.code, ErrorCode::NotFound);
+}
+
+#[test]
+fn split_flip_and_subdivide() {
+    let mut tx = edit_fixture();
+    // Split the lid of the crate off and make it its own object.
+    ok(&mut tx, "edit.split", json!({ "target": "crate", "select": { "faces": { "group": "top" } } }));
+    let s = ok(&mut tx, "scene.separate", json!({ "target": "crate", "by": "groups", "groups": ["split_1.faces"] }));
+    assert!(s.contains("split_1.faces"), "{s}");
+    assert_eq!(topo(&tx, "crate").boundary_loops, 1);
+    // Flipping part of a part flips all of it, with a warning.
+    let a = run(&mut tx, "edit.flip", json!({ "target": "bin", "select": { "faces": { "group": "bottom" } } })).unwrap();
+    assert_eq!(a.output.summary, "bin (o:5): flipped 1 part (5 faces)");
+    assert!(a.output.warnings[0].message.contains("4 faces outside the selection"), "{:?}", a.output.warnings);
+    let a = run(&mut tx, "edit.subdivide", json!({ "target": "post", "levels": 2 })).unwrap();
+    assert!(a.output.summary.contains("into 512 (2 levels)"), "{}", a.output.summary);
+    assert!(topo(&tx, "post").is_watertight());
+    let e = err(&mut tx, "edit.subdivide", json!({ "target": "post", "levels": 7 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/levels")));
+}
+
+#[test]
+fn loop_cut_and_bridge_refuse_bad_selections() {
+    let mut tx = edit_fixture();
+    let e = err(&mut tx, "edit.loop_cut", json!({ "target": "crate", "select": { "faces": { "group": "top" } } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select")));
+    let e = err(&mut tx, "edit.loop_cut", json!({ "target": "crate", "select": { "edges": {} }, "offset": 2 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/offset")));
+    let e = err(&mut tx, "edit.bridge", json!({ "target": "bin" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::EmptySelection, Some("/select")));
+    assert!(e.message.contains("1 hole"), "{e}");
+    // Bridging the duct's inner holes leaves one long tube open at both ends.
+    ok(
+        &mut tx,
+        "edit.bridge",
+        json!({ "target": "duct", "select": { "edges": { "in_box": { "min": [-1, 0.39, -1], "max": [1, 0.61, 1] } } }, "segments": 2 }),
+    );
+    assert_eq!(topo(&tx, "duct").boundary_loops, 2);
+    assert_eq!(topo(&tx, "duct").parts, 1);
+}
+
+#[test]
+fn merge_weld_and_dissolve() {
+    let mut tx = edit_fixture();
+    let s = ok(&mut tx, "edit.merge_by_distance", json!({ "target": "panels" }));
+    assert!(s.contains("welded 2 vertices"), "{s}");
+    assert_eq!(topo(&tx, "panels").boundary_loops, 1, "one sheet now");
+    let s = ok(&mut tx, "edit.merge_by_distance", json!({ "target": "panels" }));
+    assert!(s.contains("no vertices within"), "{s}");
+    // Dissolving the shared seam edge makes one 6-corner polygon.
+    let s = ok(&mut tx, "edit.dissolve", json!({ "target": "panels", "select": { "edges": { "boundary": false } } }));
+    assert!(s.contains("dissolved into 1 polygon"), "{s}");
+    let e = err(&mut tx, "edit.dissolve", json!({ "target": "panels" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select")));
+    let e = err(&mut tx, "edit.merge", json!({ "target": "crate", "select": { "verts": { "in_box": { "min": [9, 9, 9], "max": [9, 9, 9] } } } }));
+    assert_eq!(e.code, ErrorCode::EmptySelection);
+    let e = err(&mut tx, "edit.merge_by_distance", json!({ "target": "crate", "distance": 0 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/distance")));
+    // Collapsing the crate's top face to a point makes a pyramid roof.
+    ok(&mut tx, "edit.merge", json!({ "target": "crate", "select": { "faces": { "group": "top" } }, "mode": "collapse" }));
+    let t = topo(&tx, "crate");
+    assert!(t.is_watertight() && t.faces == 5, "{t:?}");
+}
+
+#[test]
+fn cut_mirror_thicken_and_smooth() {
+    let mut tx = edit_fixture();
+    let e = err(&mut tx, "edit.plane_cut", json!({ "target": "crate", "normal": [0, 0, 0] }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/normal")));
+    let s = ok(&mut tx, "edit.plane_cut", json!({ "target": "crate", "point": [0, 5, 0] }));
+    assert!(s.contains("misses the mesh"), "{s}");
+    // Shift the crate's mesh right, then symmetrize: it is centered again.
+    ok(&mut tx, "edit.plane_cut", json!({ "target": "crate", "point": ["10cm", 0, 0], "normal": [1, 0, 0], "keep": "below", "fill": true }));
+    ok(&mut tx, "edit.symmetrize", json!({ "target": "crate" }));
+    let key = tx.doc().resolve("crate").unwrap();
+    let (lo, hi) = tx.doc().object_mesh(key).unwrap().bounds().unwrap();
+    assert!((lo.x + 0.1).abs() < 1e-5 && (hi.x - 0.1).abs() < 1e-5, "{lo} {hi}");
+    assert!(topo(&tx, "crate").is_watertight());
+    let e = err(&mut tx, "edit.thicken", json!({ "target": "crate", "select": { "faces": { "group": "top" } } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/select")));
+    let s = ok(&mut tx, "edit.smooth", json!({ "target": "panels" }));
+    assert!(s.contains("smoothed 0 vertices"), "{s}");
+    let a = run(&mut tx, "edit.smooth", json!({ "target": "panels" })).unwrap();
+    assert_eq!(a.output.warnings.len(), 1, "all border vertices are pinned");
+}
+
+#[test]
+fn bevel_edges_with_clamping() {
+    let mut tx = edit_fixture();
+    let a = run(&mut tx, "edit.bevel", json!({ "target": "crate", "select": { "edges": { "sharp": true } }, "width": "50cm" })).unwrap();
+    assert!(a.output.warnings.iter().any(|w| w.message.contains("clamped")), "{:?}", a.output.warnings);
+    assert!(topo(&tx, "crate").is_watertight());
+    let e =
+        err(&mut tx, "edit.bevel", json!({ "target": "lid", "select": { "edges": {} }, "width": "50cm", "advanced": { "clamp_overlap": false } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/width")));
+    let e = err(&mut tx, "edit.bevel", json!({ "target": "lid", "select": { "verts": {} } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select")));
+    let e = err(&mut tx, "edit.bevel", json!({ "target": "bin", "select": { "edges": { "boundary": true } } }));
+    assert_eq!(e.code, ErrorCode::EmptySelection);
+}
+
+#[test]
+fn shading_flags_normals_and_creases() {
+    let mut tx = edit_fixture();
+    let key = tx.doc().resolve("crate").unwrap();
+    let sharp = |tx: &Tx| {
+        let m = tx.doc().object_mesh(key).unwrap();
+        m.edges().filter(|&e| m.edge_flags(e).contains(EdgeFlags::SHARP)).count()
+    };
+    ok(&mut tx, "shade.set_smooth", json!({ "target": "crate" }));
+    assert_eq!(sharp(&tx), 0);
+    ok(&mut tx, "shade.mark_sharp", json!({ "target": "crate", "select": { "faces": { "group": "top" } } }));
+    assert_eq!(sharp(&tx), 4);
+    ok(&mut tx, "shade.weighted_normals", json!({ "target": "crate", "weighting": "area_angle" }));
+    assert!(tx.doc().object_mesh(key).unwrap().corner_normal.is_some());
+    ok(&mut tx, "shade.set_flat", json!({ "target": "crate" }));
+    assert!(tx.doc().object_mesh(key).unwrap().corner_normal.is_none(), "flat shading drops custom normals");
+    assert_eq!(sharp(&tx), 12);
+    ok(
+        &mut tx,
+        "shade.crease",
+        json!({ "target": "crate", "select": { "verts": { "in_box": { "min": [-1, 0.5, -1], "max": [1, 1, 1] } } }, "weight": 0.5 }),
+    );
+    let m = tx.doc().object_mesh(key).unwrap();
+    assert_eq!(m.edges().filter(|&e| m.edge_crease(e) == 0.5).count(), 4);
+    let e = err(&mut tx, "shade.crease", json!({ "target": "crate", "select": { "edges": {} }, "weight": 2 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/weight")));
+}
+
+#[test]
+fn catmull_clark_subdivides_and_guards_the_budget() {
+    let mut tx = edit_fixture();
+    let a = run(&mut tx, "subd.catmull_clark", json!({ "target": "crate", "levels": 2 })).unwrap();
+    assert!(a.output.warnings.is_empty());
+    assert!(topo(&tx, "crate").is_watertight());
+    let a = run(&mut tx, "subd.catmull_clark", json!({ "target": "crate", "levels": 3 })).unwrap();
+    assert!(a.output.warnings[0].message.contains("exceed"), "{:?}", a.output.warnings);
+    let e = err(&mut tx, "subd.catmull_clark", json!({ "target": "crate", "levels": 6 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::BudgetExceeded, Some("/levels")));
 }
 
 #[test]

@@ -4,8 +4,22 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use p3d_mesh::{Mesh, TriOptions};
+use p3d_mesh::{Mesh, Patch, TriOptions};
 use p3d_testdata::{scale_sizes, sphere};
+
+/// A patch replacing each given face by a fan of triangles around its centroid.
+fn poke(m: &Mesh, faces: impl Iterator<Item = u32>) -> Patch {
+    let mut p = Patch::new(m);
+    for f in faces {
+        p.remove_face(f);
+        let vs: Vec<u32> = m.face_verts(f).collect();
+        let c = p.new_vert(m.face_centroid(f), None);
+        for i in 0..vs.len() {
+            p.add_face(&[vs[i], vs[(i + 1) % vs.len()], c], &[], 0, Some(f));
+        }
+    }
+    p
+}
 
 fn scale(c: &mut Criterion) {
     let sizes = scale_sizes(4_000, 100_000);
@@ -44,6 +58,33 @@ fn scale(c: &mut Criterion) {
         let del: Vec<u32> = m.faces().step_by(3).collect();
         g.bench_with_input(BenchmarkId::from_parameter(t), &(m.clone(), del), |b, (m, del)| {
             b.iter_batched(|| m.clone(), |mut x| x.delete_faces(del).ok(), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
+    // Patch cost grows with the patch: poke every third face.
+    let mut g = c.benchmark_group("scale_mesh_patch_poke");
+    for (t, m) in &meshes {
+        let patch = poke(m, m.faces().step_by(3));
+        g.bench_with_input(BenchmarkId::from_parameter(t), &(m.clone(), patch), |b, (m, p)| {
+            b.iter_batched(|| m.clone(), |mut x| x.apply_patch(p).ok(), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
+    // ... and not with the mesh: poke the same 16 faces of ever larger meshes
+    // (a slope near 0). The columns have room, as after the first edit of a
+    // transaction; growing a full column is amortized O(1) per element.
+    let mut g = c.benchmark_group("scale_mesh_patch_local");
+    for (t, m) in &meshes {
+        let patch = poke(m, m.faces().take(16));
+        let roomy = || {
+            let mut x = m.clone();
+            x.reserve(64, 256, 128);
+            x
+        };
+        g.bench_with_input(BenchmarkId::from_parameter(t), &patch, |b, p| {
+            b.iter_batched(roomy, |mut x| x.apply_patch(p).ok(), BatchSize::LargeInput)
         });
     }
     g.finish();

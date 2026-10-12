@@ -171,6 +171,22 @@ impl Mesh {
         out
     }
 
+    /// Triangles of one face as corner half-edges, exactly as
+    /// [`Mesh::to_tri_buffers`] cuts it (fan for convex faces, the valid and
+    /// shorter diagonal for quads, ear clipping for concave faces up to
+    /// [`MAX_EAR_CLIP_CORNERS`] corners). Empty for a dead face.
+    ///
+    /// Complexity: O(k) for convex faces, O(k^2) for concave ones, for k corners.
+    pub fn face_triangles(&self, f: u32) -> Vec<[u32; 3]> {
+        if !self.is_face_alive(f) {
+            return Vec::new();
+        }
+        let corners: Vec<u32> = self.face_halfedges(f).collect();
+        let mut tris = Vec::with_capacity(corners.len().saturating_sub(2));
+        self.triangulate_face(f, &corners, &mut EarScratch::default(), &mut tris);
+        tris
+    }
+
     /// Appends the triangles of one face as corner half-edges. Returns false
     /// when a large concave face fell back to a fan.
     fn triangulate_face(&self, f: u32, corners: &[u32], ear: &mut EarScratch, tris: &mut Vec<[u32; 3]>) -> bool {
