@@ -82,7 +82,7 @@ fn every_example_produces_its_documented_result() {
             let args: Value = serde_json::from_str(ex.args).unwrap();
             let mut tx = match op.meta().category {
                 Category::Prim => Tx::new(Document::new()),
-                Category::Edit => edit_fixture(),
+                Category::Edit | Category::Shade | Category::Subd | Category::Deform => edit_fixture(),
                 Category::Expect => expect_fixture(),
                 _ => fixture(),
             };
@@ -579,6 +579,34 @@ fn bevel_edges_with_clamping() {
     assert_eq!((e.code, e.path.as_deref()), (ErrorCode::InvalidParam, Some("/select")));
     let e = err(&mut tx, "edit.bevel", json!({ "target": "bin", "select": { "edges": { "boundary": true } } }));
     assert_eq!(e.code, ErrorCode::EmptySelection);
+}
+
+#[test]
+fn shading_flags_normals_and_creases() {
+    let mut tx = edit_fixture();
+    let key = tx.doc().resolve("crate").unwrap();
+    let sharp = |tx: &Tx| {
+        let m = tx.doc().object_mesh(key).unwrap();
+        m.edges().filter(|&e| m.edge_flags(e).contains(EdgeFlags::SHARP)).count()
+    };
+    ok(&mut tx, "shade.set_smooth", json!({ "target": "crate" }));
+    assert_eq!(sharp(&tx), 0);
+    ok(&mut tx, "shade.mark_sharp", json!({ "target": "crate", "select": { "faces": { "group": "top" } } }));
+    assert_eq!(sharp(&tx), 4);
+    ok(&mut tx, "shade.weighted_normals", json!({ "target": "crate", "weighting": "area_angle" }));
+    assert!(tx.doc().object_mesh(key).unwrap().corner_normal.is_some());
+    ok(&mut tx, "shade.set_flat", json!({ "target": "crate" }));
+    assert!(tx.doc().object_mesh(key).unwrap().corner_normal.is_none(), "flat shading drops custom normals");
+    assert_eq!(sharp(&tx), 12);
+    ok(
+        &mut tx,
+        "shade.crease",
+        json!({ "target": "crate", "select": { "verts": { "in_box": { "min": [-1, 0.5, -1], "max": [1, 1, 1] } } }, "weight": 0.5 }),
+    );
+    let m = tx.doc().object_mesh(key).unwrap();
+    assert_eq!(m.edges().filter(|&e| m.edge_crease(e) == 0.5).count(), 4);
+    let e = err(&mut tx, "shade.crease", json!({ "target": "crate", "select": { "edges": {} }, "weight": 2 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/weight")));
 }
 
 #[test]

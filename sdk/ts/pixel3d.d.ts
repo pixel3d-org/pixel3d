@@ -242,6 +242,9 @@ export type TubeAdvanced = {
   height_segments?: number;
 };
 
+/** How `shade.weighted_normals` weighs faces. */
+export type WeightingParam = "area" | "angle" | "area_angle";
+
 /** `scene.create_empty`: Creates an empty object: a transform for grouping parts or marking a pivot. */
 export type SceneCreateEmptyParams = {
   /** Object name; a free name such as `empty_1` is picked when omitted. */
@@ -902,6 +905,66 @@ export type EditDeleteElementsParams = {
   target: string;
 };
 
+/** `shade.smooth_by_angle`: Shades smoothly across gentle edges and keeps edges sharper than an angle hard. */
+export type ShadeSmoothByAngleParams = {
+  /** Edges whose faces meet at more than this many degrees become sharp. */
+  angle?: Angle;
+  /** Keep edges that are sharp already (marked by hand or by primitives). */
+  keep_sharp?: boolean;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.mark_sharp`: Marks edges sharp: shading breaks there (hard edges). */
+export type ShadeMarkSharpParams = {
+  /** Edges (faces select their edges, vertices the edges between them); every edge when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.clear_sharp`: Clears the sharp mark from edges so shading flows smoothly across them. */
+export type ShadeClearSharpParams = {
+  /** Edges (faces select their edges, vertices the edges between them); every edge when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.set_flat`: Shades faces flat (faceted) by marking all their edges sharp. */
+export type ShadeSetFlatParams = {
+  /** Faces to shade; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.set_smooth`: Shades faces smoothly by clearing the sharp mark on the edges between them. */
+export type ShadeSetSmoothParams = {
+  /** Faces to shade; every face when omitted. */
+  select?: Selector | null;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
+/** `shade.weighted_normals`: Sets custom normals weighted by face area so large flat faces stay flat-shaded next to small bevel faces. */
+export type ShadeWeightedNormalsParams = {
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** `area` (default), `angle` or `area_angle`. */
+  weighting?: WeightingParam;
+};
+
+/** `shade.crease`: Sets how sharp edges stay under `subd.catmull_clark`: 0 rounds them, 1 keeps them sharp. */
+export type ShadeCreaseParams = {
+  /** Edges to crease (faces select their edges, vertices the edges between them). */
+  select: Selector;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Crease weight from 0 (smooth) to 1 (stays sharp under subdivision). */
+  weight?: number;
+};
+
 /** `expect.add`: Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. */
 export type ExpectAddParams = {
   /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight. */
@@ -968,6 +1031,13 @@ export interface OpParams {
   "edit.fill": EditFillParams;
   "edit.recalc_normals": EditRecalcNormalsParams;
   "edit.delete_elements": EditDeleteElementsParams;
+  "shade.smooth_by_angle": ShadeSmoothByAngleParams;
+  "shade.mark_sharp": ShadeMarkSharpParams;
+  "shade.clear_sharp": ShadeClearSharpParams;
+  "shade.set_flat": ShadeSetFlatParams;
+  "shade.set_smooth": ShadeSetSmoothParams;
+  "shade.weighted_normals": ShadeWeightedNormalsParams;
+  "shade.crease": ShadeCreaseParams;
   "expect.add": ExpectAddParams;
   "expect.remove": ExpectRemoveParams;
 }

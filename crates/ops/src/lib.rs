@@ -17,6 +17,7 @@ pub mod prim;
 mod registry;
 pub mod scene;
 pub mod select;
+pub mod shade;
 mod tx;
 
 pub use dynop::{Applied, DynOp, Typed, parse_params};

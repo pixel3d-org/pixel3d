@@ -23,6 +23,13 @@ pub fn thousands(n: usize) -> String {
     out
 }
 
+/// An angle in degrees for summaries: `30`, `22.5` (at most three decimals).
+pub fn degrees(a: crate::params::Angle) -> String {
+    let d = (a.degrees() * 1000.0).round() / 1000.0;
+    let s = format!("{d:.3}");
+    s.trim_end_matches('0').trim_end_matches('.').to_owned()
+}
+
 /// `1 x 0.6 x 0.8 m` from a mesh's bounds.
 pub fn dims(mesh: &Mesh) -> String {
     match mesh.bounds() {

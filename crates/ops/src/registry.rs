@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{edit, expect, prim, scene, select};
+use crate::{edit, expect, prim, scene, select, shade};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -85,6 +85,13 @@ impl Registry {
             Arc::new(Typed::<edit::Fill>::new()),
             Arc::new(Typed::<edit::RecalcNormals>::new()),
             Arc::new(Typed::<edit::DeleteElements>::new()),
+            Arc::new(Typed::<shade::SmoothByAngle>::new()),
+            Arc::new(Typed::<shade::MarkSharp>::new()),
+            Arc::new(Typed::<shade::ClearSharp>::new()),
+            Arc::new(Typed::<shade::SetFlat>::new()),
+            Arc::new(Typed::<shade::SetSmooth>::new()),
+            Arc::new(Typed::<shade::WeightedNormals>::new()),
+            Arc::new(Typed::<shade::Crease>::new()),
             Arc::new(Typed::<expect::Add>::new()),
             Arc::new(Typed::<expect::Remove>::new()),
         ];

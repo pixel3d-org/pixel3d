@@ -73,6 +73,18 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`edit.recalc_normals`](edit.recalc_normals.md) | Makes every connected part of a mesh face outward (or inward), flipping parts that face the wrong way. |
 | [`edit.delete_elements`](edit.delete_elements.md) | Deletes the selected faces (or every face using the selected edges or vertices) and anything left unused. |
 
+## shade
+
+| Op | Summary |
+|---|---|
+| [`shade.smooth_by_angle`](shade.smooth_by_angle.md) | Shades smoothly across gentle edges and keeps edges sharper than an angle hard. |
+| [`shade.mark_sharp`](shade.mark_sharp.md) | Marks edges sharp: shading breaks there (hard edges). |
+| [`shade.clear_sharp`](shade.clear_sharp.md) | Clears the sharp mark from edges so shading flows smoothly across them. |
+| [`shade.set_flat`](shade.set_flat.md) | Shades faces flat (faceted) by marking all their edges sharp. |
+| [`shade.set_smooth`](shade.set_smooth.md) | Shades faces smoothly by clearing the sharp mark on the edges between them. |
+| [`shade.weighted_normals`](shade.weighted_normals.md) | Sets custom normals weighted by face area so large flat faces stay flat-shaded next to small bevel faces. |
+| [`shade.crease`](shade.crease.md) | Sets how sharp edges stay under `subd.catmull_clark`: 0 rounds them, 1 keeps them sharp. |
+
 ## expect
 
 | Op | Summary |

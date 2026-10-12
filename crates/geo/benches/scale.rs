@@ -88,6 +88,23 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Shading over whole meshes.
+    let spheres: Vec<(usize, p3d_mesh::Mesh)> = sizes.iter().map(|&t| (t, sphere(t))).collect();
+    let mut g = c.benchmark_group("scale_shade_sharp_by_angle");
+    for (t, m) in &spheres {
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::shade::sharp_by_angle(&mut x, 30.0, true), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_shade_weighted_normals");
+    for (t, m) in &spheres {
+        g.bench_with_input(BenchmarkId::from_parameter(t), m, |b, m| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::shade::weighted_normals(&mut x, p3d_geo::shade::Weighting::Area), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
     // Edit kernels: the selection grows with the mesh.
     let edit_sets: Vec<(usize, Vec<_>)> = sizes.iter().map(|&t| (t, workloads::workloads(t))).collect();
     for i in 0..edit_sets[0].1.len() {
