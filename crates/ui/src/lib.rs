@@ -291,6 +291,9 @@ pub struct PixelApp {
     pub cmdline: cmdline::CmdLine,
     /// Quit once the pending screenshot is saved (`--screenshot`).
     pub quit_after_shot: bool,
+    /// Snapshot tests: no frame rate and no timed status messages, so the
+    /// same state always draws the same picture.
+    pub stable: bool,
 }
 
 impl PixelApp {
@@ -324,6 +327,7 @@ impl PixelApp {
             palette: None,
             cmdline: cmdline::CmdLine::default(),
             quit_after_shot: false,
+            stable: false,
         }
     }
 
@@ -597,6 +601,9 @@ impl PixelApp {
 
     /// The status message while it is fresh.
     pub fn status_message(&self) -> Option<&str> {
+        if self.stable {
+            return None;
+        }
         self.status.as_ref().filter(|(_, at)| at.elapsed() < STATUS_TIME).map(|(s, _)| s.as_str())
     }
 

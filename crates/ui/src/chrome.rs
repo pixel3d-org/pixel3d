@@ -672,7 +672,7 @@ pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
         // Right to left: fps, jobs, class and profile, snap, units, triangles.
         let class = format!("{}, {}", doc.settings.asset_class.as_str(), t("no profile"));
         let items: [(String, Option<bool>, &str); 6] = [
-            (format!("{:.0} {}", app.viewport.fps, t("fps")), None, ""),
+            (if app.stable { String::new() } else { format!("{:.0} {}", app.viewport.fps, t("fps")) }, None, ""),
             (if jobs == 0 { t("no jobs").to_owned() } else { format!("{jobs} {}", t("jobs")) }, None, t("Background work (health checks)")),
             (class, None, t("Asset class and engine profile")),
             (t("Snap").to_owned(), Some(app.ui.view.snap), t("Snap transform drags to the grid and 15 degree steps")),
