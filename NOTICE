@@ -22,9 +22,12 @@ Dependencies under licenses other than MIT or Apache-2.0 that ship in the deskto
 
 Code adapted from cadcraft (https://github.com/storytold/cadcraft), Copyright (c) 2026 ArtCraft
 Team and the CADCraft contributors, licensed under the MIT License or the Apache License, Version
-2.0: the interface theme tokens, the icon drawing helpers, and the window chrome and docking
-patterns in crates/ui. The craft-ui library (https://github.com/storytold/craft-libs), Copyright
-(c) 2026 ArtCraft Team and the craft-libs contributors, is used under the same licenses.
+2.0: the interface theme tokens, and the window chrome and docking patterns in crates/ui. The
+craft-ui library (https://github.com/storytold/craft-libs), Copyright (c) 2026 ArtCraft Team and
+the craft-libs contributors, is used under the same licenses.
+
+The interface icons use path data from Tabler Icons 3.34.1 (https://tabler.io/icons), Copyright
+(c) 2020-2024 Paweł Kuna, licensed under the MIT License; the license text is in ATTRIBUTION.md.
 
 Bundled assets (icons, images, fonts, sample models) are listed with their authors, sources and
 licenses in ATTRIBUTION.md.

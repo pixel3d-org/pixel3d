@@ -125,97 +125,134 @@ pub struct Tokens {
     pub surface: Color32,
     /// Polygon edges in wire modes.
     pub wire: Color32,
+    /// The accent mixed into the background: selected buttons and tabs.
+    pub accent_soft: Color32,
+    /// Text and icons drawn on an accent fill.
+    pub on_accent: Color32,
+    /// Property cards (collapsible sections): fill, hovered header, edge.
+    pub card: Color32,
+    pub card_hover: Color32,
+    pub card_border: Color32,
+    /// Menus and tooltips, and the key caps that show shortcuts in them.
+    pub popup: Color32,
+    pub popup_border: Color32,
+    pub keycap: Color32,
+}
+
+/// `0xrrggbb` as a color.
+const fn hex(rgb: u32) -> Color32 {
+    Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
 }
 
 impl Tokens {
+    /// Neutral 900 to 950 surfaces with a yellow 400 accent (ADR 0006).
     pub const DARK: Tokens = Tokens {
-        chrome: Color32::from_rgb(0x3b, 0x44, 0x53),
-        chrome_dark: Color32::from_rgb(0x31, 0x38, 0x44),
-        panel: Color32::from_rgb(0x3c, 0x44, 0x52),
-        tab_active: Color32::from_rgb(0x4e, 0x5a, 0x6e),
-        control: Color32::from_rgb(0x50, 0x5a, 0x6d),
-        control_hover: Color32::from_rgb(0x5c, 0x67, 0x7c),
-        border: Color32::from_rgb(0x23, 0x29, 0x30),
-        canvas: Color32::from_rgb(0x22, 0x28, 0x2f),
-        text: Color32::from_rgb(0xd7, 0xdb, 0xe0),
-        text_dim: Color32::from_rgb(0xa3, 0xaa, 0xb4),
-        text_faint: Color32::from_rgb(0x87, 0x8d, 0x96),
-        icon: Color32::from_rgb(0xcf, 0xd4, 0xdb),
-        icon_accent: Color32::from_rgb(0x4f, 0xa3, 0xf7),
-        icon_point: Color32::from_rgb(0xf0, 0x7a, 0x3a),
-        accent: Color32::from_rgb(0x3d, 0x8b, 0xfd),
-        selection: Color32::from_rgb(0x4a, 0x8f, 0xff),
-        hover: Color32::from_rgb(0x9c, 0xc6, 0xff),
-        grip: Color32::from_rgb(0x2f, 0x6b, 0xff),
-        grip_hot: Color32::from_rgb(0xff, 0x3b, 0x3b),
-        snap: Color32::from_rgb(0x2f, 0xd0, 0x62),
-        window_fill: Color32::from_rgba_premultiplied(0x18, 0x30, 0x60, 0x50),
-        crossing_fill: Color32::from_rgba_premultiplied(0x18, 0x48, 0x18, 0x50),
-        window_stroke: Color32::from_rgb(0x6f, 0xa8, 0xff),
-        crossing_stroke: Color32::from_rgb(0x7f, 0xe0, 0x7f),
-        cmd_bg: Color32::from_rgba_premultiplied(0x34, 0x3c, 0x4a, 0xf0),
-        toggle_on: Color32::from_rgb(0x3d, 0x8b, 0xfd),
-        field: Color32::from_rgb(0x31, 0x38, 0x44),
-        select_bg: Color32::from_rgb(0x3d, 0x8b, 0xfd),
-        cmd_history: Color32::from_rgba_unmultiplied_const(0x2a, 0x30, 0x3a, 170),
-        cmd_border: Color32::from_rgb(0x55, 0x5f, 0x70),
-        cmd_keyword: Color32::from_rgb(0x8f, 0xc1, 0xff),
-        cmd_keyword_hover: Color32::from_rgb(0x2f, 0x5e, 0xa8),
-        list_bg: Color32::from_rgb(0x2b, 0x31, 0x3b),
-        list_row: Color32::from_rgb(0x3a, 0x42, 0x50),
-        warn: Color32::from_rgb(0xff, 0xd0, 0x80),
-        viewport_top: Color32::from_rgb(0x2a, 0x30, 0x38),
-        viewport_bottom: Color32::from_rgb(0x1d, 0x22, 0x28),
-        grid_minor: Color32::from_rgb(0x2e, 0x35, 0x3f),
-        grid_major: Color32::from_rgb(0x3a, 0x43, 0x50),
-        axis_x: Color32::from_rgb(0xe5, 0x48, 0x4d),
-        axis_y: Color32::from_rgb(0x46, 0xa7, 0x58),
-        axis_z: Color32::from_rgb(0x3e, 0x63, 0xdd),
-        element_selected: Color32::from_rgb(0xff, 0xb2, 0x24),
-        seam: Color32::from_rgb(0xff, 0x3b, 0x3b),
-        sharp: Color32::from_rgb(0x4f, 0xa3, 0xf7),
-        crease: Color32::from_rgb(0xb7, 0x8c, 0xff),
-        health_ok: Color32::from_rgb(0x2f, 0xd0, 0x62),
-        health_warn: Color32::from_rgb(0xff, 0xb2, 0x24),
-        health_error: Color32::from_rgb(0xff, 0x3b, 0x3b),
-        surface: Color32::from_rgb(0xa8, 0xae, 0xb6),
-        wire: Color32::from_rgb(0x10, 0x12, 0x16),
+        chrome: hex(0x171717),
+        chrome_dark: hex(0x0f0f0f),
+        panel: hex(0x141414),
+        tab_active: hex(0x2a2a2a),
+        control: hex(0x262626),
+        control_hover: hex(0x333333),
+        border: hex(0x0a0a0a),
+        canvas: hex(0x0a0a0a),
+        text: hex(0xe5e5e5),
+        text_dim: hex(0xa3a3a3),
+        text_faint: hex(0x737373),
+        icon: hex(0xd4d4d4),
+        icon_accent: hex(0xfacc15),
+        icon_point: hex(0xfb923c),
+        accent: hex(0xfacc15),
+        selection: hex(0xfacc15),
+        hover: hex(0xfde047),
+        grip: hex(0xfacc15),
+        grip_hot: hex(0xf87171),
+        snap: hex(0x4ade80),
+        window_fill: Color32::from_rgba_premultiplied(0x3b, 0x30, 0x05, 0x50),
+        crossing_fill: Color32::from_rgba_premultiplied(0x12, 0x3b, 0x1f, 0x50),
+        window_stroke: hex(0xfde047),
+        crossing_stroke: hex(0x86efac),
+        cmd_bg: Color32::from_rgba_premultiplied(0x17, 0x17, 0x17, 0xf0),
+        toggle_on: hex(0xfacc15),
+        field: hex(0x111111),
+        select_bg: hex(0x5c4a0b),
+        cmd_history: Color32::from_rgba_unmultiplied_const(0x0f, 0x0f, 0x0f, 190),
+        cmd_border: hex(0x333333),
+        cmd_keyword: hex(0xfde047),
+        cmd_keyword_hover: hex(0x3b3109),
+        list_bg: hex(0x141414),
+        list_row: hex(0x262626),
+        warn: hex(0xfbbf24),
+        viewport_top: hex(0x1f1f1f),
+        viewport_bottom: hex(0x0f0f0f),
+        grid_minor: hex(0x262626),
+        grid_major: hex(0x363636),
+        axis_x: hex(0xef4444),
+        axis_y: hex(0x22c55e),
+        axis_z: hex(0x3b82f6),
+        element_selected: hex(0xfb923c),
+        seam: hex(0xf87171),
+        sharp: hex(0x38bdf8),
+        crease: hex(0xc084fc),
+        health_ok: hex(0x4ade80),
+        health_warn: hex(0xfbbf24),
+        health_error: hex(0xf87171),
+        surface: hex(0xb3b3b3),
+        wire: hex(0x0a0a0a),
+        accent_soft: hex(0x3a3110),
+        on_accent: hex(0x171717),
+        card: hex(0x1b1b1b),
+        card_hover: hex(0x242424),
+        card_border: hex(0x262626),
+        popup: hex(0x1f1f1f),
+        popup_border: hex(0x333333),
+        keycap: hex(0x2e2e2e),
     };
 
-    /// Light gray chrome with dark text; the selection, grip and health
-    /// colors are the dark theme's.
+    /// Neutral 50 to 200 surfaces with dark text. Fills use the same yellow
+    /// 400 accent; yellow lines and text on white use `icon_accent`.
     pub const LIGHT: Tokens = Tokens {
-        chrome: Color32::from_rgb(0xe4, 0xe7, 0xeb),
-        chrome_dark: Color32::from_rgb(0xd5, 0xd9, 0xdf),
-        panel: Color32::from_rgb(0xee, 0xf0, 0xf3),
-        tab_active: Color32::from_rgb(0xc8, 0xd3, 0xe2),
-        control: Color32::from_rgb(0xdc, 0xe0, 0xe6),
-        control_hover: Color32::from_rgb(0xcb, 0xd2, 0xdc),
-        border: Color32::from_rgb(0xb3, 0xba, 0xc4),
-        text: Color32::from_rgb(0x1d, 0x23, 0x2b),
-        text_dim: Color32::from_rgb(0x47, 0x50, 0x5c),
-        text_faint: Color32::from_rgb(0x62, 0x6a, 0x76),
-        icon: Color32::from_rgb(0x34, 0x3c, 0x48),
-        icon_accent: Color32::from_rgb(0x1b, 0x6f, 0xd6),
-        icon_point: Color32::from_rgb(0xd3, 0x5a, 0x1c),
-        accent: Color32::from_rgb(0x2f, 0x7c, 0xf6),
-        cmd_bg: Color32::from_rgba_unmultiplied_const(0xf9, 0xfa, 0xfb, 0xf0),
-        toggle_on: Color32::from_rgb(0x2f, 0x7c, 0xf6),
-        field: Color32::from_rgb(0xff, 0xff, 0xff),
-        select_bg: Color32::from_rgb(0xb6, 0xd3, 0xfb),
-        cmd_history: Color32::from_rgba_unmultiplied_const(0xf0, 0xf2, 0xf5, 0xdc),
-        cmd_border: Color32::from_rgb(0xa9, 0xb0, 0xba),
-        cmd_keyword: Color32::from_rgb(0x15, 0x59, 0xc0),
-        cmd_keyword_hover: Color32::from_rgb(0xcf, 0xe0, 0xfa),
-        list_bg: Color32::from_rgb(0xfb, 0xfc, 0xfd),
-        list_row: Color32::from_rgb(0xe3, 0xe8, 0xef),
-        warn: Color32::from_rgb(0x8a, 0x53, 0x00),
-        viewport_top: Color32::from_rgb(0xc9, 0xce, 0xd6),
-        viewport_bottom: Color32::from_rgb(0xb5, 0xbb, 0xc5),
-        grid_minor: Color32::from_rgb(0xaa, 0xb1, 0xbb),
-        grid_major: Color32::from_rgb(0x94, 0x9c, 0xa8),
-        surface: Color32::from_rgb(0xb4, 0xb9, 0xc0),
-        wire: Color32::from_rgb(0x20, 0x24, 0x2a),
+        chrome: hex(0xf5f5f5),
+        chrome_dark: hex(0xe5e5e5),
+        panel: hex(0xfafafa),
+        tab_active: hex(0xffffff),
+        control: hex(0xe5e5e5),
+        control_hover: hex(0xd4d4d4),
+        border: hex(0xd4d4d4),
+        canvas: hex(0xd4d4d4),
+        text: hex(0x171717),
+        text_dim: hex(0x525252),
+        text_faint: hex(0x737373),
+        icon: hex(0x404040),
+        icon_accent: hex(0xca8a04),
+        icon_point: hex(0xea580c),
+        accent: hex(0xfacc15),
+        selection: hex(0xeab308),
+        hover: hex(0xca8a04),
+        cmd_bg: Color32::from_rgba_unmultiplied_const(0xfa, 0xfa, 0xfa, 0xf0),
+        toggle_on: hex(0xeab308),
+        field: hex(0xffffff),
+        select_bg: hex(0xfde68a),
+        cmd_history: Color32::from_rgba_unmultiplied_const(0xf5, 0xf5, 0xf5, 0xdc),
+        cmd_border: hex(0xd4d4d4),
+        cmd_keyword: hex(0xa16207),
+        cmd_keyword_hover: hex(0xfef3c7),
+        list_bg: hex(0xffffff),
+        list_row: hex(0xf5f5f5),
+        warn: hex(0x92400e),
+        viewport_top: hex(0xe5e5e5),
+        viewport_bottom: hex(0xcfcfcf),
+        grid_minor: hex(0xc7c7c7),
+        grid_major: hex(0xb0b0b0),
+        surface: hex(0xa3a3a3),
+        wire: hex(0x262626),
+        accent_soft: hex(0xfef3c7),
+        on_accent: hex(0x171717),
+        card: hex(0xffffff),
+        card_hover: hex(0xf5f5f5),
+        card_border: hex(0xe5e5e5),
+        popup: hex(0xffffff),
+        popup_border: hex(0xd4d4d4),
+        keycap: hex(0xf0f0f0),
         ..Tokens::DARK
     };
 
@@ -273,27 +310,46 @@ fn visuals(theme: Theme) -> Visuals {
         Theme::Dark => Visuals::dark(),
         Theme::Light => Visuals::light(),
     };
+    let radius = egui::CornerRadius::same(6);
+    let line = |c: Color32| egui::Stroke::new(1.0, c);
     v.panel_fill = t.panel;
-    v.window_fill = t.chrome;
+    v.window_fill = t.popup;
     v.extreme_bg_color = t.field;
+    v.text_edit_bg_color = Some(t.field);
     v.faint_bg_color = t.chrome_dark;
     v.override_text_color = Some(t.text);
+    v.hyperlink_color = t.accent;
     v.widgets.noninteractive.bg_fill = t.panel;
+    v.widgets.noninteractive.weak_bg_fill = t.panel;
     v.widgets.noninteractive.fg_stroke.color = t.text;
-    v.widgets.noninteractive.bg_stroke.color = t.border;
+    v.widgets.noninteractive.bg_stroke = line(t.control);
+    v.widgets.noninteractive.corner_radius = radius;
     v.widgets.inactive.bg_fill = t.control;
     v.widgets.inactive.weak_bg_fill = t.control;
     v.widgets.inactive.fg_stroke.color = t.text;
+    v.widgets.inactive.bg_stroke = line(t.card_border);
+    v.widgets.inactive.corner_radius = radius;
     v.widgets.hovered.bg_fill = t.control_hover;
     v.widgets.hovered.weak_bg_fill = t.control_hover;
+    v.widgets.hovered.fg_stroke.color = t.text;
+    v.widgets.hovered.bg_stroke = line(t.text_faint);
+    v.widgets.hovered.corner_radius = radius;
     v.widgets.active.bg_fill = t.accent;
     v.widgets.active.weak_bg_fill = t.accent;
+    v.widgets.active.fg_stroke.color = t.on_accent;
+    v.widgets.active.bg_stroke = line(t.accent);
+    v.widgets.active.corner_radius = radius;
+    v.widgets.open.bg_fill = t.control_hover;
+    v.widgets.open.weak_bg_fill = t.control_hover;
+    v.widgets.open.corner_radius = radius;
     v.selection.bg_fill = t.select_bg;
-    v.window_stroke = egui::Stroke::new(1.0, t.border);
-    let shadow = Color32::from_black_alpha(if theme == Theme::Dark { 90 } else { 40 });
-    v.popup_shadow = egui::epaint::Shadow { offset: [0, 4], blur: 12, spread: 0, color: shadow };
-    v.window_corner_radius = egui::CornerRadius::same(6);
-    v.menu_corner_radius = egui::CornerRadius::same(5);
+    v.selection.stroke = line(t.accent);
+    v.window_stroke = line(t.popup_border);
+    let shadow = Color32::from_black_alpha(if theme == Theme::Dark { 120 } else { 40 });
+    v.popup_shadow = egui::epaint::Shadow { offset: [0, 6], blur: 18, spread: 0, color: shadow };
+    v.window_corner_radius = egui::CornerRadius::same(8);
+    v.menu_corner_radius = egui::CornerRadius::same(8);
+    v.window_shadow = v.popup_shadow;
     v
 }
 
@@ -307,7 +363,13 @@ pub fn apply(ctx: &egui::Context, theme: Theme, follow_system: bool) {
     ctx.all_styles_mut(|s| {
         s.spacing.item_spacing = egui::vec2(6.0, 4.0);
         s.spacing.button_padding = egui::vec2(6.0, 3.0);
-        s.spacing.interact_size.y = 20.0;
+        s.spacing.interact_size.y = 22.0;
+        s.spacing.menu_margin = egui::Margin::same(6);
+        s.spacing.tooltip_width = 280.0;
+        // Short eased transitions everywhere (hover fades, sections opening).
+        s.animation_time = 0.16;
+        s.interaction.tooltip_delay = 0.35;
+        s.interaction.tooltip_grace_time = 0.4;
         s.text_styles.insert(egui::TextStyle::Body, body());
         s.text_styles.insert(egui::TextStyle::Button, body());
         s.text_styles.insert(egui::TextStyle::Small, small());
@@ -330,13 +392,33 @@ mod tests {
     }
 
     #[test]
-    fn spec_colors_hold() {
+    fn palette_follows_adr_0006() {
         let d = Tokens::DARK;
-        assert_eq!(d.chrome, Color32::from_rgb(0x3b, 0x44, 0x53));
-        assert_eq!(d.viewport_top, Color32::from_rgb(0x2a, 0x30, 0x38));
-        assert_eq!(Tokens::LIGHT.accent, Color32::from_rgb(0x2f, 0x7c, 0xf6));
-        assert_eq!(Tokens::LIGHT.selection, d.selection, "selection is the same in both themes");
+        assert_eq!(d.chrome, hex(0x171717), "neutral 900");
+        assert_eq!(d.border, hex(0x0a0a0a), "neutral 950");
+        assert_eq!(d.accent, hex(0xfacc15), "yellow 400");
+        assert_eq!(Tokens::LIGHT.accent, hex(0xfacc15), "the same primary in both themes");
+        assert_eq!(Tokens::LIGHT.panel, hex(0xfafafa), "neutral 50");
         let s = d.view_style();
         assert!(s.bg_top[0] > s.bg_bottom[0], "the gradient is lighter at the top");
+    }
+
+    /// Relative luminance contrast between two colors (WCAG).
+    fn contrast(a: Color32, b: Color32) -> f32 {
+        let l = |c: Color32| {
+            let [r, g, b, _] = p3d_render::viewport::linear([c.r(), c.g(), c.b(), 255]);
+            0.2126 * r + 0.7152 * g + 0.0722 * b
+        };
+        let (x, y) = (l(a), l(b));
+        (x.max(y) + 0.05) / (x.min(y) + 0.05)
+    }
+
+    #[test]
+    fn text_stays_readable() {
+        for t in [Tokens::DARK, Tokens::LIGHT] {
+            assert!(contrast(t.text, t.panel) >= 7.0, "body text: {}", contrast(t.text, t.panel));
+            assert!(contrast(t.text_dim, t.panel) >= 4.5, "secondary text: {}", contrast(t.text_dim, t.panel));
+            assert!(contrast(t.on_accent, t.accent) >= 4.5, "text on the accent");
+        }
     }
 }

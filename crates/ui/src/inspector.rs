@@ -5,7 +5,7 @@
 //! parameters by re-running it, both with forms generated from the ops'
 //! parameter schemas.
 
-use egui::{Align2, Rect, RichText, Sense, Stroke, pos2, vec2};
+use egui::{Rect, RichText, pos2, vec2};
 use p3d_engine::OpCall;
 use p3d_scene::ObjectKey;
 use serde::{Deserialize, Serialize};
@@ -15,6 +15,7 @@ use crate::i18n::t;
 use crate::icons::{self, Icon};
 use crate::schema_form;
 use crate::theme::{self, Tokens};
+use crate::widgets::{info, section as panel};
 use crate::{PixelApp, chrome};
 
 /// The Properties tabs.
@@ -32,8 +33,8 @@ pub enum Tab {
 impl Tab {
     fn icon(self) -> Icon {
         match self {
-            Tab::Tool => Icon::Gear,
-            Tab::Scene => Icon::Grid,
+            Tab::Tool => Icon::Tool,
+            Tab::Scene => Icon::Scene,
             Tab::Object => Icon::ModeObject,
             Tab::Mesh => Icon::Mesh,
         }
@@ -49,48 +50,7 @@ impl Tab {
     }
 }
 
-const TAB_STRIP: f32 = 30.0;
-
-/// A collapsible panel with a Blender-like header bar.
-fn panel(ui: &mut egui::Ui, id: &str, title: &str, default_open: bool, body: impl FnOnce(&mut egui::Ui)) {
-    let tk = Tokens::get();
-    let key = ui.id().with(("panel", id));
-    let mut open = ui.data_mut(|d| *d.get_persisted_mut_or(key, default_open));
-    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
-    ui.painter().rect_filled(rect, egui::CornerRadius { nw: 4, ne: 4, sw: if open { 0 } else { 4 }, se: if open { 0 } else { 4 } }, tk.chrome_dark);
-    let chevron = Rect::from_min_size(pos2(rect.left() + 4.0, rect.center().y - 7.0), vec2(14.0, 14.0));
-    icons::paint(ui.painter(), chevron, if open { Icon::ChevronDown } else { Icon::ChevronRight }, false);
-    ui.painter().text(pos2(rect.left() + 22.0, rect.center().y), Align2::LEFT_CENTER, title, theme::body(), tk.text);
-    icons::describe_control(ui, &resp, title, Some(open));
-    if resp.clicked() {
-        open = !open;
-        ui.data_mut(|d| d.insert_persisted(key, open));
-    }
-    if open {
-        egui::Frame::NONE
-            .fill(tk.panel)
-            .stroke(Stroke::new(1.0, tk.chrome_dark))
-            .corner_radius(egui::CornerRadius { nw: 0, ne: 0, sw: 4, se: 4 })
-            .inner_margin(egui::Margin::symmetric(8, 6))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                body(ui);
-            });
-    }
-    ui.add_space(6.0);
-}
-
-/// A read-only row: label on the left, value on the right.
-fn info(ui: &mut egui::Ui, key: &str, value: impl Into<String>) {
-    let tk = Tokens::get();
-    ui.horizontal(|ui| {
-        let w = (ui.available_width() * 0.4).clamp(70.0, 130.0);
-        ui.allocate_ui_with_layout(vec2(w, 18.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add(egui::Label::new(RichText::new(key).color(tk.text_dim)).truncate());
-        });
-        ui.add(egui::Label::new(value.into()).truncate());
-    });
-}
+const TAB_STRIP: f32 = 36.0;
 
 fn fmt(x: f32) -> String {
     let s = format!("{x:.3}");
@@ -103,7 +63,6 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
     let full = ui.max_rect();
     let strip = Rect::from_min_size(full.min, vec2(TAB_STRIP, full.height()));
-    ui.painter().rect_filled(strip, 0.0, tk.chrome_dark);
     let active = app.active_object();
     let has_mesh = active.is_some_and(|k| app.doc().object_mesh(k).is_some());
     let tabs: Vec<Tab> = [Tab::Tool, Tab::Scene, Tab::Object, Tab::Mesh]
@@ -118,18 +77,16 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
     if !tabs.contains(&tab) {
         tab = if active.is_some() { Tab::Object } else { Tab::Scene };
     }
-    let mut y = strip.top() + 6.0;
-    for tb in &tabs {
-        let rect = Rect::from_min_size(pos2(strip.left() + 3.0, y), vec2(24.0, 24.0));
-        let clicked =
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| icons::button(ui, tb.icon(), 24.0, tb.label(), *tb == tab).clicked()).inner;
-        if clicked {
-            tab = *tb;
-            app.ui.inspector_tab = *tb;
-        }
-        y += 28.0;
+    let labels: Vec<(Icon, &str)> = tabs.iter().map(|tb| (tb.icon(), tb.label())).collect();
+    let current = tabs.iter().position(|tb| *tb == tab).unwrap_or(0);
+    if let Some(i) = crate::widgets::tab_strip(ui, strip, &labels, current)
+        && let Some(tb) = tabs.get(i)
+    {
+        tab = *tb;
+        app.ui.inspector_tab = *tb;
     }
-    let body = Rect::from_min_max(pos2(strip.right() + 6.0, full.top()), full.max);
+    ui.painter().rect_filled(Rect::from_min_max(pos2(strip.right(), full.top()), full.max), 0.0, tk.panel);
+    let body = Rect::from_min_max(pos2(strip.right() + 8.0, full.top()), pos2(full.right() - 8.0, full.bottom()));
     ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
         egui::ScrollArea::vertical().id_salt("inspector").auto_shrink([false, false]).show(ui, |ui| {
             ui.add_space(6.0);

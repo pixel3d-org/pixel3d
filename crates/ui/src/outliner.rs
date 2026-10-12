@@ -1,5 +1,5 @@
 //! The Outliner, laid out like Blender's: a search field, then the object
-//! tree with disclosure arrows, type icons, striped rows, the selection
+//! tree with disclosure arrows, type icons, rounded rows, the selection
 //! highlighted (the active object brighter) and an eye per row that hides
 //! the object in the viewport. Double-click renames in place; right-click
 //! opens the object's actions.
@@ -17,7 +17,7 @@ use crate::icons::{self, Icon};
 use crate::theme::{self, Tokens};
 use crate::viewport::ViewportEvent;
 
-const ROW: f32 = 22.0;
+const ROW: f32 = 28.0;
 const INDENT: f32 = 16.0;
 
 /// One visible row.
@@ -69,14 +69,8 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
         ui.data_mut(|d| d.get_temp(state).unwrap_or_default());
 
     // Search.
-    ui.horizontal(|ui| {
-        let r = ui.add_sized(
-            [ui.available_width(), 22.0],
-            egui::TextEdit::singleline(&mut filter).hint_text(t("Search objects")).margin(egui::Margin { left: 24, right: 4, top: 2, bottom: 2 }),
-        );
-        icons::paint(ui.painter(), Rect::from_min_size(r.rect.min + vec2(5.0, 4.0), vec2(14.0, 14.0)), Icon::Search, false);
-    });
-    ui.add_space(4.0);
+    crate::widgets::search_field(ui, &mut filter, t("Search objects"));
+    ui.add_space(6.0);
 
     let list = rows(app, &collapsed, &filter);
     if list.is_empty() {
@@ -101,13 +95,15 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
             let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
             let selected = app.selection.contains(&row.key);
             let hidden = app.hidden.contains(&row.key);
+            // Rounded rows: a light accent tint for the selection, stronger
+            // for the active object, an eased tint on hover.
+            let pill = rect.shrink2(vec2(2.0, 1.0));
+            let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
             if selected {
-                let fill = if active == Some(row.key) { tk.select_bg.gamma_multiply(0.75) } else { tk.select_bg.gamma_multiply(0.42) };
-                ui.painter().rect_filled(rect, 0.0, fill);
-            } else if resp.hovered() {
-                ui.painter().rect_filled(rect, 0.0, tk.control.gamma_multiply(0.45));
-            } else if i % 2 == 1 {
-                ui.painter().rect_filled(rect, 0.0, tk.chrome_dark.gamma_multiply(0.35));
+                let is_active = active == Some(row.key);
+                ui.painter().rect_filled(pill, 5.0, tk.accent.gamma_multiply(if is_active { 0.2 } else { 0.1 } + 0.05 * hot));
+            } else if hot > 0.0 {
+                ui.painter().rect_filled(pill, 5.0, tk.control.gamma_multiply(0.8 * hot));
             }
             let x0 = rect.left() + 4.0 + row.depth as f32 * INDENT;
             // Tree lines toward the parent.
@@ -152,13 +148,7 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
                     }
                 }
                 _ => {
-                    let color = if hidden {
-                        tk.text_faint
-                    } else if active == Some(row.key) {
-                        egui::Color32::WHITE
-                    } else {
-                        tk.text
-                    };
+                    let color = if hidden { tk.text_faint } else { tk.text };
                     let mut job = egui::text::LayoutJob::simple_singleline(obj.name().to_owned(), theme::body(), color);
                     job.wrap = egui::text::TextWrapping {
                         max_width: (text_right - name_x - 40.0).max(20.0),

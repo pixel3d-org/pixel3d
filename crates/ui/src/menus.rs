@@ -6,13 +6,26 @@
 use egui::{Key, KeyboardShortcut, Modifiers};
 use serde_json::{Value, json};
 
-/// One menu item.
+use crate::PixelApp;
+use crate::icons::Icon;
+
+/// One menu item. An item without a command is a section header.
 #[derive(Clone, Copy)]
 pub struct MenuItem {
     pub label: &'static str,
     pub command: &'static str,
     pub params: fn() -> Value,
     pub shortcut: Option<KeyboardShortcut>,
+    pub icon: Option<Icon>,
+    /// Whether the item shows a check mark (toggles and choices).
+    pub checked: Option<fn(&PixelApp) -> bool>,
+}
+
+impl MenuItem {
+    /// A section header: a small title over the items that follow.
+    pub fn is_header(&self) -> bool {
+        self.command.is_empty()
+    }
 }
 
 /// A top-level menu; `None` entries are separators.
@@ -29,16 +42,32 @@ const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
     Some(KeyboardShortcut::new(modifiers, key))
 }
 
+fn entry(label: &'static str, command: &'static str, params: fn() -> Value, shortcut: Option<KeyboardShortcut>) -> MenuItem {
+    MenuItem { label, command, params, shortcut, icon: None, checked: None }
+}
+
 fn item(label: &'static str, command: &'static str) -> Option<MenuItem> {
-    Some(MenuItem { label, command, params: none, shortcut: None })
+    Some(entry(label, command, none, None))
 }
 
 fn keyed(label: &'static str, command: &'static str, shortcut: Option<KeyboardShortcut>) -> Option<MenuItem> {
-    Some(MenuItem { label, command, params: none, shortcut })
+    Some(entry(label, command, none, shortcut))
 }
 
 fn with(label: &'static str, command: &'static str, params: fn() -> Value) -> Option<MenuItem> {
-    Some(MenuItem { label, command, params, shortcut: None })
+    Some(entry(label, command, params, None))
+}
+
+fn header(label: &'static str) -> Option<MenuItem> {
+    Some(entry(label, "", none, None))
+}
+
+fn icon(icon: Icon, it: Option<MenuItem>) -> Option<MenuItem> {
+    it.map(|it| MenuItem { icon: Some(icon), ..it })
+}
+
+fn checked(state: fn(&PixelApp) -> bool, it: Option<MenuItem>) -> Option<MenuItem> {
+    it.map(|it| MenuItem { checked: Some(state), ..it })
 }
 
 /// Every menu in order.
@@ -49,36 +78,37 @@ pub fn menus() -> Vec<Menu> {
         Menu {
             label: "File",
             entries: vec![
-                keyed("New", "file.new", key(cmd, Key::N)),
-                keyed("Open...", "file.open", key(cmd, Key::O)),
-                item("Open the sample scene", "file.sample"),
+                icon(Icon::New, keyed("New", "file.new", key(cmd, Key::N))),
+                icon(Icon::Open, keyed("Open...", "file.open", key(cmd, Key::O))),
+                icon(Icon::Box, item("Open the sample scene", "file.sample")),
                 None,
-                keyed("Save", "file.save", key(cmd, Key::S)),
+                icon(Icon::Save, keyed("Save", "file.save", key(cmd, Key::S))),
                 keyed("Save As...", "file.save_as", key(shift_cmd, Key::S)),
                 None,
-                item("Start page", "ui.start"),
+                icon(Icon::Menu, item("Start page", "ui.start")),
                 None,
-                item("Quit", "app.quit"),
+                icon(Icon::Close, item("Quit", "app.quit")),
             ],
         },
         Menu {
             label: "Edit",
             entries: vec![
-                keyed("Undo", "edit.undo", key(cmd, Key::Z)),
-                keyed("Redo", "edit.redo", key(shift_cmd, Key::Z)),
+                icon(Icon::Undo, keyed("Undo", "edit.undo", key(cmd, Key::Z))),
+                icon(Icon::Redo, keyed("Redo", "edit.redo", key(shift_cmd, Key::Z))),
                 None,
-                keyed("Duplicate", "edit.duplicate", key(cmd, Key::D)),
-                keyed("Delete", "edit.delete", key(Modifiers::NONE, Key::Delete)),
+                icon(Icon::Copy, keyed("Duplicate", "edit.duplicate", key(cmd, Key::D))),
+                icon(Icon::Trash, keyed("Delete", "edit.delete", key(Modifiers::NONE, Key::Delete))),
                 None,
-                keyed("Select all", "edit.select_all", key(cmd, Key::A)),
+                icon(Icon::Select, keyed("Select all", "edit.select_all", key(cmd, Key::A))),
                 keyed("Select none", "edit.select_none", key(Modifiers::NONE, Key::Escape)),
             ],
         },
         Menu {
             label: "View",
             entries: vec![
-                keyed("Frame selection", "view.frame", key(Modifiers::NONE, Key::F)),
+                icon(Icon::Frame, keyed("Frame selection", "view.frame", key(Modifiers::NONE, Key::F))),
                 None,
+                header("Viewpoint"),
                 with("Front", "view.set", || json!({ "view": "front" })),
                 with("Back", "view.set", || json!({ "view": "back" })),
                 with("Right", "view.set", || json!({ "view": "right" })),
@@ -87,41 +117,47 @@ pub fn menus() -> Vec<Menu> {
                 with("Bottom", "view.set", || json!({ "view": "bottom" })),
                 with("Three-quarter", "view.set", || json!({ "view": "three_quarter" })),
                 None,
-                keyed("Perspective or orthographic", "view.ortho", key(Modifiers::NONE, Key::Num5)),
-                item("Ground grid", "view.grid"),
+                checked(|a| a.ui.view.ortho, icon(Icon::Orthographic, keyed("Orthographic", "view.ortho", key(Modifiers::NONE, Key::Num5)))),
+                checked(|a| a.ui.view.grid, icon(Icon::Grid, item("Ground grid", "view.grid"))),
                 None,
-                with("Solid", "view.shading", || json!({ "mode": "solid" })),
-                with("Solid with edges", "view.shading", || json!({ "mode": "solid_wire" })),
-                with("Wireframe", "view.shading", || json!({ "mode": "wire" })),
-                with("Clay", "view.shading", || json!({ "mode": "matcap" })),
+                header("Shading"),
+                checked(|a| a.ui.view.shading == "solid", icon(Icon::ShadeSolid, with("Solid", "view.shading", || json!({ "mode": "solid" })))),
+                checked(
+                    |a| a.ui.view.shading == "solid_wire",
+                    icon(Icon::ShadeSolidWire, with("Solid with edges", "view.shading", || json!({ "mode": "solid_wire" }))),
+                ),
+                checked(|a| a.ui.view.shading == "wire", icon(Icon::ShadeWire, with("Wireframe", "view.shading", || json!({ "mode": "wire" })))),
+                checked(|a| a.ui.view.shading == "matcap", icon(Icon::ShadeMatcap, with("Clay", "view.shading", || json!({ "mode": "matcap" })))),
                 None,
-                with("Theme: system", "ui.theme", || json!({ "theme": "system" })),
-                with("Theme: light", "ui.theme", || json!({ "theme": "light" })),
-                with("Theme: dark", "ui.theme", || json!({ "theme": "dark" })),
+                header("Theme"),
+                checked(|a| a.ui.theme == crate::theme::ThemePref::System, with("System", "ui.theme", || json!({ "theme": "system" }))),
+                checked(|a| a.ui.theme == crate::theme::ThemePref::Light, with("Light", "ui.theme", || json!({ "theme": "light" }))),
+                checked(|a| a.ui.theme == crate::theme::ThemePref::Dark, with("Dark", "ui.theme", || json!({ "theme": "dark" }))),
                 None,
-                item("History and Console", "ui.bottom"),
-                item("Tool labels", "ui.sidebar_labels"),
+                checked(PixelApp::bottom_panel_visible, icon(Icon::History, item("History and Console", "ui.bottom"))),
+                checked(|a| a.ui.rail_labels, item("Tool labels", "ui.rail_labels")),
                 item("Reset panel layout", "ui.dock.reset"),
             ],
         },
         Menu {
             label: "Add",
             entries: vec![
-                item("Box", "prim.box"),
-                item("Cylinder", "prim.cylinder"),
-                item("Sphere", "prim.quad_sphere"),
-                item("Plane", "prim.plane"),
+                header("Mesh"),
+                icon(Icon::Box, item("Box", "prim.box")),
+                icon(Icon::Cylinder, item("Cylinder", "prim.cylinder")),
+                icon(Icon::Sphere, item("Sphere", "prim.quad_sphere")),
+                icon(Icon::Plane, item("Plane", "prim.plane")),
                 None,
-                item("Empty", "scene.create_empty"),
+                icon(Icon::Empty, item("Empty", "scene.create_empty")),
             ],
         },
         Menu {
             label: "Mesh",
             entries: vec![
-                with("Fill holes", "selection.run", || json!({ "op": "edit.fill" })),
-                with("Recalculate normals", "selection.run", || json!({ "op": "edit.recalc_normals" })),
+                icon(Icon::Fill, with("Fill holes", "selection.run", || json!({ "op": "edit.fill" }))),
+                icon(Icon::Normals, with("Recalculate normals", "selection.run", || json!({ "op": "edit.recalc_normals" }))),
                 None,
-                with("Apply transform", "selection.run", || json!({ "op": "scene.apply_transform" })),
+                icon(Icon::Apply, with("Apply transform", "selection.run", || json!({ "op": "scene.apply_transform" }))),
             ],
         },
     ]
@@ -136,14 +172,18 @@ mod tests {
         let mut app = crate::PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
         for menu in menus() {
             for it in menu.entries.into_iter().flatten() {
-                // Commands that need a dialog or quit are skipped; the rest must run.
-                if matches!(it.command, "file.open" | "file.save" | "file.save_as" | "app.quit") {
+                // Headers, commands that need a dialog and quit are skipped;
+                // the rest must run.
+                if it.is_header() || matches!(it.command, "file.open" | "file.save" | "file.save_as" | "app.quit") {
                     continue;
                 }
                 // Ops may refuse the scene (nothing selected, no holes); the
                 // command itself must exist.
                 if let Err(e) = app.run(it.command, (it.params)()) {
                     assert!(!e.starts_with(crate::i18n::t("unknown command")), "{}: {e}", it.command);
+                }
+                if let Some(state) = it.checked {
+                    let _ = state(&app);
                 }
             }
         }

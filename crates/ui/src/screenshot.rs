@@ -15,6 +15,8 @@ pub struct Shots {
     next: u64,
     /// The last finished screenshot: its path or the error.
     pub done: Option<Result<PathBuf, String>>,
+    /// Extra frames to wait, for example until a hover tooltip shows.
+    pub extra_frames: u32,
 }
 
 impl Shots {
@@ -36,7 +38,7 @@ impl Shots {
     /// Complexity: O(pixels) when a screenshot arrives, O(1) otherwise.
     pub fn tick(&mut self, ctx: &egui::Context) {
         if let Some((path, frames, token)) = self.pending.take() {
-            if frames >= SETTLE_FRAMES {
+            if frames >= SETTLE_FRAMES + self.extra_frames {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::new(token)));
                 self.issued = Some((path, token));
             } else {

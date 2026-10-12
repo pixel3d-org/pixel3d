@@ -1,7 +1,7 @@
 //! Dock panel bodies: Outliner, Properties, History and Console.
 //! Panels read the session and act only through [`PixelApp::run`].
 
-use egui::{Align2, Sense, Stroke, pos2, vec2};
+use egui::{Align2, Sense, pos2, vec2};
 use serde_json::Value;
 
 use crate::PixelApp;
@@ -27,14 +27,11 @@ pub fn history(app: &mut PixelApp, ui: &mut egui::Ui) {
                 let is_current = i == entries.len();
                 let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
                 if is_current {
-                    ui.painter().rect_filled(rect, 2.0, tk.select_bg.gamma_multiply(0.45));
+                    ui.painter().rect_filled(rect, 5.0, tk.accent.gamma_multiply(0.14));
                 } else if resp.hovered() {
                     ui.painter().rect_filled(rect, 2.0, tk.control.gamma_multiply(0.4));
                 }
                 ui.painter().text(pos2(rect.left() + 8.0, rect.center().y), Align2::LEFT_CENTER, &label, theme::body(), tk.text);
-                if is_current {
-                    ui.painter().vline(rect.left() + 2.0, rect.y_range().shrink(3.0), Stroke::new(2.0, tk.accent));
-                }
                 crate::control::record_widget(ui, &resp, &label, "listitem", Some(is_current));
                 if resp.clicked() {
                     undo_to = Some(i);

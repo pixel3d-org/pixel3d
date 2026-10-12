@@ -13,6 +13,7 @@ pub mod control;
 pub mod docking;
 pub mod health;
 pub mod i18n;
+mod icon_data;
 pub mod icons;
 pub mod inspector;
 pub mod menus;
@@ -22,7 +23,9 @@ pub mod panels;
 pub mod schema_form;
 pub mod screenshot;
 pub mod theme;
+pub mod vector_icon;
 pub mod viewport;
+pub mod widgets;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -129,8 +132,8 @@ pub struct UiState {
     /// The tool settings row under the top bar.
     pub show_toolbar: bool,
     pub show_status_bar: bool,
-    /// The tool column shows labels next to its icons.
-    pub sidebar_labels: bool,
+    /// The tool rail shows small labels under its icons.
+    pub rail_labels: bool,
     /// The open Properties tab.
     pub inspector_tab: inspector::Tab,
     /// The workspace shown (tabs in the top bar).
@@ -153,7 +156,7 @@ impl Default for UiState {
             view: ViewSettings::default(),
             show_toolbar: true,
             show_status_bar: true,
-            sidebar_labels: false,
+            rail_labels: true,
             inspector_tab: inspector::Tab::default(),
             workspace: WorkspaceKind::Model,
             start_page: true,
@@ -536,9 +539,9 @@ impl PixelApp {
                 let op = str_param("op").ok_or("op is required: an op that takes a target")?;
                 self.run_on_selection(&op)
             }
-            "ui.sidebar_labels" => {
-                self.ui.sidebar_labels = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.sidebar_labels);
-                Ok(json!({ "sidebarLabels": self.ui.sidebar_labels }))
+            "ui.rail_labels" => {
+                self.ui.rail_labels = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.rail_labels);
+                Ok(json!({ "railLabels": self.ui.rail_labels }))
             }
             "ui.tool" => {
                 let tool = serde_json::from_value::<Tool>(params.get("tool").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;

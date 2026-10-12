@@ -259,20 +259,9 @@ pub fn form_with(ui: &mut egui::Ui, id: egui::Id, schema: &Value, root: &Value, 
     out
 }
 
-/// A row: label on the left (right-aligned), widget on the right.
+/// A row: the label column, then the widget (shared with Properties).
 fn row<R>(ui: &mut egui::Ui, label: &str, desc: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
-    let tk = Tokens::get();
-    ui.horizontal(|ui| {
-        let w = (ui.available_width() * 0.4).clamp(70.0, 130.0);
-        ui.allocate_ui_with_layout(egui::vec2(w, 20.0), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let l = ui.add(egui::Label::new(RichText::new(label).color(tk.text_dim)).truncate());
-            if !desc.is_empty() {
-                l.on_hover_text(desc);
-            }
-        });
-        add(ui)
-    })
-    .inner
+    crate::widgets::prop_row(ui, label, desc, add)
 }
 
 fn drag(ui: &mut egui::Ui, v: &mut f64, kind: &Kind, width: f32) -> egui::Response {
@@ -286,7 +275,7 @@ fn drag(ui: &mut egui::Ui, v: &mut f64, kind: &Kind, width: f32) -> egui::Respon
     if let Kind::Integer { min, max } | Kind::Number { min, max } = kind {
         d = d.range(min.unwrap_or(f64::NEG_INFINITY)..=max.unwrap_or(f64::INFINITY));
     }
-    ui.add_sized([width, 20.0], d)
+    ui.add_sized([width, crate::widgets::ROW], d)
 }
 
 #[allow(clippy::too_many_arguments)] // One recursive step of the mapping; each argument is distinct.
@@ -346,7 +335,8 @@ fn field(
         }
         Kind::Text => {
             let mut s = v.as_str().unwrap_or("").to_owned();
-            let r = row(ui, label, desc, |ui| ui.add_sized([ui.available_width().max(80.0), 20.0], egui::TextEdit::singleline(&mut s)));
+            let r =
+                row(ui, label, desc, |ui| ui.add_sized([ui.available_width().max(80.0), crate::widgets::ROW], egui::TextEdit::singleline(&mut s)));
             if r.changed() {
                 *v = json!(s);
                 out.changed = true;
@@ -361,17 +351,19 @@ fn field(
             let mut changed = false;
             let mut dragging = false;
             // Stacked like Blender: the label on the X row, one field per axis.
-            ui.spacing_mut().item_spacing.y = 1.0;
+            ui.spacing_mut().item_spacing.y = 2.0;
             for (i, x) in xs.iter_mut().enumerate() {
                 let r = row(ui, if i == 0 { label } else { "" }, desc, |ui| {
-                    ui.label(RichText::new(["X", "Y", "Z"][i]).color(axes[i]).font(theme::small()));
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    let (slot, _) = ui.allocate_exact_size(egui::vec2(10.0, crate::widgets::ROW), egui::Sense::hover());
+                    ui.painter().text(slot.center(), egui::Align2::CENTER_CENTER, ["X", "Y", "Z"][i], theme::small(), axes[i]);
                     drag(ui, x, inner, ui.available_width().max(40.0))
                 });
                 changed |= r.changed();
                 dragging |= r.dragged();
             }
             ui.spacing_mut().item_spacing.y = 4.0;
-            ui.add_space(3.0);
+            ui.add_space(4.0);
             if changed {
                 let ints = matches!(**inner, Kind::Integer { .. });
                 *v = Value::Array(xs.iter().map(|x| if ints { json!(x.round() as i64) } else { json!(x) }).collect());
@@ -404,7 +396,7 @@ fn field(
                     let mut s = v.as_str().unwrap_or("").to_owned();
                     let r = row(ui, label, desc, |ui| {
                         ui.add_sized(
-                            [ui.available_width().max(80.0), 20.0],
+                            [ui.available_width().max(80.0), crate::widgets::ROW],
                             egui::TextEdit::singleline(&mut s).hint_text(crate::i18n::t("automatic")),
                         )
                     });

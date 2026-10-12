@@ -4,7 +4,7 @@ Every non-code asset in this repository (images, icons, fonts, sample models, te
 
 **Policy:** only original work by pixel3d contributors, or third-party material under a license that allows redistribution (OSI open source, public domain or CC0, or a Creative Commons license that allows redistribution). Material from GPL projects is never copied. Each third-party sample model (for example from the Khronos glTF sample models) is checked individually before it is added.
 
-Generated-in-code assets are original and have no file to list: the interface icons are painted in code (`crates/ui/src/icons.rs`, in the style of cadcraft's icon set, see NOTICE).
+The interface icons are SVG path data from Tabler Icons, stored as text in `crates/ui/src/icon_data.rs` and drawn in code (a few, marked in that file, are drawn for pixel3d in the same style). The Tabler Icons license is reproduced below.
 
 Fonts compiled into the desktop app come from egui's `epaint_default_fonts` crate (version 0.36.2); none are stored in this repository (ADR 0004).
 
@@ -14,3 +14,30 @@ Fonts compiled into the desktop app come from egui's `epaint_default_fonts` crat
 | Noto Emoji font | Google Inc. | `epaint_default_fonts` 0.36.2 | SIL Open Font License 1.1 | Symbol fallback in the desktop app |
 | Hack font | Source Foundry Authors | `epaint_default_fonts` 0.36.2 | MIT and Bitstream Vera License | Monospace text in the desktop app |
 | emoji-icon-font | John Slegers | `epaint_default_fonts` 0.36.2 | MIT | Icon glyph fallback in the desktop app |
+| Tabler Icons 3.34.1 (path data of the icons in `icon_data.rs`) | Paweł Kuna and the Tabler Icons contributors | https://tabler.io/icons, npm `@tabler/icons` 3.34.1 | MIT | Interface icons in the desktop app |
+
+## Tabler Icons license
+
+```text
+MIT License
+
+Copyright (c) 2020-2024 Paweł Kuna
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

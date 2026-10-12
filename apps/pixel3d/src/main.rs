@@ -22,6 +22,8 @@ options:
       --screenshot <png>   save a screenshot of the window, then quit
       --light              use the light theme for this run
       --command <id>       run a command after start (repeatable), e.g. edit.select_all
+      --hover <x,y>        with --screenshot: rest the pointer there (points) first
+      --click              with --hover: click there once before the screenshot
   -V, --version            print the version
   -h, --help               print this help
 ";
@@ -34,11 +36,18 @@ struct Args {
     screenshot: Option<PathBuf>,
     light: bool,
     commands: Vec<String>,
+    hover: Option<egui::Pos2>,
+    click: bool,
 }
 
 struct App {
     app: PixelApp,
     title: String,
+    /// Screenshot runs: where the pointer rests, whether it clicks there
+    /// and the frames seen so far.
+    hover: Option<egui::Pos2>,
+    click: bool,
+    frames: u32,
     #[cfg(target_os = "macos")]
     native_menu: Option<native_menu::NativeMenu>,
 }
@@ -74,6 +83,20 @@ impl eframe::App for App {
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
         if self.app.quit_after_shot {
             raw.events.retain(|e| matches!(e, egui::Event::Screenshot { .. }));
+            if let Some(at) = self.hover {
+                raw.events.push(egui::Event::PointerMoved(at));
+                // Press on the third frame, release on the fourth.
+                self.frames += 1;
+                if self.click && (self.frames == 3 || self.frames == 4) {
+                    let pressed = self.frames == 3;
+                    raw.events.push(egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed,
+                        modifiers: egui::Modifiers::NONE,
+                    });
+                }
+            }
         }
     }
 
@@ -142,6 +165,14 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             },
+            "--click" => args.click = true,
+            "--hover" => match it.next().and_then(|s| parse_point(&s)) {
+                Some(p) => args.hover = Some(p),
+                None => {
+                    eprintln!("error: --hover needs a position like 120,80\n\n{USAGE}");
+                    return ExitCode::FAILURE;
+                }
+            },
             "--screenshot" => match it.next() {
                 Some(p) => args.screenshot = Some(PathBuf::from(p)),
                 None => {
@@ -163,6 +194,12 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// `x,y` in points.
+fn parse_point(s: &str) -> Option<egui::Pos2> {
+    let (x, y) = s.split_once(',')?;
+    Some(egui::pos2(x.trim().parse().ok()?, y.trim().parse().ok()?))
 }
 
 fn run(args: Args) -> anyhow::Result<()> {
@@ -224,10 +261,17 @@ fn run(args: Args) -> anyhow::Result<()> {
             if let Some(path) = &args.screenshot {
                 app.shots.request(path.clone());
                 app.quit_after_shot = true;
+                if args.hover.is_some() {
+                    // Long enough for the tooltip delay.
+                    app.shots.extra_frames = 60;
+                }
             }
             Ok(Box::new(App {
                 app,
                 title: String::new(),
+                hover: args.hover.filter(|_| args.screenshot.is_some()),
+                click: args.click,
+                frames: 0,
                 #[cfg(target_os = "macos")]
                 native_menu: None,
             }))

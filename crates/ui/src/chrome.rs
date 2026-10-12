@@ -7,34 +7,43 @@ use egui::{Align2, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, pos2, 
 use serde_json::{Value, json};
 
 use crate::i18n::t;
-use crate::icons::{self, Icon};
+use crate::icons::{self, Icon, Look};
 use crate::theme::{self, Tokens};
+use crate::widgets::Tip;
 use crate::{PixelApp, SelectMode, Tool};
 
 /// Height of the top bar; on macOS the traffic lights sit in it.
-const TOP_BAR: f32 = 28.0;
+const TOP_BAR: f32 = 36.0;
 /// Where top bar content starts right of the macOS traffic lights.
 const MAC_CONTENT_LEFT: f32 = 78.0;
 /// The tool settings row under the top bar.
-const TOOL_SETTINGS: f32 = 30.0;
-/// The tool column: icons only, or icons with labels.
-const SIDEBAR: f32 = 40.0;
-const SIDEBAR_LABELS: f32 = 168.0;
-const TOOL_BUTTON: f32 = 32.0;
+const TOOL_SETTINGS: f32 = 36.0;
+/// The tool rail: with small labels under the icons, or icons only.
+const RAIL: f32 = 58.0;
+const RAIL_ICONS: f32 = 46.0;
 /// The header strip on top of the viewport.
-pub const VIEW_HEADER: f32 = 28.0;
+pub const VIEW_HEADER: f32 = 34.0;
 
-/// One button: icon, command, label, parameters and whether it shows as on.
+/// One button: icon, command, label, shortcut, description, parameters and
+/// whether it shows as on.
 struct Item {
     icon: Icon,
     command: &'static str,
     label: &'static str,
-    /// Shortcut and one line on what it does, for the tooltip.
-    hint: &'static str,
+    /// The shortcut in `Cmd+Shift+Z` notation, or empty.
+    keys: &'static str,
+    /// One line on what it does, for the tooltip.
+    desc: &'static str,
     params: fn() -> Value,
     selected: fn(&PixelApp) -> bool,
     /// Needs a selected object.
     needs_selection: bool,
+}
+
+impl Item {
+    fn tip(&self) -> Tip<'static> {
+        Tip::new(t(self.label)).desc(t(self.desc)).keys(self.keys)
+    }
 }
 
 fn no_params() -> Value {
@@ -46,11 +55,20 @@ fn never(_: &PixelApp) -> bool {
 }
 
 macro_rules! item {
-    ($icon:ident, $cmd:literal, $label:literal, $hint:literal) => {
-        Item { icon: Icon::$icon, command: $cmd, label: $label, hint: $hint, params: no_params, selected: never, needs_selection: false }
+    ($icon:ident, $cmd:literal, $label:literal, $keys:literal, $desc:literal) => {
+        Item { icon: Icon::$icon, command: $cmd, label: $label, keys: $keys, desc: $desc, params: no_params, selected: never, needs_selection: false }
     };
-    ($icon:ident, $cmd:literal, $label:literal, $hint:literal, $params:expr, $selected:expr) => {
-        Item { icon: Icon::$icon, command: $cmd, label: $label, hint: $hint, params: $params, selected: $selected, needs_selection: false }
+    ($icon:ident, $cmd:literal, $label:literal, $keys:literal, $desc:literal, $params:expr, $selected:expr) => {
+        Item {
+            icon: Icon::$icon,
+            command: $cmd,
+            label: $label,
+            keys: $keys,
+            desc: $desc,
+            params: $params,
+            selected: $selected,
+            needs_selection: false,
+        }
     };
 }
 
@@ -59,22 +77,23 @@ fn on_selection(mut it: Item) -> Item {
     it
 }
 
-/// The tool column, in groups.
+/// The tool rail, in groups.
 fn sidebar_groups() -> Vec<Vec<Item>> {
     vec![
         vec![
-            item!(Select, "ui.tool", "Select", "Q: click to select, Shift+click to add", || json!({ "tool": "select" }), |a| a.ui.tool
+            item!(Select, "ui.tool", "Select", "Q", "Click to select, Shift+click to add or remove", || json!({ "tool": "select" }), |a| a.ui.tool
                 == Tool::Select),
-            item!(Move, "ui.tool", "Move", "W: move the selection", || json!({ "tool": "move" }), |a| a.ui.tool == Tool::Move),
-            item!(Rotate, "ui.tool", "Rotate", "E: rotate the selection", || json!({ "tool": "rotate" }), |a| a.ui.tool == Tool::Rotate),
-            item!(Scale, "ui.tool", "Scale", "R: scale the selection", || json!({ "tool": "scale" }), |a| a.ui.tool == Tool::Scale),
+            item!(Move, "ui.tool", "Move", "W", "Move the selection with the gizmo", || json!({ "tool": "move" }), |a| a.ui.tool == Tool::Move),
+            item!(Rotate, "ui.tool", "Rotate", "E", "Rotate the selection with the gizmo", || json!({ "tool": "rotate" }), |a| a.ui.tool
+                == Tool::Rotate),
+            item!(Scale, "ui.tool", "Scale", "R", "Scale the selection with the gizmo", || json!({ "tool": "scale" }), |a| a.ui.tool == Tool::Scale),
         ],
         vec![
-            item!(Box, "prim.box", "Box", "Add a box at the origin"),
-            item!(Cylinder, "prim.cylinder", "Cylinder", "Add a cylinder at the origin"),
-            item!(Sphere, "prim.quad_sphere", "Sphere", "Add a quad sphere at the origin"),
-            item!(Plane, "prim.plane", "Plane", "Add a flat grid at the origin"),
-            item!(Empty, "scene.create_empty", "Empty", "Add an empty (a transform only)"),
+            item!(Box, "prim.box", "Box", "", "Add a box at the origin"),
+            item!(Cylinder, "prim.cylinder", "Cylinder", "", "Add a cylinder at the origin"),
+            item!(Sphere, "prim.quad_sphere", "Sphere", "", "Add a quad sphere at the origin"),
+            item!(Plane, "prim.plane", "Plane", "", "Add a flat grid at the origin"),
+            item!(Empty, "scene.create_empty", "Empty", "", "Add an empty: a transform without a mesh"),
         ],
     ]
 }
@@ -83,22 +102,22 @@ fn sidebar_groups() -> Vec<Vec<Item>> {
 /// something is selected (the contextual toolbar).
 fn object_actions() -> Vec<Item> {
     vec![
-        on_selection(item!(Frame, "scene.apply_transform", "Apply transform", "Bake the object's transform into its mesh")),
-        on_selection(item!(Mesh, "edit.fill", "Fill holes", "Close holes with one face each")),
-        on_selection(item!(Health, "edit.recalc_normals", "Recalculate normals", "Make faces point outward")),
-        item!(Plus, "edit.duplicate", "Duplicate", "Ctrl+D: copy the selected objects"),
-        item!(Close, "edit.delete", "Delete", "Delete: remove the selected objects"),
+        on_selection(item!(Apply, "scene.apply_transform", "Apply transform", "", "Bake the object's transform into its mesh")),
+        on_selection(item!(Fill, "edit.fill", "Fill holes", "", "Close each hole with one face")),
+        on_selection(item!(Normals, "edit.recalc_normals", "Recalculate normals", "", "Make every face point outward")),
+        item!(Copy, "edit.duplicate", "Duplicate", "Cmd+D", "Copy the selected objects"),
+        item!(Trash, "edit.delete", "Delete", "Delete", "Remove the selected objects"),
     ]
 }
 
 /// Buttons of the tool settings row (file and history).
 fn settings_items() -> Vec<Item> {
     vec![
-        item!(New, "file.new", "New", "Ctrl+N: start an empty scene"),
-        item!(Open, "file.open", "Open", "Ctrl+O: open a .p3d file"),
-        item!(Save, "file.save", "Save", "Ctrl+S: save to the current file"),
-        item!(Undo, "edit.undo", "Undo", "Ctrl+Z: step back one change"),
-        item!(Redo, "edit.redo", "Redo", "Ctrl+Shift+Z: step forward again"),
+        item!(New, "file.new", "New", "Cmd+N", "Start an empty scene"),
+        item!(Open, "file.open", "Open", "Cmd+O", "Open a .p3d file"),
+        item!(Save, "file.save", "Save", "Cmd+S", "Save to the current file"),
+        item!(Undo, "edit.undo", "Undo", "Cmd+Z", "Step back one change"),
+        item!(Redo, "edit.redo", "Redo", "Cmd+Shift+Z", "Step forward again"),
     ]
 }
 
@@ -106,29 +125,33 @@ fn settings_items() -> Vec<Item> {
 /// shading on the right.
 fn header_modes() -> Vec<Item> {
     vec![
-        item!(ModeObject, "ui.mode", "Object mode", "1: select whole objects", || json!({ "mode": "object" }), |a| a.ui.mode == SelectMode::Object),
-        item!(ModeVert, "ui.mode", "Vertex mode", "2: select vertices", || json!({ "mode": "vert" }), |a| a.ui.mode == SelectMode::Vert),
-        item!(ModeEdge, "ui.mode", "Edge mode", "3: select edges", || json!({ "mode": "edge" }), |a| a.ui.mode == SelectMode::Edge),
-        item!(ModeFace, "ui.mode", "Face mode", "4: select faces", || json!({ "mode": "face" }), |a| a.ui.mode == SelectMode::Face),
+        item!(ModeObject, "ui.mode", "Object mode", "1", "Select whole objects", || json!({ "mode": "object" }), |a| a.ui.mode == SelectMode::Object),
+        item!(ModeVert, "ui.mode", "Vertex mode", "2", "Select vertices", || json!({ "mode": "vert" }), |a| a.ui.mode == SelectMode::Vert),
+        item!(ModeEdge, "ui.mode", "Edge mode", "3", "Select edges", || json!({ "mode": "edge" }), |a| a.ui.mode == SelectMode::Edge),
+        item!(ModeFace, "ui.mode", "Face mode", "4", "Select faces", || json!({ "mode": "face" }), |a| a.ui.mode == SelectMode::Face),
     ]
 }
 
 fn header_view() -> Vec<Vec<Item>> {
     vec![
         vec![
-            item!(Frame, "view.frame", "Frame selection", "F: fit the selection, or everything, in the view"),
-            item!(Grid, "view.grid", "Ground grid", "Show or hide the ground grid", no_params, |a| a.ui.view.grid),
-            item!(Orthographic, "view.ortho", "Orthographic", "5: switch between perspective and orthographic", no_params, |a| a.ui.view.ortho),
+            item!(Frame, "view.frame", "Frame selection", "F", "Fit the selection, or everything, in the view"),
+            item!(Grid, "view.grid", "Ground grid", "", "Show or hide the ground grid", no_params, |a| a.ui.view.grid),
+            item!(Orthographic, "view.ortho", "Orthographic", "5", "Switch between perspective and orthographic", no_params, |a| a.ui.view.ortho),
         ],
         vec![
-            item!(ShadeWire, "view.shading", "Wireframe", "Edges only", || json!({ "mode": "wire" }), |a| a.ui.view.shading == "wire"),
-            item!(ShadeSolid, "view.shading", "Solid", "Lit surfaces", || json!({ "mode": "solid" }), |a| a.ui.view.shading == "solid"),
-            item!(ShadeSolidWire, "view.shading", "Solid with edges", "Lit surfaces and polygon edges", || json!({ "mode": "solid_wire" }), |a| a
-                .ui
-                .view
-                .shading
-                == "solid_wire"),
-            item!(ShadeMatcap, "view.shading", "Clay", "Gray clay that shows form", || json!({ "mode": "matcap" }), |a| a.ui.view.shading
+            item!(ShadeWire, "view.shading", "Wireframe", "", "Edges only", || json!({ "mode": "wire" }), |a| a.ui.view.shading == "wire"),
+            item!(ShadeSolid, "view.shading", "Solid", "", "Lit surfaces", || json!({ "mode": "solid" }), |a| a.ui.view.shading == "solid"),
+            item!(
+                ShadeSolidWire,
+                "view.shading",
+                "Solid with edges",
+                "",
+                "Lit surfaces and polygon edges",
+                || json!({ "mode": "solid_wire" }),
+                |a| a.ui.view.shading == "solid_wire"
+            ),
+            item!(ShadeMatcap, "view.shading", "Clay", "", "Gray clay that shows form", || json!({ "mode": "matcap" }), |a| a.ui.view.shading
                 == "matcap"),
         ],
     ]
@@ -137,9 +160,11 @@ fn header_view() -> Vec<Vec<Item>> {
 /// Draws one icon button in `rect`; returns whether it was clicked.
 fn button_at(ui: &mut egui::Ui, rect: Rect, it: &Item, app: &PixelApp, enabled: bool) -> bool {
     let selected = (it.selected)(app);
-    let tooltip = format!("{}\n{}", t(it.label), t(it.hint));
     ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        ui.add_enabled_ui(enabled, |ui| icons::button(ui, it.icon, rect.width(), &tooltip, selected).clicked()).inner
+        ui.add_enabled_ui(enabled, |ui| {
+            icons::button_with(ui, it.icon, rect.size(), it.tip(), selected, Look::Segment, egui::RectAlign::BOTTOM).clicked()
+        })
+        .inner
     })
     .inner
 }
@@ -162,12 +187,7 @@ pub fn top_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
             }
         }
-        let menus_rect = Rect::from_min_max(pos2(left, r.top()), pos2(r.right(), r.bottom()));
-        let menus_right = ui
-            .scope_builder(egui::UiBuilder::new().max_rect(menus_rect).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
-                menu_bar(app, ui)
-            })
-            .inner;
+        let menus_right = menu_bar(app, ui, left, r);
         let tabs_left = workspace_tabs(app, ui, r);
         let title = if app.ui.start_page { t("Start").to_owned() } else { app.title() };
         let galley = ui.painter().layout_no_wrap(format!("pixel3d  {title}"), theme::body(), tk.text_dim);
@@ -189,14 +209,14 @@ fn workspace_tabs(app: &mut PixelApp, ui: &mut egui::Ui, r: Rect) -> f32 {
     let left = x;
     let mut chosen = None;
     for (ws, w) in crate::WorkspaceKind::ALL.iter().zip(widths) {
-        let rect = Rect::from_min_size(pos2(x, r.top() + 3.0), vec2(w, r.height() - 6.0));
+        let rect = Rect::from_min_size(pos2(x, r.center().y - 13.0), vec2(w, 26.0));
         let resp = ui.interact(rect, ui.id().with(("workspace", *ws)), Sense::click());
         let current = app.ui.workspace == *ws;
         let enabled = ws.unavailable().is_none();
         if current {
-            ui.painter().rect_filled(rect, 4.0, tk.tab_active);
+            ui.painter().rect_filled(rect, 6.0, tk.tab_active);
         } else if resp.hovered() && enabled {
-            ui.painter().rect_filled(rect, 4.0, tk.control.gamma_multiply(0.6));
+            ui.painter().rect_filled(rect, 6.0, tk.control.gamma_multiply(0.6));
         }
         let color = if current {
             tk.text
@@ -219,67 +239,180 @@ fn workspace_tabs(app: &mut PixelApp, ui: &mut egui::Ui, r: Rect) -> f32 {
     left
 }
 
-/// The menus (also the macOS native menu's contents).
-/// Returns the right edge of the menus.
-fn menu_bar(app: &mut PixelApp, ui: &mut egui::Ui) -> f32 {
+/// The menus (also the macOS native menu's contents): title buttons from
+/// `left` that open dropdowns; while one is open, hovering another title
+/// switches to it. Returns the right edge of the titles.
+fn menu_bar(app: &mut PixelApp, ui: &mut egui::Ui, left: f32, bar: Rect) -> f32 {
+    let tk = Tokens::get();
+    let menus = crate::menus::menus();
+    let mut x = left;
+    let mut titles = Vec::with_capacity(menus.len());
+    for menu in &menus {
+        let g = ui.painter().layout_no_wrap(t(menu.label).to_owned(), theme::body(), tk.text);
+        let rect = Rect::from_min_size(pos2(x, bar.center().y - 13.0), vec2(g.size().x + 20.0, 26.0));
+        let resp = ui.interact(rect, ui.id().with(("menu", menu.label)), Sense::click());
+        x = rect.right() + 1.0;
+        titles.push((resp, g));
+    }
+    let ids: Vec<egui::Id> = titles.iter().map(|(r, _)| egui::Popup::default_response_id(r)).collect();
+    let any_open = ids.iter().any(|id| egui::Popup::is_id_open(ui.ctx(), *id));
     let mut clicked: Option<(&'static str, Value)> = None;
-    let mut right = ui.max_rect().left();
-    egui::MenuBar::new().ui(ui, |ui| {
-        for menu in crate::menus::menus() {
-            let button = ui.menu_button(t(menu.label), |ui| {
-                for entry in menu.entries {
-                    match entry {
-                        None => {
-                            ui.separator();
-                        }
-                        Some(it) => {
-                            let mut b = egui::Button::new(t(it.label));
-                            if let Some(s) = &it.shortcut {
-                                b = b.shortcut_text(ui.ctx().format_shortcut(s));
-                            }
-                            let resp = ui.add(b);
-                            crate::control::record_widget(ui, &resp, it.label, "menuitem", None);
-                            if resp.clicked() {
-                                clicked = Some((it.command, (it.params)()));
-                                ui.close();
-                            }
-                        }
-                    }
-                }
-            });
-            right = right.max(button.response.rect.right());
+    for ((menu, (resp, g)), id) in menus.iter().zip(titles).zip(ids) {
+        if any_open && resp.hovered() && !egui::Popup::is_id_open(ui.ctx(), id) {
+            egui::Popup::open_id(ui.ctx(), id);
         }
-    });
+        let open = egui::Popup::is_id_open(ui.ctx(), id);
+        let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered() || open, 0.1);
+        if hot > 0.0 {
+            ui.painter().rect_filled(resp.rect, 6.0, tk.control.gamma_multiply(hot));
+        }
+        let color = crate::widgets::mix(tk.text_dim, tk.text, hot);
+        ui.painter().galley(resp.rect.center() - g.size() / 2.0, g, color);
+        icons::describe_control(ui, &resp, t(menu.label), Some(open));
+        let frame = egui::Frame::NONE
+            .fill(tk.popup)
+            .stroke(Stroke::new(1.0, tk.popup_border))
+            .corner_radius(10)
+            .inner_margin(egui::Margin::same(5))
+            .shadow(ui.visuals().popup_shadow);
+        egui::Popup::menu(&resp).frame(frame).gap(4.0).align(egui::RectAlign::BOTTOM_START).width(236.0).show(|ui| {
+            if let Some(c) = menu_body(app, ui, menu) {
+                clicked = Some(c);
+            }
+        });
+    }
     if let Some((cmd, params)) = clicked {
         let _ = app.run(cmd, params);
     }
-    right
+    x
+}
+
+/// The items of one dropdown; returns the clicked item's command.
+fn menu_body(app: &PixelApp, ui: &mut egui::Ui, menu: &crate::menus::Menu) -> Option<(&'static str, Value)> {
+    let tk = Tokens::get();
+    ui.spacing_mut().item_spacing.y = 1.0;
+    let icon_column = menu.entries.iter().flatten().any(|it| it.icon.is_some());
+    let mut clicked = None;
+    for entry in &menu.entries {
+        let w = ui.available_width();
+        match entry {
+            None => {
+                let (r, _) = ui.allocate_exact_size(vec2(w, 9.0), Sense::hover());
+                ui.painter().hline(r.left() + 8.0..=r.right() - 8.0, r.center().y, Stroke::new(1.0, tk.card_border));
+            }
+            Some(it) if it.is_header() => {
+                let (r, _) = ui.allocate_exact_size(vec2(w, 24.0), Sense::hover());
+                ui.painter().text(pos2(r.left() + 10.0, r.center().y + 2.0), Align2::LEFT_CENTER, t(it.label), theme::small(), tk.text_faint);
+            }
+            Some(it) => {
+                if menu_item(ui, app, it, icon_column).clicked() {
+                    clicked = Some((it.command, (it.params)()));
+                }
+            }
+        }
+    }
+    clicked
+}
+
+/// One dropdown row: icon, label, shortcut and a check mark when on.
+fn menu_item(ui: &mut egui::Ui, app: &PixelApp, it: &crate::menus::MenuItem, icon_column: bool) -> egui::Response {
+    let tk = Tokens::get();
+    let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
+    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.08);
+    let p = ui.painter();
+    if hot > 0.0 {
+        p.rect_filled(rect, 6.0, tk.control.gamma_multiply(hot));
+    }
+    let on = it.checked.is_some_and(|f| f(app));
+    let mut x = rect.left() + 10.0;
+    if icon_column {
+        if let Some(icon) = it.icon {
+            let ir = Rect::from_center_size(pos2(x + 8.0, rect.center().y), vec2(16.0, 16.0));
+            let color = if on { tk.icon_accent } else { crate::widgets::mix(tk.icon, tk.text, hot) };
+            icons::paint_colored(p, ir, icon, color, tk.accent);
+        }
+        x += 28.0;
+    }
+    p.text(pos2(x, rect.center().y), Align2::LEFT_CENTER, t(it.label), theme::body(), tk.text);
+    let mut right = rect.right() - 10.0;
+    if on {
+        let c = pos2(right - 5.0, rect.center().y);
+        p.line(vec![c + vec2(-4.5, 0.0), c + vec2(-1.5, 3.0), c + vec2(4.5, -3.5)], Stroke::new(1.6, tk.icon_accent));
+        right -= 18.0;
+    }
+    if let Some(s) = &it.shortcut {
+        p.text(pos2(right, rect.center().y), Align2::RIGHT_CENTER, ui.ctx().format_shortcut(s), theme::small(), tk.text_faint);
+    }
+    icons::describe_control(ui, &resp, t(it.label), it.checked.map(|_| on));
+    crate::control::record_widget(ui, &resp, it.label, "menuitem", it.checked.map(|_| on));
+    resp
+}
+
+/// Size of a button in a segmented group, and the group's inner padding.
+const SEGMENT: f32 = 26.0;
+const SEGMENT_PAD: f32 = 2.0;
+
+/// Width of a segmented group of `n` buttons.
+fn segment_width(n: usize) -> f32 {
+    n as f32 * SEGMENT + n.saturating_sub(1) as f32 + SEGMENT_PAD * 2.0
+}
+
+/// A segmented group of icon buttons on an inset track, from `left`,
+/// centered on `cy`. Returns the clicked item's command and parameters.
+fn segment(ui: &mut egui::Ui, app: &PixelApp, items: &[Item], left: f32, cy: f32) -> Option<(&'static str, Value)> {
+    let tk = Tokens::get();
+    let track = Rect::from_min_size(pos2(left, cy - SEGMENT / 2.0 - SEGMENT_PAD), vec2(segment_width(items.len()), SEGMENT + SEGMENT_PAD * 2.0));
+    ui.painter().rect_filled(track, 8.0, tk.chrome_dark);
+    let mut clicked = None;
+    let mut x = track.left() + SEGMENT_PAD;
+    for it in items {
+        let r = Rect::from_min_size(pos2(x, track.top() + SEGMENT_PAD), vec2(SEGMENT, SEGMENT));
+        if button_at(ui, r, it, app, true) {
+            clicked = Some((it.command, (it.params)()));
+        }
+        x += SEGMENT + 1.0;
+    }
+    clicked
+}
+
+/// An outlined chip with an icon and a label; returns the response.
+fn chip(ui: &mut egui::Ui, rect: Rect, it: &Item) -> egui::Response {
+    let tk = Tokens::get();
+    let resp = ui.interact(rect, ui.id().with(("chip", it.command)), Sense::click());
+    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
+    let p = ui.painter();
+    p.rect(rect, 7.0, crate::widgets::mix(egui::Color32::TRANSPARENT, tk.control, hot), Stroke::new(1.0, tk.control), egui::StrokeKind::Inside);
+    let color = crate::widgets::mix(tk.icon, tk.text, hot);
+    icons::paint_colored(p, Rect::from_min_size(pos2(rect.left() + 8.0, rect.center().y - 7.5), vec2(15.0, 15.0)), it.icon, color, tk.accent);
+    p.text(
+        pos2(rect.left() + 29.0, rect.center().y),
+        Align2::LEFT_CENTER,
+        t(it.label),
+        theme::body(),
+        crate::widgets::mix(tk.text_dim, tk.text, hot),
+    );
+    icons::describe_control(ui, &resp, t(it.label), None);
+    crate::widgets::tooltip(&resp, it.tip(), egui::RectAlign::BOTTOM);
+    resp
 }
 
 /// The tool settings row: file and history buttons, then the active tool
-/// and what it does.
+/// and either what it does or actions on the selection.
 pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
     egui::Panel::top("p3d_tool_settings").exact_size(TOOL_SETTINGS).frame(egui::Frame::NONE.fill(tk.chrome)).show(ui, |ui| {
         let r = ui.max_rect();
         ui.painter().hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, tk.border));
-        let size = 24.0;
+        let cy = r.center().y;
+        let items = settings_items();
+        let (file, history) = items.split_at(3);
         let mut x = r.left() + 8.0;
-        let mut clicked = None;
-        for (i, it) in settings_items().iter().enumerate() {
-            if i == 3 {
-                ui.painter().vline(x + 3.0, r.y_range().shrink(8.0), Stroke::new(1.0, tk.border));
-                x += 8.0;
-            }
-            let rect = Rect::from_min_size(pos2(x, r.center().y - size / 2.0), vec2(size, size));
-            if button_at(ui, rect, it, app, true) {
-                clicked = Some((it.command, (it.params)()));
-            }
-            x += size + 2.0;
-        }
-        x += 10.0;
-        ui.painter().vline(x, r.y_range().shrink(8.0), Stroke::new(1.0, tk.border));
-        x += 12.0;
+        let mut clicked = segment(ui, app, file, x, cy);
+        x += segment_width(file.len()) + 6.0;
+        clicked = segment(ui, app, history, x, cy).or(clicked);
+        x += segment_width(history.len()) + 14.0;
+        ui.painter().vline(x, r.y_range().shrink(10.0), Stroke::new(1.0, tk.control));
+        x += 14.0;
         let (name, what) = match app.ui.tool {
             Tool::Select => (t("Select"), t("Click an object to select it; Shift+click adds or removes.")),
             Tool::Move => (t("Move"), t("Drag the gizmo arrows to move the selection.")),
@@ -288,27 +421,19 @@ pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
         };
         let g = ui.painter().layout_no_wrap(name.to_owned(), egui::FontId::proportional(13.0), tk.text);
         let w = g.size().x;
-        ui.painter().galley(pos2(x, r.center().y - g.size().y / 2.0), g, tk.text);
-        x += w + 14.0;
+        ui.painter().galley(pos2(x, cy - g.size().y / 2.0), g, tk.text);
+        x += w + 16.0;
         let mut action = None;
         if app.selected_targets().is_empty() {
-            ui.painter().text(pos2(x, r.center().y), Align2::LEFT_CENTER, what, theme::small(), tk.text_dim);
+            ui.painter().text(pos2(x, cy), Align2::LEFT_CENTER, what, theme::small(), tk.text_dim);
         } else {
-            // The contextual toolbar: actions on the selection.
             for it in object_actions() {
-                let label = t(it.label);
-                let text_w = ui.painter().layout_no_wrap(label.to_owned(), theme::body(), tk.text).size().x;
-                let rect = Rect::from_min_size(pos2(x, r.center().y - 11.0), vec2(16.0 + 6.0 + text_w + 14.0, 22.0));
+                let text_w = ui.painter().layout_no_wrap(t(it.label).to_owned(), theme::body(), tk.text).size().x;
+                let rect = Rect::from_min_size(pos2(x, cy - 13.0), vec2(29.0 + text_w + 10.0, 26.0));
                 if rect.right() > r.right() - 8.0 {
                     break;
                 }
-                let resp = ui.interact(rect, ui.id().with(("action", it.command)), Sense::click());
-                let fill = if resp.hovered() { tk.control_hover } else { tk.control.gamma_multiply(0.55) };
-                ui.painter().rect_filled(rect, 4.0, fill);
-                icons::paint(ui.painter(), Rect::from_min_size(pos2(rect.left() + 6.0, rect.center().y - 8.0), vec2(16.0, 16.0)), it.icon, false);
-                ui.painter().text(pos2(rect.left() + 28.0, rect.center().y), Align2::LEFT_CENTER, label, theme::body(), tk.text);
-                icons::describe_control(ui, &resp, label, None);
-                if resp.on_hover_text(t(it.hint)).clicked() {
+                if chip(ui, rect, &it).clicked() {
                     action = Some(it);
                 }
                 x = rect.right() + 6.0;
@@ -327,60 +452,53 @@ pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
     });
 }
 
-/// The tool column on the left: icon buttons in groups, like Blender's
-/// toolbar. Right-click switches between icons only and icons with labels.
+/// The tool rail on the left: icon pills with small labels under them, in
+/// groups. Right-click hides or shows the labels.
 pub fn tool_sidebar(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
-    let width = if app.ui.sidebar_labels { SIDEBAR_LABELS } else { SIDEBAR };
+    let labels = app.ui.rail_labels;
+    let width = if labels { RAIL } else { RAIL_ICONS };
+    let item_h = if labels { 48.0 } else { 36.0 };
     let has_selection = !app.selected_targets().is_empty();
     egui::Panel::left("p3d_tools").exact_size(width).resizable(false).frame(egui::Frame::NONE.fill(tk.chrome)).show(ui, |ui| {
         let r = ui.max_rect();
         ui.painter().vline(r.right() - 0.5, r.y_range(), Stroke::new(1.0, tk.border));
         let back = ui.interact(r, ui.id().with("toolbar-bg"), Sense::click());
         back.context_menu(|ui| {
-            let label = if app.ui.sidebar_labels { t("Icons only") } else { t("Show labels") };
+            let label = if labels { t("Icons only") } else { t("Show labels") };
             if ui.button(label).clicked() {
-                app.ui.sidebar_labels = !app.ui.sidebar_labels;
+                let _ = app.run("ui.rail_labels", Value::Null);
                 ui.close();
             }
         });
-        let mut y = r.top() + 6.0;
+        let mut y = r.top() + 8.0;
         let mut clicked = None;
-        let groups = sidebar_groups();
-        for (gi, group) in groups.iter().enumerate() {
+        for (gi, group) in sidebar_groups().iter().enumerate() {
             if gi > 0 {
-                y += 5.0;
-                ui.painter().hline(r.left() + 8.0..=r.right() - 8.0, y, Stroke::new(1.0, tk.border));
-                y += 6.0;
+                y += 4.0;
+                ui.painter().hline(r.center().x - 12.0..=r.center().x + 12.0, y, Stroke::new(1.0, tk.control));
+                y += 7.0;
             }
             for it in group {
                 let enabled = !it.needs_selection || has_selection;
-                let rect = Rect::from_min_size(pos2(r.left() + 4.0, y), vec2(TOOL_BUTTON, TOOL_BUTTON));
-                if button_at(ui, rect, it, app, enabled) {
-                    clicked = Some((it, (it.params)()));
+                let rect = Rect::from_min_size(pos2(r.left() + 2.0, y), vec2(width - 4.0, item_h));
+                let resp = ui
+                    .add_enabled_ui(enabled, |ui| {
+                        crate::widgets::rail_item(ui, rect, it.icon, labels.then(|| t(it.label)), it.tip(), (it.selected)(app))
+                    })
+                    .inner;
+                if resp.clicked() {
+                    clicked = Some((it.command, it.needs_selection, (it.params)()));
                 }
-                if app.ui.sidebar_labels {
-                    let lr = Rect::from_min_max(pos2(rect.right() + 6.0, rect.top()), pos2(r.right() - 6.0, rect.bottom()));
-                    let resp = ui.interact(lr, ui.id().with(("toollabel", it.label, it.icon as u8)), Sense::click());
-                    let color = if enabled { if (it.selected)(app) { tk.text } else { tk.text_dim } } else { tk.text_faint };
-                    ui.painter().text(pos2(lr.left(), lr.center().y), Align2::LEFT_CENTER, t(it.label), theme::body(), color);
-                    if enabled && resp.clicked() {
-                        clicked = Some((it, (it.params)()));
-                    }
-                }
-                y += TOOL_BUTTON + 2.0;
+                y += item_h + 2.0;
             }
         }
-        if let Some((it, params)) = clicked {
-            let params = if it.needs_selection {
-                match app.selected_targets().first() {
-                    Some(id) => json!({ "target": id }),
-                    None => params,
-                }
-            } else {
-                params
+        if let Some((command, needs_selection, params)) = clicked {
+            let params = match (needs_selection, app.selected_targets().first()) {
+                (true, Some(id)) => json!({ "target": id }),
+                _ => params,
             };
-            let _ = app.run(it.command, params);
+            let _ = app.run(command, params);
         }
     });
 }
@@ -390,34 +508,18 @@ pub fn tool_sidebar(app: &mut PixelApp, ui: &mut egui::Ui) {
 pub fn viewport_header(app: &mut PixelApp, ui: &mut egui::Ui, rect: Rect) -> Rect {
     let tk = Tokens::get();
     let header = Rect::from_min_size(rect.min, vec2(rect.width(), VIEW_HEADER));
-    ui.painter().rect_filled(header, 0.0, tk.chrome_dark);
-    let size = 22.0;
-    let y = header.center().y - size / 2.0;
-    let mut clicked = None;
-    let mut x = header.left() + 6.0;
-    for it in header_modes() {
-        let r = Rect::from_min_size(pos2(x, y), vec2(size, size));
-        if button_at(ui, r, &it, app, true) {
-            clicked = Some((it.command, (it.params)()));
-        }
-        x += size + 1.0;
-    }
-    ui.painter().text(pos2(x + 10.0, header.center().y), Align2::LEFT_CENTER, app.ui.mode.label(), theme::small(), tk.text_dim);
-    let mut rx = header.right() - 6.0;
-    for (gi, group) in header_view().iter().enumerate().rev() {
-        for it in group.iter().rev() {
-            rx -= size;
-            let r = Rect::from_min_size(pos2(rx, y), vec2(size, size));
-            if button_at(ui, r, it, app, true) {
-                clicked = Some((it.command, (it.params)()));
-            }
-            rx -= 1.0;
-        }
-        if gi > 0 {
-            rx -= 6.0;
-            ui.painter().vline(rx, header.y_range().shrink(7.0), Stroke::new(1.0, tk.border));
-            rx -= 6.0;
-        }
+    ui.painter().rect_filled(header, 0.0, tk.chrome);
+    ui.painter().hline(header.x_range(), header.bottom() - 0.5, Stroke::new(1.0, tk.border));
+    let cy = header.center().y;
+    let modes = header_modes();
+    let mut clicked = segment(ui, app, &modes, header.left() + 8.0, cy);
+    let label_x = header.left() + 8.0 + segment_width(modes.len()) + 10.0;
+    ui.painter().text(pos2(label_x, cy), Align2::LEFT_CENTER, app.ui.mode.label(), theme::small(), tk.text_dim);
+    let mut rx = header.right() - 8.0;
+    for group in header_view().iter().rev() {
+        rx -= segment_width(group.len());
+        clicked = segment(ui, app, group, rx, cy).or(clicked);
+        rx -= 6.0;
     }
     if let Some((cmd, params)) = clicked {
         let _ = app.run(cmd, params);

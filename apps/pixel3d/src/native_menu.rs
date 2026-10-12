@@ -65,6 +65,11 @@ impl NativeMenu {
                         if it.command == "app.quit" {
                             continue;
                         }
+                        // Section headers show as disabled titles.
+                        if it.is_header() {
+                            let _ = sub.append(&MenuItem::new(t(it.label), false, None));
+                            continue;
+                        }
                         let id = format!("p3d-{m}-{i}");
                         let item = MenuItem::with_id(id.clone(), t(it.label), true, it.shortcut.as_ref().and_then(accelerator));
                         let _ = sub.append(&item);
