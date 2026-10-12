@@ -202,6 +202,9 @@ export type PlaneAdvanced = {
   segments?: [number, number];
 };
 
+/** The plane a flat curve is drawn in. */
+export type PlaneParam = "xy" | "xz" | "yz";
+
 /** Proportional editing settings. */
 export type ProportionalParams = {
   /** Measure the distance along edges (only connected geometry follows). */
@@ -617,6 +620,123 @@ export type PrimWedgeParams = {
   position?: [Length, Length, Length];
   /** Size along X (left to right). */
   width?: Length;
+};
+
+/** `curve.polyline`: Creates a curve object from straight segments through points, open or closed. */
+export type CurvePolylineParams = {
+  /** Joins the last point back to the first. */
+  closed?: boolean;
+  /** Object name; a free name such as `polyline_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Points in object space, in order. */
+  points: [Length, Length, Length][];
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+};
+
+/** `curve.bezier`: Creates a smooth cubic Bezier curve through points, with automatic or explicit handles. */
+export type CurveBezierParams = {
+  /** Joins the last point back to the first. */
+  closed?: boolean;
+  /**
+   * One `[in, out]` handle pair per point (absolute positions); smooth
+   * automatic handles when omitted.
+   */
+  handles?: [[Length, Length, Length], [Length, Length, Length]][] | null;
+  /** Object name; a free name such as `bezier_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Points the curve passes through, in object space. */
+  points: [Length, Length, Length][];
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+};
+
+/** `curve.circle`: Creates a closed circular curve: a regular polygon of the given number of points in a plane. */
+export type CurveCircleParams = {
+  /** Object name; a free name such as `circle_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** The plane it lies in. */
+  plane?: PlaneParam;
+  /** Center position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Circle radius. */
+  radius?: Length;
+  /** Points around the circle. */
+  segments?: number;
+};
+
+/** `curve.rectangle`: Creates a closed rectangular curve centered on its origin, optionally with rounded corners. */
+export type CurveRectangleParams = {
+  /** Rounds the corners; sharp when 0. */
+  corner_radius?: Length;
+  /** Segments per rounded corner. */
+  corner_segments?: number;
+  /** Object name; a free name such as `rectangle_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** The plane it lies in. */
+  plane?: PlaneParam;
+  /** Center position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Size along the plane's two axes (X and Z for `xz`). */
+  size?: [Length, Length];
+};
+
+/** `curve.resample`: Replaces each spline with a polyline of points evenly spaced by arc length. */
+export type CurveResampleParams = {
+  /** Points per spline. */
+  count?: number | null;
+  /** Name of a new curve object for the result; edits the target in place when omitted. */
+  output?: string | null;
+  /** Segments per curved Bezier span before resampling. */
+  resolution?: number;
+  /** Distance between points instead of a count (rounded so the spacing is even). */
+  spacing?: Length | null;
+  /** Curve object (name, path or id). */
+  target: string;
+};
+
+/** `curve.offset`: Moves each spline sideways by a distance within its plane, with mitered or beveled corners. */
+export type CurveOffsetParams = {
+  /**
+   * Outward for closed splines, to the left (seen from the normal) for
+   * open ones; negative goes the other way.
+   */
+  distance: Length;
+  /** Convex corners whose miter would exceed this many distances are beveled. */
+  miter_limit?: number;
+  /**
+   * Offsets within planes perpendicular to this direction; the curve's
+   * own plane when omitted (+Y for straight lines).
+   */
+  normal?: [number, number, number] | null;
+  /** Name of a new curve object for the result; edits the target in place when omitted. */
+  output?: string | null;
+  /** Segments per curved Bezier span before offsetting. */
+  resolution?: number;
+  /** Curve object (name, path or id). */
+  target: string;
+};
+
+/** `curve.fillet`: Rounds every corner of each spline with a tangent arc, or chamfers it with one segment. */
+export type CurveFilletParams = {
+  /** Name of a new curve object for the result; edits the target in place when omitted. */
+  output?: string | null;
+  /** Arc radius at each corner (shrunk where the segments are too short). */
+  radius: Length;
+  /** Segments per curved Bezier span before filleting. */
+  resolution?: number;
+  /** Segments per arc; 1 cuts a chamfer. */
+  segments?: number;
+  /** Curve object (name, path or id). */
+  target: string;
 };
 
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
@@ -1143,6 +1263,13 @@ export interface OpParams {
   "prim.tube": PrimTubeParams;
   "prim.capsule": PrimCapsuleParams;
   "prim.wedge": PrimWedgeParams;
+  "curve.polyline": CurvePolylineParams;
+  "curve.bezier": CurveBezierParams;
+  "curve.circle": CurveCircleParams;
+  "curve.rectangle": CurveRectangleParams;
+  "curve.resample": CurveResampleParams;
+  "curve.offset": CurveOffsetParams;
+  "curve.fillet": CurveFilletParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

@@ -3,6 +3,7 @@
 //! Layer L2 (algorithms). See `docs/architecture.md`.
 
 pub mod bvh;
+pub mod curve;
 pub mod deform;
 pub mod edit;
 pub mod kdtree;

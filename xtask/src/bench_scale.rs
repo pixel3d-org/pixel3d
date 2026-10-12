@@ -54,8 +54,10 @@ fn collect(criterion_dir: &Path, filter: Option<&str>) -> Result<Vec<Kernel>, St
     let mut groups: Vec<PathBuf> = entries.filter_map(Result::ok).map(|e| e.path()).collect();
     groups.sort();
     for group in groups {
-        let Some(name) = group.file_name().and_then(|n| n.to_str()).and_then(|n| n.strip_prefix("scale_")) else { continue };
-        if filter.is_some_and(|f| !name.contains(f)) {
+        let Some(dir) = group.file_name().and_then(|n| n.to_str()) else { continue };
+        let Some(name) = dir.strip_prefix("scale_") else { continue };
+        // The same match as the cleanup and the criterion filter: on the full group name.
+        if filter.is_some_and(|f| !dir.contains(f)) {
             continue;
         }
         let mut points = Vec::new();

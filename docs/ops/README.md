@@ -37,6 +37,18 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`prim.wedge`](prim.wedge.md) | Creates a wedge (ramp) whose slope runs down toward the front, with groups bottom, back, slope, left, right. |
 | [`prim.plane`](prim.plane.md) | Creates a flat grid of quads in the XZ plane facing up (+Y). |
 
+## curve
+
+| Op | Summary |
+|---|---|
+| [`curve.polyline`](curve.polyline.md) | Creates a curve object from straight segments through points, open or closed. |
+| [`curve.bezier`](curve.bezier.md) | Creates a smooth cubic Bezier curve through points, with automatic or explicit handles. |
+| [`curve.circle`](curve.circle.md) | Creates a closed circular curve: a regular polygon of the given number of points in a plane. |
+| [`curve.rectangle`](curve.rectangle.md) | Creates a closed rectangular curve centered on its origin, optionally with rounded corners. |
+| [`curve.resample`](curve.resample.md) | Replaces each spline with a polyline of points evenly spaced by arc length. |
+| [`curve.offset`](curve.offset.md) | Moves each spline sideways by a distance within its plane, with mitered or beveled corners. |
+| [`curve.fillet`](curve.fillet.md) | Rounds every corner of each spline with a tangent arc, or chamfers it with one segment. |
+
 ## select
 
 | Op | Summary |

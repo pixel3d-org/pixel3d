@@ -160,6 +160,43 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Curve kernels on a wavy closed polyline of `t` points.
+    let wave = |t: usize| -> Vec<Vec3> {
+        (0..t)
+            .map(|i| {
+                let a = std::f32::consts::TAU * i as f32 / t as f32;
+                Vec3::new(a.cos(), 0.0, -a.sin()) * (1.0 + 0.1 * (a * 7.0).sin())
+            })
+            .collect()
+    };
+    let mut g = c.benchmark_group("scale_curve_sample_bezier");
+    for &t in &sizes {
+        let pts = wave(t / 8);
+        let h = p3d_geo::curve::auto_handles(&pts, true);
+        g.bench_with_input(BenchmarkId::from_parameter(t), &(pts, h), |b, (pts, h)| {
+            b.iter(|| p3d_geo::curve::sample_bezier(black_box(pts), h, true, 8))
+        });
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_curve_resample");
+    for &t in &sizes {
+        g.bench_with_input(BenchmarkId::from_parameter(t), &wave(t), |b, pts| b.iter(|| p3d_geo::curve::resample(black_box(pts), true, t)));
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_curve_offset");
+    for &t in &sizes {
+        g.bench_with_input(BenchmarkId::from_parameter(t), &wave(t), |b, pts| {
+            b.iter(|| p3d_geo::curve::offset(black_box(pts), true, 0.01, None, 4.0))
+        });
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_curve_fillet");
+    for &t in &sizes {
+        let pts = wave(t / 4);
+        g.bench_with_input(BenchmarkId::from_parameter(t), &pts, |b, pts| b.iter(|| p3d_geo::curve::fillet(black_box(pts), true, 0.01, 3)));
+    }
+    g.finish();
+
     // Edit kernels: the selection grows with the mesh.
     let edit_sets: Vec<(usize, Vec<_>)> = sizes.iter().map(|&t| (t, workloads::workloads(t))).collect();
     for i in 0..edit_sets[0].1.len() {
