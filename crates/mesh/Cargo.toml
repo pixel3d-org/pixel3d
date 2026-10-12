@@ -17,3 +17,7 @@ indexmap = { workspace = true }
 rustc-hash = { workspace = true }
 smallvec = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+p3d-testdata = { workspace = true }
+proptest = { workspace = true }

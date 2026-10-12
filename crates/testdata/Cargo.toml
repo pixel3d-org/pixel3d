@@ -9,3 +9,9 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+glam = { workspace = true }
+p3d-geo = { workspace = true }
+p3d-mesh = { workspace = true }
+proptest = { workspace = true }
