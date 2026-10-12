@@ -40,7 +40,7 @@ Acceptance:
 - [x] `math`: unit parser, transforms, axis conventions
 - [x] `mesh`: half-edge kernel, attributes, groups, validation, compaction, triangle buffers
 - [x] `scene`: document, ids, names, hierarchy, settings
-- [ ] `query`: selectors
+- [x] `query`: selectors
 - [ ] `ops`: trait, registry, schemas, errors, outputs
 - [ ] `engine`: Session, transactions, undo and redo, checkpoints, `catch_unwind` rollback, jobs, linear history graph
 - [ ] `.p3d` save and load
