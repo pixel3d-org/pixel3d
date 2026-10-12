@@ -168,13 +168,55 @@ pub fn top_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
                 menu_bar(app, ui)
             })
             .inner;
+        let tabs_left = workspace_tabs(app, ui, r);
         let title = if app.ui.start_page { t("Start").to_owned() } else { app.title() };
         let galley = ui.painter().layout_no_wrap(format!("pixel3d  {title}"), theme::body(), tk.text_dim);
         let x = (r.center().x - galley.size().x / 2.0).max(menus_right + 24.0);
-        if x + galley.size().x < r.right() - 8.0 {
+        if x + galley.size().x < tabs_left - 16.0 {
             ui.painter().galley(pos2(x, r.center().y - galley.size().y / 2.0), galley, tk.text_dim);
         }
     });
+}
+
+/// The workspace tabs at the right end of the top bar; returns their left
+/// edge. Workspaces whose editors do not exist yet are disabled.
+fn workspace_tabs(app: &mut PixelApp, ui: &mut egui::Ui, r: Rect) -> f32 {
+    let tk = Tokens::get();
+    let widths: Vec<f32> =
+        crate::WorkspaceKind::ALL.iter().map(|w| ui.painter().layout_no_wrap(w.label().to_owned(), theme::body(), tk.text).size().x + 20.0).collect();
+    let total: f32 = widths.iter().sum();
+    let mut x = r.right() - 8.0 - total;
+    let left = x;
+    let mut chosen = None;
+    for (ws, w) in crate::WorkspaceKind::ALL.iter().zip(widths) {
+        let rect = Rect::from_min_size(pos2(x, r.top() + 3.0), vec2(w, r.height() - 6.0));
+        let resp = ui.interact(rect, ui.id().with(("workspace", *ws)), Sense::click());
+        let current = app.ui.workspace == *ws;
+        let enabled = ws.unavailable().is_none();
+        if current {
+            ui.painter().rect_filled(rect, 4.0, tk.tab_active);
+        } else if resp.hovered() && enabled {
+            ui.painter().rect_filled(rect, 4.0, tk.control.gamma_multiply(0.6));
+        }
+        let color = if current {
+            tk.text
+        } else if enabled {
+            tk.text_dim
+        } else {
+            tk.text_faint.gamma_multiply(0.7)
+        };
+        ui.painter().text(rect.center(), Align2::CENTER_CENTER, ws.label(), theme::body(), color);
+        icons::describe_control(ui, &resp, ws.label(), Some(current));
+        let tip = ws.unavailable().map_or_else(|| format!("{} {}", ws.label(), t("workspace")), str::to_owned);
+        if resp.on_hover_text(tip).clicked() && enabled {
+            chosen = Some(*ws);
+        }
+        x += w;
+    }
+    if let Some(ws) = chosen {
+        let _ = app.run("ui.workspace", json!({ "workspace": ws }));
+    }
+    left
 }
 
 /// The menus (also the macOS native menu's contents).
@@ -388,6 +430,7 @@ pub fn viewport_header(app: &mut PixelApp, ui: &mut egui::Ui, rect: Rect) -> Rec
 pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
     let mut toggle_bottom = false;
+    let mut toggle_snap = false;
     egui::Panel::bottom("p3d_status").exact_size(24.0).frame(egui::Frame::NONE.fill(tk.chrome)).show(ui, |ui| {
         let r = ui.max_rect();
         let p = ui.painter().clone();
@@ -414,18 +457,45 @@ pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
         let doc = app.doc();
         let tris: usize = doc.objects().filter_map(|(k, _)| doc.object_mesh(k)).map(|m| m.triangle_count()).sum();
         let budget = doc.settings.tri_budget() as usize;
-        let right = [
-            format!("{:.0} {}", app.viewport.fps, t("fps")),
-            t("meters").to_owned(),
-            format!("{} / {} {}", thousands(tris), thousands(budget), t("tris")),
+        let jobs = app.running_jobs();
+        // Right to left: fps, jobs, class and profile, snap, units, triangles.
+        let class = format!("{}, {}", doc.settings.asset_class.as_str(), t("no profile"));
+        let items: [(String, Option<bool>, &str); 6] = [
+            (format!("{:.0} {}", app.viewport.fps, t("fps")), None, ""),
+            (if jobs == 0 { t("no jobs").to_owned() } else { format!("{jobs} {}", t("jobs")) }, None, t("Background work (health checks)")),
+            (class, None, t("Asset class and engine profile")),
+            (t("Snap").to_owned(), Some(app.ui.view.snap), t("Snap transform drags to the grid and 15 degree steps")),
+            (t("meters").to_owned(), None, t("Display units")),
+            (format!("{} / {} {}", thousands(tris), thousands(budget), t("tris")), None, t("Triangles against the asset class budget")),
         ];
-        let over = tris > budget;
-        for (i, s) in right.iter().enumerate() {
-            let color = if i == 2 && over { tk.health_warn } else { tk.text_dim };
+        let mut snap_clicked = false;
+        for (i, (s, toggle, tip)) in items.iter().enumerate() {
+            let color = match (i, toggle) {
+                (5, _) if tris > budget => tk.health_warn,
+                (_, Some(true)) => tk.text,
+                _ => tk.text_dim,
+            };
             let g = p.layout_no_wrap(s.clone(), theme::small(), color);
-            rx -= g.size().x;
+            let w = g.size().x;
+            rx -= w;
+            let rect = Rect::from_min_size(pos2(rx - 5.0, r.top() + 3.0), vec2(w + 10.0, r.height() - 6.0));
+            if let Some(on) = toggle {
+                let resp = ui.interact(rect, ui.id().with(("status", i)), Sense::click());
+                if *on {
+                    p.rect_filled(rect, 3.0, tk.toggle_on.gamma_multiply(0.35));
+                } else if resp.hovered() {
+                    p.rect_filled(rect, 3.0, tk.control_hover.gamma_multiply(0.5));
+                }
+                icons::describe_control(ui, &resp, s, Some(*on));
+                snap_clicked |= resp.on_hover_text(*tip).clicked();
+            } else if !tip.is_empty() {
+                ui.interact(rect, ui.id().with(("status", i)), Sense::hover()).on_hover_text(*tip);
+            }
             p.galley(pos2(rx, y - g.size().y / 2.0), g, color);
             rx -= 18.0;
+        }
+        if snap_clicked {
+            toggle_snap = true;
         }
         if let Some(msg) = app.status_message() {
             let width = (rx - x).max(0.0);
@@ -439,6 +509,9 @@ pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
     });
     if toggle_bottom {
         let _ = app.run("ui.bottom", Value::Null);
+    }
+    if toggle_snap {
+        let _ = app.run("view.snap", Value::Null);
     }
 }
 

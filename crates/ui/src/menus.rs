@@ -111,6 +111,17 @@ pub fn menus() -> Vec<Menu> {
                 item("Cylinder", "prim.cylinder"),
                 item("Sphere", "prim.quad_sphere"),
                 item("Plane", "prim.plane"),
+                None,
+                item("Empty", "scene.create_empty"),
+            ],
+        },
+        Menu {
+            label: "Mesh",
+            entries: vec![
+                with("Fill holes", "selection.run", || json!({ "op": "edit.fill" })),
+                with("Recalculate normals", "selection.run", || json!({ "op": "edit.recalc_normals" })),
+                None,
+                with("Apply transform", "selection.run", || json!({ "op": "scene.apply_transform" })),
             ],
         },
     ]
@@ -129,8 +140,11 @@ mod tests {
                 if matches!(it.command, "file.open" | "file.save" | "file.save_as" | "app.quit") {
                     continue;
                 }
-                let r = app.run(it.command, (it.params)());
-                assert!(r.is_ok() || it.command.starts_with("edit."), "{}: {r:?}", it.command);
+                // Ops may refuse the scene (nothing selected, no holes); the
+                // command itself must exist.
+                if let Err(e) = app.run(it.command, (it.params)()) {
+                    assert!(!e.starts_with(crate::i18n::t("unknown command")), "{}: {e}", it.command);
+                }
             }
         }
     }

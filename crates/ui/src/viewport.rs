@@ -37,12 +37,15 @@ pub struct ViewSettings {
     pub grid: bool,
     pub ortho: bool,
     pub nav: NavPreset,
-    pub show_view_cube: bool,
+    /// The navigation gizmo in the corner.
+    pub show_nav_gizmo: bool,
+    /// Snap transform drags to the grid and to 15 degree steps.
+    pub snap: bool,
 }
 
 impl Default for ViewSettings {
     fn default() -> Self {
-        ViewSettings { shading: Shading::Solid.name().into(), grid: true, ortho: false, nav: NavPreset::Default, show_view_cube: true }
+        ViewSettings { shading: Shading::Solid.name().into(), grid: true, ortho: false, nav: NavPreset::Default, show_nav_gizmo: true, snap: false }
     }
 }
 

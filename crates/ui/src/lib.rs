@@ -76,6 +76,48 @@ impl SelectMode {
     }
 }
 
+/// Workspaces: a dock layout, tool set and overlays per kind of work
+/// (project spec 20.4). One is enabled once its editors exist.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WorkspaceKind {
+    #[default]
+    Model,
+    Uv,
+    Bake,
+    Rig,
+    Animate,
+    Export,
+}
+
+impl WorkspaceKind {
+    pub const ALL: [WorkspaceKind; 6] =
+        [WorkspaceKind::Model, WorkspaceKind::Uv, WorkspaceKind::Bake, WorkspaceKind::Rig, WorkspaceKind::Animate, WorkspaceKind::Export];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            WorkspaceKind::Model => t("Model"),
+            WorkspaceKind::Uv => t("UV"),
+            WorkspaceKind::Bake => t("Bake"),
+            WorkspaceKind::Rig => t("Rig"),
+            WorkspaceKind::Animate => t("Animate"),
+            WorkspaceKind::Export => t("Export"),
+        }
+    }
+
+    /// Why the workspace cannot be used yet, if it cannot.
+    pub fn unavailable(self) -> Option<&'static str> {
+        match self {
+            WorkspaceKind::Model => None,
+            WorkspaceKind::Uv => Some(t("Needs the UV editor, which is not built yet.")),
+            WorkspaceKind::Bake => Some(t("Needs baking, which is not built yet.")),
+            WorkspaceKind::Rig => Some(t("Needs rigging, which is not built yet.")),
+            WorkspaceKind::Animate => Some(t("Needs animation, which is not built yet.")),
+            WorkspaceKind::Export => Some(t("Needs the exporters, which are not built yet.")),
+        }
+    }
+}
+
 /// Persisted UI state (serde, camelCase, so automation can read and set it).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -90,6 +132,8 @@ pub struct UiState {
     pub sidebar_labels: bool,
     /// The open Properties tab.
     pub inspector_tab: inspector::Tab,
+    /// The workspace shown (tabs in the top bar).
+    pub workspace: WorkspaceKind,
     pub start_page: bool,
     pub tool: Tool,
     pub mode: SelectMode,
@@ -110,6 +154,7 @@ impl Default for UiState {
             show_status_bar: true,
             sidebar_labels: false,
             inspector_tab: inspector::Tab::default(),
+            workspace: WorkspaceKind::Model,
             start_page: true,
             tool: Tool::Select,
             mode: SelectMode::Object,
@@ -224,6 +269,11 @@ impl PixelApp {
 
     pub fn doc(&self) -> &Document {
         self.session.doc()
+    }
+
+    /// Background work still running (shown in the status bar).
+    pub fn running_jobs(&self) -> usize {
+        0
     }
 
     /// Whether the History or Console panel is open.
@@ -463,6 +513,23 @@ impl PixelApp {
                     self.ui.docking.set_visible(p, on)?;
                 }
                 Ok(json!({ "bottom": on }))
+            }
+            "ui.workspace" => {
+                let ws =
+                    serde_json::from_value::<WorkspaceKind>(params.get("workspace").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
+                if let Some(why) = ws.unavailable() {
+                    return Err(format!("{}: {why}", ws.label()));
+                }
+                self.ui.workspace = ws;
+                Ok(json!({ "workspace": ws }))
+            }
+            "view.snap" => {
+                self.ui.view.snap = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.snap);
+                Ok(json!({ "snap": self.ui.view.snap }))
+            }
+            "selection.run" => {
+                let op = str_param("op").ok_or("op is required: an op that takes a target")?;
+                self.run_on_selection(&op)
             }
             "ui.sidebar_labels" => {
                 self.ui.sidebar_labels = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.sidebar_labels);
