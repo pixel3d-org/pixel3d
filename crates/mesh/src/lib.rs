@@ -4,12 +4,14 @@
 
 mod attrs;
 mod build;
+mod edit;
 mod groups;
 mod mesh;
 mod validate;
 
 pub use attrs::{EdgeFlags, MAX_UV_LAYERS};
 pub use build::BuildError;
+pub use edit::{DeleteReport, EditError, Remap};
 pub use fixedbitset::FixedBitSet;
 pub use glam::{Vec2, Vec3, Vec4};
 pub use groups::{ElementKind, Group, GroupError};

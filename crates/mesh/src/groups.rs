@@ -62,6 +62,36 @@ impl Group {
     pub fn bits(&self) -> &FixedBitSet {
         &self.bits
     }
+
+    #[inline]
+    pub(crate) fn insert(&mut self, i: u32) {
+        self.bits.insert(i as usize);
+    }
+
+    #[inline]
+    pub(crate) fn remove(&mut self, i: u32) {
+        self.bits.set(i as usize, false);
+    }
+
+    pub(crate) fn grow(&mut self, slots: usize) {
+        self.bits.grow(slots);
+    }
+
+    /// Renumbers members through an old-to-new map (dead elements map to
+    /// `INVALID` and are dropped) into a bitset of `slots` bits.
+    ///
+    /// Complexity: O(old slots / 64 + count).
+    pub(crate) fn remap(&mut self, map: &[u32], slots: usize) {
+        let mut bits = FixedBitSet::with_capacity(slots);
+        for i in self.bits.ones() {
+            if let Some(&n) = map.get(i)
+                && (n as usize) < slots
+            {
+                bits.insert(n as usize);
+            }
+        }
+        self.bits = bits;
+    }
 }
 
 /// Why a group operation failed.
