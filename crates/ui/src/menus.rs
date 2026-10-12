@@ -99,6 +99,8 @@ pub fn menus() -> Vec<Menu> {
                 with("Theme: light", "ui.theme", || json!({ "theme": "light" })),
                 with("Theme: dark", "ui.theme", || json!({ "theme": "dark" })),
                 None,
+                item("History and Console", "ui.bottom"),
+                item("Tool labels", "ui.sidebar_labels"),
                 item("Reset panel layout", "ui.dock.reset"),
             ],
         },

@@ -15,7 +15,6 @@ use crate::theme::Tokens;
 #[serde(rename_all = "camelCase")]
 pub enum Panel {
     Viewport,
-    ToolSets,
     Outliner,
     Properties,
     History,
@@ -23,12 +22,11 @@ pub enum Panel {
 }
 
 impl Panel {
-    pub const ALL: &[Panel] = &[Panel::Viewport, Panel::ToolSets, Panel::Outliner, Panel::Properties, Panel::History, Panel::Console];
+    pub const ALL: &[Panel] = &[Panel::Viewport, Panel::Outliner, Panel::Properties, Panel::History, Panel::Console];
 
     pub fn id(self) -> &'static str {
         match self {
             Panel::Viewport => "viewport",
-            Panel::ToolSets => "toolSets",
             Panel::Outliner => "outliner",
             Panel::Properties => "properties",
             Panel::History => "history",
@@ -39,7 +37,6 @@ impl Panel {
     pub fn label(self) -> &'static str {
         match self {
             Panel::Viewport => t("Viewport"),
-            Panel::ToolSets => t("Tool Sets"),
             Panel::Outliner => t("Outliner"),
             Panel::Properties => t("Properties"),
             Panel::History => t("History"),
@@ -49,7 +46,6 @@ impl Panel {
 
     fn default_side(self) -> Zone {
         match self {
-            Panel::ToolSets => Zone::Left,
             Panel::History | Panel::Console => Zone::Bottom,
             _ => Zone::Right,
         }
@@ -81,22 +77,18 @@ pub struct Workspace {
 }
 
 impl Default for Workspace {
-    /// The Model layout: Tool Sets left, the viewport with History and
-    /// Console tabs below it, Outliner and Properties stacked on the right.
+    /// The Model layout: the viewport with History and Console tabs below
+    /// it, Outliner and Properties stacked on the right. The tool column on
+    /// the left is window chrome, not a dock panel.
     fn default() -> Self {
-        let center = split(SplitAxis::Vertical, SplitSize::FixedSecond(180.0), tabs(&[Panel::Viewport]), tabs(&[Panel::History, Panel::Console]));
+        let center = split(SplitAxis::Vertical, SplitSize::FixedSecond(170.0), tabs(&[Panel::Viewport]), tabs(&[Panel::History, Panel::Console]));
         let right = Node::Stack {
             entries: vec![
-                StackEntry { panel: Panel::Outliner, open: true, height: Some(240.0) },
+                StackEntry { panel: Panel::Outliner, open: true, height: Some(260.0) },
                 StackEntry { panel: Panel::Properties, open: true, height: None },
             ],
         };
-        let root = split(
-            SplitAxis::Horizontal,
-            SplitSize::FixedFirst(200.0),
-            tabs(&[Panel::ToolSets]),
-            split(SplitAxis::Horizontal, SplitSize::FixedSecond(300.0), center, right),
-        );
+        let root = split(SplitAxis::Horizontal, SplitSize::FixedSecond(320.0), center, right);
         Workspace { layout: Layout { root: Some(root), floating: Vec::new() }, hidden: Vec::new() }
     }
 }
@@ -206,7 +198,6 @@ impl Workspace {
 fn limits(panel: &Panel) -> PanelLimits {
     let (min, max_width) = match panel {
         Panel::Viewport => (egui::vec2(240.0, 160.0), 1_000_000.0),
-        Panel::ToolSets => (egui::vec2(160.0, 120.0), 420.0),
         Panel::History | Panel::Console => (egui::vec2(200.0, 80.0), 1_000_000.0),
         Panel::Outliner | Panel::Properties => (egui::vec2(220.0, 90.0), 720.0),
     };

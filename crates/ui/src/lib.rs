@@ -79,10 +79,11 @@ pub struct UiState {
     pub docking: docking::Workspace,
     pub theme: theme::ThemePref,
     pub view: ViewSettings,
+    /// The tool settings row under the top bar.
     pub show_toolbar: bool,
     pub show_status_bar: bool,
-    /// An in-window menu bar (platforms without a native one, or on request).
-    pub in_window_menu: bool,
+    /// The tool column shows labels next to its icons.
+    pub sidebar_labels: bool,
     pub start_page: bool,
     pub tool: Tool,
     pub mode: SelectMode,
@@ -101,7 +102,7 @@ impl Default for UiState {
             view: ViewSettings::default(),
             show_toolbar: true,
             show_status_bar: true,
-            in_window_menu: !cfg!(target_os = "macos"),
+            sidebar_labels: false,
             start_page: true,
             tool: Tool::Select,
             mode: SelectMode::Object,
@@ -190,6 +191,11 @@ impl PixelApp {
 
     pub fn doc(&self) -> &Document {
         self.session.doc()
+    }
+
+    /// Whether the History or Console panel is open.
+    pub fn bottom_panel_visible(&self) -> bool {
+        self.ui.docking.is_visible(docking::Panel::History) || self.ui.docking.is_visible(docking::Panel::Console)
     }
 
     /// Whether the document changed since it was opened or saved.
@@ -411,6 +417,19 @@ impl PixelApp {
                 self.ui.start_page = params.get("on").and_then(Value::as_bool).unwrap_or(true);
                 Ok(json!({ "startPage": self.ui.start_page }))
             }
+            "ui.bottom" => {
+                let on = params.get("on").and_then(Value::as_bool).unwrap_or(!self.bottom_panel_visible());
+                // Close the console first: History restores into its group.
+                let order = if on { [docking::Panel::History, docking::Panel::Console] } else { [docking::Panel::Console, docking::Panel::History] };
+                for p in order {
+                    self.ui.docking.set_visible(p, on)?;
+                }
+                Ok(json!({ "bottom": on }))
+            }
+            "ui.sidebar_labels" => {
+                self.ui.sidebar_labels = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.sidebar_labels);
+                Ok(json!({ "sidebarLabels": self.ui.sidebar_labels }))
+            }
             "ui.tool" => {
                 let tool = serde_json::from_value::<Tool>(params.get("tool").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
                 self.ui.tool = tool;
@@ -564,12 +583,15 @@ impl PixelApp {
         let t0 = Instant::now();
         control::begin_frame(ui.ctx());
         let tk = theme::Tokens::get();
-        chrome::title_and_toolbar(self, ui);
-        if self.ui.in_window_menu {
-            chrome::menu_bar(self, ui);
+        chrome::top_bar(self, ui);
+        if self.ui.show_toolbar {
+            chrome::tool_settings(self, ui);
         }
         if self.ui.show_status_bar {
             chrome::status_bar(self, ui);
+        }
+        if !self.ui.start_page {
+            chrome::tool_sidebar(self, ui);
         }
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(tk.border)).show(ui, |ui| {
             if self.ui.start_page {
@@ -592,12 +614,13 @@ impl PixelApp {
                 let sel = self.selection.clone();
                 self.viewport.scene(&doc, key);
                 self.viewport.set_selection(&sel);
-                viewport_events = self.viewport.show(ui, &doc, key, &self.ui.view, style);
+                let view_rect = chrome::viewport_header(self, ui, ui.max_rect());
+                viewport_events =
+                    ui.scope_builder(egui::UiBuilder::new().max_rect(view_rect), |ui| self.viewport.show(ui, &doc, key, &self.ui.view, style)).inner;
                 chrome::viewport_overlay(self, ui);
             }
             other => {
                 egui::Frame::NONE.inner_margin(egui::Margin::symmetric(8, 4)).show(ui, |ui| match other {
-                    docking::Panel::ToolSets => panels::tool_sets(self, ui),
                     docking::Panel::Outliner => panels::outliner(self, ui),
                     docking::Panel::Properties => panels::properties(self, ui),
                     docking::Panel::History => panels::history(self, ui),

@@ -1,9 +1,9 @@
-//! Dock panel bodies: Tool Sets, Outliner, Properties, History and Console.
+//! Dock panel bodies: Outliner, Properties, History and Console.
 //! Panels read the session and act only through [`PixelApp::run`].
 
 use egui::{Align2, Rect, Sense, Stroke, pos2, vec2};
 use p3d_scene::ObjectKey;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::PixelApp;
 use crate::i18n::t;
@@ -16,71 +16,6 @@ fn section(ui: &mut egui::Ui, title: &str) {
     ui.add_space(6.0);
     ui.label(egui::RichText::new(title).font(theme::small()).color(Tokens::get().text_faint));
     ui.add_space(2.0);
-}
-
-/// One Tool Sets entry: an op run on the selection (or creating an object).
-struct ToolEntry {
-    icon: Icon,
-    label: &'static str,
-    op: &'static str,
-    /// Runs on the first selected object (`{"target": id}`).
-    needs_target: bool,
-}
-
-const CREATE: &[ToolEntry] = &[
-    ToolEntry { icon: Icon::Box, label: "Box", op: "prim.box", needs_target: false },
-    ToolEntry { icon: Icon::Cylinder, label: "Cylinder", op: "prim.cylinder", needs_target: false },
-    ToolEntry { icon: Icon::Sphere, label: "Sphere", op: "prim.quad_sphere", needs_target: false },
-    ToolEntry { icon: Icon::Plane, label: "Plane", op: "prim.plane", needs_target: false },
-];
-
-const MESH: &[ToolEntry] = &[
-    ToolEntry { icon: Icon::Mesh, label: "Fill holes", op: "edit.fill", needs_target: true },
-    ToolEntry { icon: Icon::Health, label: "Recalculate normals", op: "edit.recalc_normals", needs_target: true },
-];
-
-const OBJECT: &[ToolEntry] = &[
-    ToolEntry { icon: Icon::Empty, label: "Empty", op: "scene.create_empty", needs_target: false },
-    ToolEntry { icon: Icon::Frame, label: "Apply transform", op: "scene.apply_transform", needs_target: true },
-];
-
-/// Tool Sets: tools grouped by what they do.
-pub fn tool_sets(app: &mut PixelApp, ui: &mut egui::Ui) {
-    let target = app.selected_targets().into_iter().next();
-    let mut run: Option<(&'static str, Value)> = None;
-    egui::ScrollArea::vertical().id_salt("toolsets").auto_shrink([false, false]).show(ui, |ui| {
-        ui.add_space(4.0);
-        for (title, entries) in [("Create", CREATE), ("Object", OBJECT), ("Mesh", MESH)] {
-            section(ui, t(title));
-            for e in entries {
-                let enabled = !e.needs_target || target.is_some();
-                let resp = ui
-                    .add_enabled_ui(enabled, |ui| {
-                        ui.horizontal(|ui| {
-                            let b = icons::button(ui, e.icon, 24.0, t(e.label), false);
-                            let l = ui.add(egui::Label::new(t(e.label)).sense(Sense::click()));
-                            b.clicked() || l.clicked()
-                        })
-                        .inner
-                    })
-                    .inner;
-                if resp {
-                    let params = match (&target, e.needs_target) {
-                        (Some(id), true) => json!({ "target": id }),
-                        _ => Value::Null,
-                    };
-                    run = Some((e.op, params));
-                }
-            }
-        }
-        if target.is_none() {
-            ui.add_space(8.0);
-            ui.label(egui::RichText::new(t("Select an object to use the object and mesh tools.")).font(theme::small()).color(Tokens::get().text_dim));
-        }
-    });
-    if let Some((op, params)) = run {
-        let _ = app.run(op, params);
-    }
 }
 
 /// One visible Outliner row.
@@ -117,7 +52,7 @@ pub fn outliner(app: &mut PixelApp, ui: &mut egui::Ui) {
     let rows = rows(app, &collapsed);
     if rows.is_empty() {
         ui.add_space(8.0);
-        ui.label(egui::RichText::new(t("The scene is empty. Add a shape from Tool Sets.")).color(tk.text_dim));
+        ui.label(egui::RichText::new(t("The scene is empty. Add a shape with the tools on the left.")).color(tk.text_dim));
         return;
     }
     let mut clicked: Option<(ObjectKey, bool)> = None;

@@ -1,5 +1,7 @@
-//! Window chrome: title row and toolbar, menu bar, status bar, the Start
-//! page, viewport overlays and keyboard shortcuts.
+//! Window chrome, laid out like Blender's: a top bar with the menus and the
+//! title, a tool settings row under it, a vertical tool column on the left,
+//! a header strip on top of the viewport (selection modes and shading), the
+//! status bar, the Start page, viewport overlays and keyboard shortcuts.
 
 use egui::{Align2, Key, KeyboardShortcut, Modifiers, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::{Value, json};
@@ -9,20 +11,30 @@ use crate::icons::{self, Icon};
 use crate::theme::{self, Tokens};
 use crate::{PixelApp, SelectMode, Tool};
 
-/// Height of the macOS title bar band (the traffic lights sit in it).
-const MAC_TITLE_BAR: f32 = 28.0;
-/// Where title-row content may start right of the traffic lights.
+/// Height of the top bar; on macOS the traffic lights sit in it.
+const TOP_BAR: f32 = 28.0;
+/// Where top bar content starts right of the macOS traffic lights.
 const MAC_CONTENT_LEFT: f32 = 78.0;
-const TOOLBAR: f32 = 34.0;
-const BUTTON: f32 = 26.0;
+/// The tool settings row under the top bar.
+const TOOL_SETTINGS: f32 = 30.0;
+/// The tool column: icons only, or icons with labels.
+const SIDEBAR: f32 = 40.0;
+const SIDEBAR_LABELS: f32 = 168.0;
+const TOOL_BUTTON: f32 = 32.0;
+/// The header strip on top of the viewport.
+pub const VIEW_HEADER: f32 = 28.0;
 
-/// One toolbar button: icon, command, label and its parameters.
+/// One button: icon, command, label, parameters and whether it shows as on.
 struct Item {
     icon: Icon,
     command: &'static str,
     label: &'static str,
+    /// Shortcut and one line on what it does, for the tooltip.
+    hint: &'static str,
     params: fn() -> Value,
     selected: fn(&PixelApp) -> bool,
+    /// Needs a selected object.
+    needs_selection: bool,
 }
 
 fn no_params() -> Value {
@@ -34,67 +46,107 @@ fn never(_: &PixelApp) -> bool {
 }
 
 macro_rules! item {
-    ($icon:ident, $cmd:literal, $label:literal) => {
-        Item { icon: Icon::$icon, command: $cmd, label: $label, params: no_params, selected: never }
+    ($icon:ident, $cmd:literal, $label:literal, $hint:literal) => {
+        Item { icon: Icon::$icon, command: $cmd, label: $label, hint: $hint, params: no_params, selected: never, needs_selection: false }
     };
-    ($icon:ident, $cmd:literal, $label:literal, $params:expr, $selected:expr) => {
-        Item { icon: Icon::$icon, command: $cmd, label: $label, params: $params, selected: $selected }
+    ($icon:ident, $cmd:literal, $label:literal, $hint:literal, $params:expr, $selected:expr) => {
+        Item { icon: Icon::$icon, command: $cmd, label: $label, hint: $hint, params: $params, selected: $selected, needs_selection: false }
     };
 }
 
-fn toolbar_groups() -> Vec<Vec<Item>> {
+fn on_selection(mut it: Item) -> Item {
+    it.needs_selection = true;
+    it
+}
+
+/// The tool column, in groups.
+fn sidebar_groups() -> Vec<Vec<Item>> {
     vec![
-        vec![item!(New, "file.new", "New (Ctrl+N)"), item!(Open, "file.open", "Open (Ctrl+O)"), item!(Save, "file.save", "Save (Ctrl+S)")],
-        vec![item!(Undo, "edit.undo", "Undo (Ctrl+Z)"), item!(Redo, "edit.redo", "Redo (Ctrl+Shift+Z)")],
         vec![
-            item!(Select, "ui.tool", "Select (Q)", || json!({ "tool": "select" }), |a| a.ui.tool == Tool::Select),
-            item!(Move, "ui.tool", "Move (W)", || json!({ "tool": "move" }), |a| a.ui.tool == Tool::Move),
-            item!(Rotate, "ui.tool", "Rotate (E)", || json!({ "tool": "rotate" }), |a| a.ui.tool == Tool::Rotate),
-            item!(Scale, "ui.tool", "Scale (R)", || json!({ "tool": "scale" }), |a| a.ui.tool == Tool::Scale),
+            item!(Select, "ui.tool", "Select", "Q: click to select, Shift+click to add", || json!({ "tool": "select" }), |a| a.ui.tool
+                == Tool::Select),
+            item!(Move, "ui.tool", "Move", "W: move the selection", || json!({ "tool": "move" }), |a| a.ui.tool == Tool::Move),
+            item!(Rotate, "ui.tool", "Rotate", "E: rotate the selection", || json!({ "tool": "rotate" }), |a| a.ui.tool == Tool::Rotate),
+            item!(Scale, "ui.tool", "Scale", "R: scale the selection", || json!({ "tool": "scale" }), |a| a.ui.tool == Tool::Scale),
         ],
         vec![
-            item!(ModeObject, "ui.mode", "Object mode (1)", || json!({ "mode": "object" }), |a| a.ui.mode == SelectMode::Object),
-            item!(ModeVert, "ui.mode", "Vertex mode (2)", || json!({ "mode": "vert" }), |a| a.ui.mode == SelectMode::Vert),
-            item!(ModeEdge, "ui.mode", "Edge mode (3)", || json!({ "mode": "edge" }), |a| a.ui.mode == SelectMode::Edge),
-            item!(ModeFace, "ui.mode", "Face mode (4)", || json!({ "mode": "face" }), |a| a.ui.mode == SelectMode::Face),
+            item!(Box, "prim.box", "Box", "Add a box at the origin"),
+            item!(Cylinder, "prim.cylinder", "Cylinder", "Add a cylinder at the origin"),
+            item!(Sphere, "prim.quad_sphere", "Sphere", "Add a quad sphere at the origin"),
+            item!(Plane, "prim.plane", "Plane", "Add a flat grid at the origin"),
+            item!(Empty, "scene.create_empty", "Empty", "Add an empty (a transform only)"),
         ],
         vec![
-            item!(Box, "prim.box", "Add a box"),
-            item!(Cylinder, "prim.cylinder", "Add a cylinder"),
-            item!(Sphere, "prim.quad_sphere", "Add a sphere"),
-            item!(Plane, "prim.plane", "Add a plane"),
-        ],
-        vec![
-            item!(Frame, "view.frame", "Frame selection (F)"),
-            item!(Grid, "view.grid", "Ground grid", no_params, |a| a.ui.view.grid),
-            item!(Orthographic, "view.ortho", "Orthographic view (5)", no_params, |a| a.ui.view.ortho),
-        ],
-        vec![
-            item!(ShadeSolid, "view.shading", "Solid", || json!({ "mode": "solid" }), |a| a.ui.view.shading == "solid"),
-            item!(ShadeSolidWire, "view.shading", "Solid with edges", || json!({ "mode": "solid_wire" }), |a| a.ui.view.shading == "solid_wire"),
-            item!(ShadeWire, "view.shading", "Wireframe", || json!({ "mode": "wire" }), |a| a.ui.view.shading == "wire"),
-            item!(ShadeMatcap, "view.shading", "Clay (matcap)", || json!({ "mode": "matcap" }), |a| a.ui.view.shading == "matcap"),
+            on_selection(item!(Frame, "scene.apply_transform", "Apply transform", "Bake the object's transform into its mesh")),
+            on_selection(item!(Mesh, "edit.fill", "Fill holes", "Close holes with one face each")),
+            on_selection(item!(Health, "edit.recalc_normals", "Recalculate normals", "Make faces point outward")),
         ],
     ]
 }
 
-/// Title row (integrated macOS title bar) and the toolbar.
-pub fn title_and_toolbar(app: &mut PixelApp, ui: &mut egui::Ui) {
+/// Buttons of the tool settings row (file and history).
+fn settings_items() -> Vec<Item> {
+    vec![
+        item!(New, "file.new", "New", "Ctrl+N: start an empty scene"),
+        item!(Open, "file.open", "Open", "Ctrl+O: open a .p3d file"),
+        item!(Save, "file.save", "Save", "Ctrl+S: save to the current file"),
+        item!(Undo, "edit.undo", "Undo", "Ctrl+Z: step back one change"),
+        item!(Redo, "edit.redo", "Redo", "Ctrl+Shift+Z: step forward again"),
+    ]
+}
+
+/// The viewport header: selection modes on the left, view toggles and
+/// shading on the right.
+fn header_modes() -> Vec<Item> {
+    vec![
+        item!(ModeObject, "ui.mode", "Object mode", "1: select whole objects", || json!({ "mode": "object" }), |a| a.ui.mode == SelectMode::Object),
+        item!(ModeVert, "ui.mode", "Vertex mode", "2: select vertices", || json!({ "mode": "vert" }), |a| a.ui.mode == SelectMode::Vert),
+        item!(ModeEdge, "ui.mode", "Edge mode", "3: select edges", || json!({ "mode": "edge" }), |a| a.ui.mode == SelectMode::Edge),
+        item!(ModeFace, "ui.mode", "Face mode", "4: select faces", || json!({ "mode": "face" }), |a| a.ui.mode == SelectMode::Face),
+    ]
+}
+
+fn header_view() -> Vec<Vec<Item>> {
+    vec![
+        vec![
+            item!(Frame, "view.frame", "Frame selection", "F: fit the selection, or everything, in the view"),
+            item!(Grid, "view.grid", "Ground grid", "Show or hide the ground grid", no_params, |a| a.ui.view.grid),
+            item!(Orthographic, "view.ortho", "Orthographic", "5: switch between perspective and orthographic", no_params, |a| a.ui.view.ortho),
+        ],
+        vec![
+            item!(ShadeWire, "view.shading", "Wireframe", "Edges only", || json!({ "mode": "wire" }), |a| a.ui.view.shading == "wire"),
+            item!(ShadeSolid, "view.shading", "Solid", "Lit surfaces", || json!({ "mode": "solid" }), |a| a.ui.view.shading == "solid"),
+            item!(ShadeSolidWire, "view.shading", "Solid with edges", "Lit surfaces and polygon edges", || json!({ "mode": "solid_wire" }), |a| a
+                .ui
+                .view
+                .shading
+                == "solid_wire"),
+            item!(ShadeMatcap, "view.shading", "Clay", "Gray clay that shows form", || json!({ "mode": "matcap" }), |a| a.ui.view.shading
+                == "matcap"),
+        ],
+    ]
+}
+
+/// Draws one icon button in `rect`; returns whether it was clicked.
+fn button_at(ui: &mut egui::Ui, rect: Rect, it: &Item, app: &PixelApp, enabled: bool) -> bool {
+    let selected = (it.selected)(app);
+    let tooltip = format!("{}\n{}", t(it.label), t(it.hint));
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+        ui.add_enabled_ui(enabled, |ui| icons::button(ui, it.icon, rect.width(), &tooltip, selected).clicked()).inner
+    })
+    .inner
+}
+
+/// The top bar: menus on the left (after the traffic lights on macOS), the
+/// document title in the middle. Dragging it moves the window.
+pub fn top_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
-    let title_h = if app.integrated_titlebar { MAC_TITLE_BAR } else { 0.0 };
-    let tb_h = if app.ui.show_toolbar { TOOLBAR } else { 0.0 };
-    if title_h + tb_h <= 0.0 {
-        return;
-    }
-    egui::Panel::top("p3d_title_toolbar").exact_size(title_h + tb_h).frame(egui::Frame::NONE.fill(tk.chrome)).show(ui, |ui| {
+    egui::Panel::top("p3d_top_bar").exact_size(TOP_BAR).frame(egui::Frame::NONE.fill(tk.chrome_dark)).show(ui, |ui| {
         let r = ui.max_rect();
-        if title_h > 0.0 {
-            let title = format!("pixel3d      {}", if app.ui.start_page { t("Start").to_owned() } else { app.title() });
-            let galley = ui.painter().layout_no_wrap(title, egui::FontId::proportional(13.0), tk.text_dim);
-            let x = (r.left() + (r.width() - galley.size().x) / 2.0).max(r.left() + MAC_CONTENT_LEFT);
-            ui.painter().galley(pos2(x, r.top() + (title_h - galley.size().y) / 2.0), galley, tk.text_dim);
-            let band = Rect::from_min_size(r.min, vec2(r.width(), title_h));
-            let resp = ui.interact(band, ui.id().with("titledrag"), Sense::CLICK | Sense::DRAG);
+        let left = r.left() + if app.integrated_titlebar { MAC_CONTENT_LEFT } else { 6.0 };
+        // Window dragging first, so the menus on top of it keep their clicks.
+        if app.integrated_titlebar {
+            let resp = ui.interact(r, ui.id().with("titledrag"), Sense::CLICK | Sense::DRAG);
             if resp.drag_started() {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::StartDrag);
             }
@@ -103,114 +155,201 @@ pub fn title_and_toolbar(app: &mut PixelApp, ui: &mut egui::Ui) {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Maximized(!max));
             }
         }
-        if tb_h > 0.0 {
-            let row = Rect::from_min_size(pos2(r.left(), r.top() + title_h), vec2(r.width(), tb_h));
-            ui.painter().hline(row.x_range(), row.bottom() - 0.5, Stroke::new(1.0, tk.border));
-            toolbar(app, ui, row);
+        let menus_rect = Rect::from_min_max(pos2(left, r.top()), pos2(r.right(), r.bottom()));
+        let menus_right = ui
+            .scope_builder(egui::UiBuilder::new().max_rect(menus_rect).layout(egui::Layout::left_to_right(egui::Align::Center)), |ui| {
+                menu_bar(app, ui)
+            })
+            .inner;
+        let title = if app.ui.start_page { t("Start").to_owned() } else { app.title() };
+        let galley = ui.painter().layout_no_wrap(format!("pixel3d  {title}"), theme::body(), tk.text_dim);
+        let x = (r.center().x - galley.size().x / 2.0).max(menus_right + 24.0);
+        if x + galley.size().x < r.right() - 8.0 {
+            ui.painter().galley(pos2(x, r.center().y - galley.size().y / 2.0), galley, tk.text_dim);
         }
     });
 }
 
-fn toolbar(app: &mut PixelApp, ui: &mut egui::Ui, row: Rect) {
-    let tk = Tokens::get();
-    let groups = toolbar_groups();
-    let gap = 3.0;
-    let group_gap = 16.0;
-    let widths: Vec<f32> = groups.iter().map(|g| g.len() as f32 * (BUTTON + gap) - gap).collect();
-    let left = row.left() + 10.0;
-    let available = (row.right() - 10.0 - left).max(0.0);
+/// The menus (also the macOS native menu's contents).
+/// Returns the right edge of the menus.
+fn menu_bar(app: &mut PixelApp, ui: &mut egui::Ui) -> f32 {
     let mut clicked: Option<(&'static str, Value)> = None;
-    let fit = craft_ui::layout::fit_toolbar(&widths, available, group_gap, 30.0);
-    let mut x = left;
-    let shown: Vec<usize> = fit.as_ref().map_or_else(|| (0..groups.len()).collect(), |f| f.shown.iter().map(|(i, _)| *i).collect());
-    for gi in shown {
-        let Some(group) = groups.get(gi) else { continue };
-        for it in group {
-            let rect = Rect::from_min_size(pos2(x, row.center().y - BUTTON / 2.0), vec2(BUTTON, BUTTON));
-            let selected = (it.selected)(app);
-            let resp = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| icons::button(ui, it.icon, BUTTON, t(it.label), selected)).inner;
-            if resp.clicked() {
-                clicked = Some((it.command, (it.params)()));
-            }
-            x += BUTTON + gap;
-        }
-        x += group_gap - gap;
-        if gi + 1 < groups.len() {
-            ui.painter().vline(x - group_gap / 2.0, row.y_range().shrink(9.0), Stroke::new(1.0, tk.border));
-        }
-    }
-    if let Some(f) = &fit
-        && !f.overflow.is_empty()
-    {
-        let rect = Rect::from_min_size(pos2(x, row.center().y - BUTTON / 2.0), vec2(f.overflow_width, BUTTON));
-        let resp = ui.interact(rect, ui.id().with("toolbar_more"), Sense::click());
-        if resp.hovered() {
-            ui.painter().rect_filled(rect, 3.0, tk.control_hover.gamma_multiply(0.6));
-        }
-        for dx in [-5.0, 0.0, 5.0] {
-            ui.painter().circle_filled(rect.center() + vec2(dx, 0.0), 1.5, tk.text);
-        }
-        icons::describe_control(ui, &resp, t("More tools"), None);
-        egui::Popup::menu(&resp).show(|ui| {
-            for (n, gi) in f.overflow.iter().enumerate() {
-                let Some(group) = groups.get(*gi) else { continue };
-                if n > 0 {
-                    ui.separator();
-                }
-                for it in group {
-                    if ui.button(t(it.label)).clicked() {
-                        clicked = Some((it.command, (it.params)()));
-                        ui.close();
-                    }
-                }
-            }
-        });
-    }
-    if let Some((cmd, params)) = clicked {
-        let _ = app.run(cmd, params);
-    }
-}
-
-/// The in-window menu bar (macOS uses the native one).
-pub fn menu_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
-    let tk = Tokens::get();
-    let mut clicked: Option<(&'static str, Value)> = None;
-    egui::Panel::top("p3d_menu").frame(egui::Frame::NONE.fill(tk.chrome).inner_margin(egui::Margin::symmetric(6, 2))).show(ui, |ui| {
-        egui::MenuBar::new().ui(ui, |ui| {
-            for menu in crate::menus::menus() {
-                ui.menu_button(t(menu.label), |ui| {
-                    for entry in menu.entries {
-                        match entry {
-                            None => {
-                                ui.separator();
+    let mut right = ui.max_rect().left();
+    egui::MenuBar::new().ui(ui, |ui| {
+        for menu in crate::menus::menus() {
+            let button = ui.menu_button(t(menu.label), |ui| {
+                for entry in menu.entries {
+                    match entry {
+                        None => {
+                            ui.separator();
+                        }
+                        Some(it) => {
+                            let mut b = egui::Button::new(t(it.label));
+                            if let Some(s) = &it.shortcut {
+                                b = b.shortcut_text(ui.ctx().format_shortcut(s));
                             }
-                            Some(it) => {
-                                let mut b = egui::Button::new(t(it.label));
-                                if let Some(s) = &it.shortcut {
-                                    b = b.shortcut_text(ui.ctx().format_shortcut(s));
-                                }
-                                let resp = ui.add(b);
-                                crate::control::record_widget(ui, &resp, it.label, "menuitem", None);
-                                if resp.clicked() {
-                                    clicked = Some((it.command, (it.params)()));
-                                    ui.close();
-                                }
+                            let resp = ui.add(b);
+                            crate::control::record_widget(ui, &resp, it.label, "menuitem", None);
+                            if resp.clicked() {
+                                clicked = Some((it.command, (it.params)()));
+                                ui.close();
                             }
                         }
                     }
-                });
-            }
-        });
+                }
+            });
+            right = right.max(button.response.rect.right());
+        }
     });
     if let Some((cmd, params)) = clicked {
         let _ = app.run(cmd, params);
     }
+    right
+}
+
+/// The tool settings row: file and history buttons, then the active tool
+/// and what it does.
+pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
+    let tk = Tokens::get();
+    egui::Panel::top("p3d_tool_settings").exact_size(TOOL_SETTINGS).frame(egui::Frame::NONE.fill(tk.chrome)).show(ui, |ui| {
+        let r = ui.max_rect();
+        ui.painter().hline(r.x_range(), r.bottom() - 0.5, Stroke::new(1.0, tk.border));
+        let size = 24.0;
+        let mut x = r.left() + 8.0;
+        let mut clicked = None;
+        for (i, it) in settings_items().iter().enumerate() {
+            if i == 3 {
+                ui.painter().vline(x + 3.0, r.y_range().shrink(8.0), Stroke::new(1.0, tk.border));
+                x += 8.0;
+            }
+            let rect = Rect::from_min_size(pos2(x, r.center().y - size / 2.0), vec2(size, size));
+            if button_at(ui, rect, it, app, true) {
+                clicked = Some((it.command, (it.params)()));
+            }
+            x += size + 2.0;
+        }
+        x += 10.0;
+        ui.painter().vline(x, r.y_range().shrink(8.0), Stroke::new(1.0, tk.border));
+        x += 12.0;
+        let (name, what) = match app.ui.tool {
+            Tool::Select => (t("Select"), t("Click an object to select it; Shift+click adds or removes.")),
+            Tool::Move => (t("Move"), t("Drag the gizmo arrows to move the selection.")),
+            Tool::Rotate => (t("Rotate"), t("Drag the gizmo rings to rotate the selection.")),
+            Tool::Scale => (t("Scale"), t("Drag the gizmo handles to scale the selection.")),
+        };
+        let g = ui.painter().layout_no_wrap(name.to_owned(), egui::FontId::proportional(13.0), tk.text);
+        let w = g.size().x;
+        ui.painter().galley(pos2(x, r.center().y - g.size().y / 2.0), g, tk.text);
+        ui.painter().text(pos2(x + w + 12.0, r.center().y), Align2::LEFT_CENTER, what, theme::small(), tk.text_dim);
+        if let Some((cmd, params)) = clicked {
+            let _ = app.run(cmd, params);
+        }
+    });
+}
+
+/// The tool column on the left: icon buttons in groups, like Blender's
+/// toolbar. Right-click switches between icons only and icons with labels.
+pub fn tool_sidebar(app: &mut PixelApp, ui: &mut egui::Ui) {
+    let tk = Tokens::get();
+    let width = if app.ui.sidebar_labels { SIDEBAR_LABELS } else { SIDEBAR };
+    let has_selection = !app.selected_targets().is_empty();
+    egui::Panel::left("p3d_tools").exact_size(width).resizable(false).frame(egui::Frame::NONE.fill(tk.chrome)).show(ui, |ui| {
+        let r = ui.max_rect();
+        ui.painter().vline(r.right() - 0.5, r.y_range(), Stroke::new(1.0, tk.border));
+        let back = ui.interact(r, ui.id().with("toolbar-bg"), Sense::click());
+        back.context_menu(|ui| {
+            let label = if app.ui.sidebar_labels { t("Icons only") } else { t("Show labels") };
+            if ui.button(label).clicked() {
+                app.ui.sidebar_labels = !app.ui.sidebar_labels;
+                ui.close();
+            }
+        });
+        let mut y = r.top() + 6.0;
+        let mut clicked = None;
+        let groups = sidebar_groups();
+        for (gi, group) in groups.iter().enumerate() {
+            if gi > 0 {
+                y += 5.0;
+                ui.painter().hline(r.left() + 8.0..=r.right() - 8.0, y, Stroke::new(1.0, tk.border));
+                y += 6.0;
+            }
+            for it in group {
+                let enabled = !it.needs_selection || has_selection;
+                let rect = Rect::from_min_size(pos2(r.left() + 4.0, y), vec2(TOOL_BUTTON, TOOL_BUTTON));
+                if button_at(ui, rect, it, app, enabled) {
+                    clicked = Some((it, (it.params)()));
+                }
+                if app.ui.sidebar_labels {
+                    let lr = Rect::from_min_max(pos2(rect.right() + 6.0, rect.top()), pos2(r.right() - 6.0, rect.bottom()));
+                    let resp = ui.interact(lr, ui.id().with(("toollabel", it.label, it.icon as u8)), Sense::click());
+                    let color = if enabled { if (it.selected)(app) { tk.text } else { tk.text_dim } } else { tk.text_faint };
+                    ui.painter().text(pos2(lr.left(), lr.center().y), Align2::LEFT_CENTER, t(it.label), theme::body(), color);
+                    if enabled && resp.clicked() {
+                        clicked = Some((it, (it.params)()));
+                    }
+                }
+                y += TOOL_BUTTON + 2.0;
+            }
+        }
+        if let Some((it, params)) = clicked {
+            let params = if it.needs_selection {
+                match app.selected_targets().first() {
+                    Some(id) => json!({ "target": id }),
+                    None => params,
+                }
+            } else {
+                params
+            };
+            let _ = app.run(it.command, params);
+        }
+    });
+}
+
+/// The viewport header strip at the top of `rect`; returns the area left
+/// for the 3D view.
+pub fn viewport_header(app: &mut PixelApp, ui: &mut egui::Ui, rect: Rect) -> Rect {
+    let tk = Tokens::get();
+    let header = Rect::from_min_size(rect.min, vec2(rect.width(), VIEW_HEADER));
+    ui.painter().rect_filled(header, 0.0, tk.chrome_dark);
+    let size = 22.0;
+    let y = header.center().y - size / 2.0;
+    let mut clicked = None;
+    let mut x = header.left() + 6.0;
+    for it in header_modes() {
+        let r = Rect::from_min_size(pos2(x, y), vec2(size, size));
+        if button_at(ui, r, &it, app, true) {
+            clicked = Some((it.command, (it.params)()));
+        }
+        x += size + 1.0;
+    }
+    ui.painter().text(pos2(x + 10.0, header.center().y), Align2::LEFT_CENTER, app.ui.mode.label(), theme::small(), tk.text_dim);
+    let mut rx = header.right() - 6.0;
+    for (gi, group) in header_view().iter().enumerate().rev() {
+        for it in group.iter().rev() {
+            rx -= size;
+            let r = Rect::from_min_size(pos2(rx, y), vec2(size, size));
+            if button_at(ui, r, it, app, true) {
+                clicked = Some((it.command, (it.params)()));
+            }
+            rx -= 1.0;
+        }
+        if gi > 0 {
+            rx -= 6.0;
+            ui.painter().vline(rx, header.y_range().shrink(7.0), Stroke::new(1.0, tk.border));
+            rx -= 6.0;
+        }
+    }
+    if let Some((cmd, params)) = clicked {
+        let _ = app.run(cmd, params);
+    }
+    Rect::from_min_max(pos2(rect.left(), header.bottom()), rect.max)
 }
 
 /// Status bar: mode and selection, the last message, triangles against the
-/// budget, units and frame rate.
+/// budget, units, frame rate and the bottom panel toggle.
 pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
+    let mut toggle_bottom = false;
     egui::Panel::bottom("p3d_status").exact_size(24.0).frame(egui::Frame::NONE.fill(tk.chrome)).show(ui, |ui| {
         let r = ui.max_rect();
         let p = ui.painter().clone();
@@ -227,6 +366,13 @@ pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
         let sel = app.selection.len();
         text(&p, &mut x, &format!("{sel} {}", t("selected")), tk.text_dim);
         // Right side, laid out from the right edge.
+        let mut rx = r.right() - 6.0;
+        let br = Rect::from_min_size(pos2(rx - 20.0, y - 10.0), vec2(20.0, 20.0));
+        let shown = app.bottom_panel_visible();
+        let tip = if shown { t("Hide History and Console") } else { t("Show History and Console") };
+        let resp = ui.scope_builder(egui::UiBuilder::new().max_rect(br), |ui| icons::button(ui, Icon::History, 20.0, tip, shown)).inner;
+        toggle_bottom = resp.clicked();
+        rx -= 32.0;
         let doc = app.doc();
         let tris: usize = doc.objects().filter_map(|(k, _)| doc.object_mesh(k)).map(|m| m.triangle_count()).sum();
         let budget = doc.settings.tri_budget() as usize;
@@ -235,7 +381,6 @@ pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
             t("meters").to_owned(),
             format!("{} / {} {}", thousands(tris), thousands(budget), t("tris")),
         ];
-        let mut rx = r.right() - 10.0;
         let over = tris > budget;
         for (i, s) in right.iter().enumerate() {
             let color = if i == 2 && over { tk.health_warn } else { tk.text_dim };
@@ -254,6 +399,9 @@ pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
             }
         }
     });
+    if toggle_bottom {
+        let _ = app.run("ui.bottom", Value::Null);
+    }
 }
 
 /// `1234567` as `1,234,567`.
@@ -330,7 +478,7 @@ pub fn start_page(app: &mut PixelApp, ui: &mut egui::Ui) {
     }
 }
 
-/// Overlays drawn over the viewport image: the view name and the axis triad.
+/// Overlays drawn over the viewport image: the view name.
 pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
     let rect = app.viewport.rect;
@@ -349,19 +497,6 @@ pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
         }
     );
     p.text(rect.left_top() + vec2(10.0, 8.0), Align2::LEFT_TOP, label, theme::small(), tk.text_dim);
-    // Axis triad, bottom left: world axes as seen by the camera.
-    let view = app.viewport.camera.view();
-    let o = pos2(rect.left() + 38.0, rect.bottom() - 38.0);
-    let mut axes = [(glam::Vec3::X, tk.axis_x, "X"), (glam::Vec3::Y, tk.axis_y, "Y"), (glam::Vec3::Z, tk.axis_z, "Z")];
-    // Draw the axis pointing away from the camera first.
-    axes.sort_by(|a, b| view.transform_vector3(a.0).z.total_cmp(&view.transform_vector3(b.0).z));
-    for (axis, color, name) in axes {
-        let v = view.transform_vector3(axis);
-        let end = o + vec2(v.x, -v.y) * 24.0;
-        p.line_segment([o, end], Stroke::new(2.0, color));
-        p.circle_filled(end, 7.0, color);
-        p.text(end, Align2::CENTER_CENTER, name, egui::FontId::proportional(9.5), egui::Color32::WHITE);
-    }
 }
 
 /// A shortcut, its command and the command parameters.
@@ -414,5 +549,30 @@ mod tests {
         assert_eq!(thousands(0), "0");
         assert_eq!(thousands(6000), "6,000");
         assert_eq!(thousands(1234567), "1,234,567");
+    }
+
+    #[test]
+    fn every_chrome_command_is_known() {
+        let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        app.run("prim.box", Value::Null).unwrap();
+        let items: Vec<Item> = sidebar_groups()
+            .into_iter()
+            .flatten()
+            .chain(header_modes())
+            .chain(header_view().into_iter().flatten())
+            .chain(settings_items().into_iter().filter(|it| !it.command.starts_with("file.")))
+            .collect();
+        for it in items {
+            let params = if it.needs_selection { json!({ "target": app.selected_targets()[0] }) } else { (it.params)() };
+            // Ops may refuse a fresh box (no holes to fill, nothing to apply);
+            // the command itself must exist.
+            if let Err(e) = app.run(it.command, params) {
+                assert!(!e.starts_with(t("unknown command")), "{}: {e}", it.command);
+            }
+            // Keep one object selected for the selection tools.
+            if app.selected_targets().is_empty() {
+                app.run("edit.select_all", Value::Null).unwrap();
+            }
+        }
     }
 }
