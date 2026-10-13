@@ -119,10 +119,20 @@ A spec (or its brief) can say how the asset should feel with a `dna` block (ADR 
 - `hierarchy`: primary, secondary and tertiary volume shares (forms are parts, or a single part's shape groups).
 - `lines`: `angular`, `flowing`, `heavy`, `balanced`, or `{"curved": [min, max], "taper": [min, max]}` (share of surface that bends smoothly; taper of elongated parts).
 - `edges`: `varied`, `uniform`, `sharp`, `soft`, or `{"bevel_variation": [min, max]}` (coefficient of variation of bevel widths).
-- `silhouette`: `{"solidity": [min, max]}`; `rhythm`: `varied` or `regular`; `proportions`: height ratios `<a>_to_<b>`.
+- `silhouette`: `{"solidity": [min, max]}`; `rhythm`: `varied` or `regular`; `proportions`: height ratios `<a>_to_<b>`, and for humanoids `heads` (height in head heights), `shoulders` (width in head heights) and `legs` (crotch height over height), read from the front silhouette of the parts tagged `anatomy`.
+- `archetype`: an archetype's genes (its proportion ranges, which parts may bend, a body's curved surface); archetype instances set it, so a dwarf is measured against dwarf ranges.
+- `gesture`: `{"parts": ["blade"], "bend": [0.02, 0.2]}`, how far elongated parts' centerlines bend (largest distance from the chord over the length); flowing (elven) lines expect a bend.
+- `rest`: `[min, max]`, the share of the length free of small forms (rest areas).
 - `surface` and `variation` are kept for Phase 6.
 
-`perceive dna` shows each gene measured against its target, then the critique: `twinning` (equal forms side by side), `tangent` (forms that just touch), `uniform_bevel` (one bevel width on forms of very different sizes) and `weak_silhouette` (an outline that reads as a blob), each with a fix. Every `spec` answer for a spec with DNA ends with `dna 5/6 genes on target; critique: ...`.
+`perceive dna` shows each gene measured against its target, then the critique: `twinning` (equal forms side by side, or like forms at even spacing when the rhythm should vary), `tangent` (forms that just touch), `uniform_bevel` (one bevel width on forms of very different sizes), `weak_silhouette` (an outline that reads as a blob), `proportion` (a measure outside the archetype's range), `stiff` (a straight centerline where gesture is expected), `floating_detail` (a small form touching nothing) and `uniform_detail` (small forms everywhere, no rest area). On a spec, every critique comes with a spec patch, and the first four with a predicted result from a dry run:
+
+```
+proportion heads: {"merge":{"archetypes":{"dwarf":{"params":{"heads":4.53}}}}} -> resolved; dna 3/6 -> 5/6
+stiff blade: {"merge":{"archetypes":{"s":{"params":{"curve":12}}}}} -> resolved; dna 4/6 -> 5/6
+```
+
+Run the patch with `spec patch` to apply it. Generated parts are fixed through their archetype's parameters when it has one (`heads`, `shoulders`, `legs`, `curve`), other parts through their transform, anchor offset or a deform handle. Detail below pixel size is the `DETAIL_SCALE` diagnostic, not a critique. Every `spec` answer for a spec with DNA ends with `dna 5/6 genes on target; critique: ...`.
 
 ## Provenance
 

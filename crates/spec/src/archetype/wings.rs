@@ -195,6 +195,6 @@ impl Archetype for Arch {
             ["shoulder", "elbow", "wrist", "tip"].iter().map(|j| format!("{j}_{side}")).filter(|j| names.contains(j)).collect()
         };
         let curves = vec![("wing_l".to_owned(), chain("l")), ("wing_r".to_owned(), chain("r"))];
-        Generated { curves, parts, dna: Value::Null }
+        Generated { curves, parts, dna: json!({ "archetype": self.0.id }) }
     }
 }

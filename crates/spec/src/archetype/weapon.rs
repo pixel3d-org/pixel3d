@@ -609,6 +609,6 @@ impl Archetype for Arch {
             "elven" => "elven",
             _ => "human_medieval",
         };
-        Generated { curves, parts, dna: json!({ "culture": culture }) }
+        Generated { curves, parts, dna: json!({ "archetype": self.0.id, "culture": culture }) }
     }
 }

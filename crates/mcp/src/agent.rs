@@ -462,12 +462,14 @@ impl Agent {
                     }
                     Aspect::Visibility => p3d_perceive::visibility::report(&view),
                     Aspect::Dna => {
-                        let genes = a
-                            .dna
-                            .clone()
-                            .or_else(|| target.and_then(|t| doc.resolve(t).ok()).and_then(|k| p3d_spec::dna_of(&doc, k)))
-                            .unwrap_or_default();
-                        p3d_perceive::dna::report(&view, &genes).map_err(|(path, message)| OpError::invalid(&format!("/dna{path}"), message))?
+                        let root = target.and_then(|t| doc.resolve(t).ok());
+                        let genes = a.dna.clone().or_else(|| root.and_then(|k| p3d_spec::dna_of(&doc, k))).unwrap_or_default();
+                        match root.filter(|&k| doc.spec(k).is_some()) {
+                            // A spec root: every critique also gets a spec patch and a prediction.
+                            Some(k) => p3d_spec::dna::report(&doc, k, &genes, self.session.registry(), self.session.seed())?,
+                            None => p3d_perceive::dna::report(&view, &genes)
+                                .map_err(|(path, message)| OpError::invalid(&format!("/dna{path}"), message))?,
+                        }
                     }
                     Aspect::Diff | Aspect::Proportions | Aspect::Brief => return Err(OpError::internal("unreachable")),
                 }

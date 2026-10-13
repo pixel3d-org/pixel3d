@@ -391,7 +391,8 @@ impl Archetype for Humanoid {
         let y_chin = hh - h;
         let y_neck = y_chin - race.neck * h;
         let y_sh = y_neck - 0.08 * h;
-        let x_sh = p.f("shoulders") * h * 0.5 - 0.27 * h * (1.0 + 0.3 * b.build);
+        // The deltoids' outer edges meet the shoulder width.
+        let x_sh = p.f("shoulders") * h * 0.5 - 0.05 * b.t - 0.19 * b.t * (0.9 + 0.35 * b.build) - 0.004 * h;
         let y_crotch = p.f("legs") * hh;
         let y_hip = y_crotch + 0.045 * hh + 0.05 * h;
         let x_hip = h * (0.34 + 0.08 * b.build + 0.06 * b.belly);
@@ -878,7 +879,7 @@ impl Archetype for Humanoid {
             ("leg_l".to_owned(), ["hip_l", "knee_l", "ankle_l", "toe_l"].map(str::to_owned).to_vec()),
             ("leg_r".to_owned(), ["hip_r", "knee_r", "ankle_r", "toe_r"].map(str::to_owned).to_vec()),
         ];
-        Generated { curves, parts, dna: json!({ "culture": race.culture }) }
+        Generated { curves, parts, dna: json!({ "archetype": race.id, "culture": race.culture }) }
     }
 }
 

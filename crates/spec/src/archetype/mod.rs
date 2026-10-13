@@ -445,6 +445,7 @@ pub fn expand_report(source: &Value) -> Result<Option<(Value, Vec<InstanceReport
     let mut placed: BTreeMap<String, Rig> = BTreeMap::new();
     let mut made_by: BTreeMap<String, String> = BTreeMap::new();
     let mut genes: Option<Value> = None;
+    let mut extra: Vec<(String, &'static p3d_perceive::dna::ArchetypeGenes)> = Vec::new();
     let mut reports = Vec::with_capacity(uses.len());
     for name in order(&uses)? {
         let u = &uses[&name];
@@ -509,9 +510,12 @@ pub fn expand_report(source: &Value) -> Result<Option<(Value, Vec<InstanceReport
             made_by.insert(full.clone(), name.clone());
             listed.push(full);
         }
-        // The first instance placed on its own sets the genes.
+        // The first instance placed on its own sets the genes; the others
+        // add their part ratios and gesture, renamed with their prefix.
         if genes.is_none() && u.at.is_none() && !generated.dna.is_null() {
             genes = Some(generated.dna);
+        } else if let Some(g) = p3d_perceive::dna::archetype_genes(info.id) {
+            extra.push((prefix.clone(), g));
         }
         reports.push(InstanceReport { name: name.clone(), kind: info.id.to_owned(), joints: rig.joints.len(), parts: listed });
         placed.insert(name, rig);
@@ -521,6 +525,22 @@ pub fn expand_report(source: &Value) -> Result<Option<(Value, Vec<InstanceReport
         o.insert("parts".into(), Value::Object(parts));
         o.insert("skeletons".into(), Value::Object(skeletons));
         if let Some(mut g) = genes {
+            for (prefix, e) in &extra {
+                for (k, r) in e.proportions {
+                    if let Some((a, b)) = k.split_once("_to_") {
+                        let key = format!("{prefix}{a}_to_{prefix}{b}");
+                        if g.pointer(&format!("/proportions/{key}")).is_none() {
+                            crate::patch::merge(&mut g, &json!({ "proportions": { key: r } }));
+                        }
+                    }
+                }
+                if let Some(r) = e.gesture
+                    && g.get("gesture").is_none()
+                {
+                    let names: Vec<String> = e.gesture_parts.iter().map(|p| format!("{prefix}{p}")).collect();
+                    g["gesture"] = json!({ "parts": names, "bend": r });
+                }
+            }
             if let Some(d) = source.get("dna") {
                 crate::patch::merge(&mut g, d);
             }
