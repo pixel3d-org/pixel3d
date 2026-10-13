@@ -72,9 +72,9 @@ fn extra_commands() -> Vec<Command> {
     };
     vec![
         mk("ui.tool", || json!({ "tool": "select" }), "Select tool", "Click to select objects", &["q", "tweak", "pick"], Icon::Select),
-        mk("ui.tool", || json!({ "tool": "move" }), "Move tool", "Move the selection with the gizmo", &["w", "g", "grab", "translate"], Icon::Move),
-        mk("ui.tool", || json!({ "tool": "rotate" }), "Rotate tool", "Rotate the selection with the gizmo", &["e", "r", "rotation"], Icon::Rotate),
-        mk("ui.tool", || json!({ "tool": "scale" }), "Scale tool", "Scale the selection with the gizmo", &["r", "s", "resize"], Icon::Scale),
+        mk("ui.tool", || json!({ "tool": "move" }), "Move tool", "Move the selection with the gizmo", &["w", "translate"], Icon::Move),
+        mk("ui.tool", || json!({ "tool": "rotate" }), "Rotate tool", "Rotate the selection with the gizmo", &["e", "rotation"], Icon::Rotate),
+        mk("ui.tool", || json!({ "tool": "scale" }), "Scale tool", "Scale the selection with the gizmo", &["t", "resize"], Icon::Scale),
         mk("ui.mode", || json!({ "mode": "object" }), "Object mode", "Work on whole objects", &["tab", "object"], Icon::ModeObject),
         mk(
             "ui.mode",
@@ -87,6 +87,30 @@ fn extra_commands() -> Vec<Command> {
         mk("ui.mode", || json!({ "mode": "vert" }), "Vertex select", "Select vertices (edit mode)", &["1", "vertex mode", "points"], Icon::ModeVert),
         mk("ui.mode", || json!({ "mode": "edge" }), "Edge select", "Select edges (edit mode)", &["2", "edge mode"], Icon::ModeEdge),
         mk("ui.mode", || json!({ "mode": "face" }), "Face select", "Select faces (edit mode)", &["3", "face mode", "polygon"], Icon::ModeFace),
+        mk(
+            "view.modal",
+            || json!({ "kind": "move" }),
+            "Grab",
+            "Move the selection with the pointer; X, Y, Z constrain, type a value",
+            &["g", "grab", "translate", "move"],
+            Icon::Move,
+        ),
+        mk(
+            "view.modal",
+            || json!({ "kind": "rotate" }),
+            "Rotate",
+            "Turn the selection with the pointer; X, Y, Z constrain, type degrees",
+            &["r", "rotate"],
+            Icon::Rotate,
+        ),
+        mk(
+            "view.modal",
+            || json!({ "kind": "scale" }),
+            "Resize",
+            "Scale the selection with the pointer; X, Y, Z constrain, type a factor",
+            &["s", "scale", "resize"],
+            Icon::Scale,
+        ),
         mk("view.snap", null, "Snap", "Snap transform drags to the grid and 15 degree steps", &["snapping", "magnet", "shift tab"], Icon::Grid),
     ]
 }

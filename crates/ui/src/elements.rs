@@ -35,6 +35,8 @@ pub struct EditState {
     picked_mode: Option<SelectMode>,
     /// Bumped on every change (part of the overlay key).
     pub version: u64,
+    /// The last picked element (the Active Element pivot and snap base).
+    pub active: Option<u32>,
     bvh: Option<(Arc<Mesh>, Arc<TriBvh>)>,
     shown: Option<(u64, Arc<EditOverlay>, Flushed)>,
 }
@@ -83,6 +85,7 @@ impl EditState {
     pub fn clear(&mut self) {
         if !self.picked.is_empty() {
             self.picked.clear();
+            self.active = None;
             self.version += 1;
         }
     }
@@ -102,6 +105,7 @@ impl EditState {
             self.object = object;
             self.mesh = mesh.cloned();
             self.picked.clear();
+            self.active = None;
             self.picked_mode = None;
             self.version += 1;
         }
@@ -127,15 +131,22 @@ impl EditState {
     pub fn click(&mut self, hit: Option<u32>, add: bool) {
         match (hit, add) {
             (Some(id), true) => {
-                if !self.picked.remove(&id) {
+                if self.picked.remove(&id) {
+                    self.active = self.active.filter(|a| *a != id);
+                } else {
                     self.picked.insert(id);
+                    self.active = Some(id);
                 }
             }
             (Some(id), false) => {
                 self.picked.clear();
                 self.picked.insert(id);
+                self.active = Some(id);
             }
-            (None, false) => self.picked.clear(),
+            (None, false) => {
+                self.picked.clear();
+                self.active = None;
+            }
             (None, true) => return,
         }
         self.version += 1;

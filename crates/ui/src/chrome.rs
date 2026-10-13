@@ -106,9 +106,23 @@ fn sidebar_groups(edit: bool) -> Vec<Vec<Item>> {
     let tools = vec![
         item!(Select, "ui.tool", "Select", "Q", "Click to select, Shift+click to add or remove", || json!({ "tool": "select" }), |a| a.ui.tool
             == Tool::Select),
-        item!(Move, "ui.tool", "Move", "W", "Move the selection with the gizmo", || json!({ "tool": "move" }), |a| a.ui.tool == Tool::Move),
-        item!(Rotate, "ui.tool", "Rotate", "E", "Rotate the selection with the gizmo", || json!({ "tool": "rotate" }), |a| a.ui.tool == Tool::Rotate),
-        item!(Scale, "ui.tool", "Scale", "R", "Scale the selection with the gizmo", || json!({ "tool": "scale" }), |a| a.ui.tool == Tool::Scale),
+        item!(Move, "ui.tool", "Move", "W", "Move the selection with the gizmo (G moves with the pointer)", || json!({ "tool": "move" }), |a| a
+            .ui
+            .tool
+            == Tool::Move),
+        item!(
+            Rotate,
+            "ui.tool",
+            "Rotate",
+            "E",
+            "Rotate the selection with the gizmo (R turns with the pointer)",
+            || json!({ "tool": "rotate" }),
+            |a| a.ui.tool == Tool::Rotate
+        ),
+        item!(Scale, "ui.tool", "Scale", "T", "Scale the selection with the gizmo (S scales with the pointer)", || json!({ "tool": "scale" }), |a| a
+            .ui
+            .tool
+            == Tool::Scale),
     ];
     if edit {
         return vec![tools, edit_tools(), edit_extras()];
@@ -455,7 +469,14 @@ pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
         ui.painter().galley(pos2(x, cy - g.size().y / 2.0), g, tk.text);
         x += w + 16.0;
         let mut action = None;
-        if app.selected_targets().is_empty() {
+        if let Some(text) = crate::gizmo::status_text(app) {
+            // A transform in progress: its value and the keys that steer it.
+            let g = ui.painter().layout_no_wrap(text, theme::mono(), tk.icon_accent);
+            let w = g.size().x;
+            ui.painter().galley(pos2(x, cy - g.size().y / 2.0), g, tk.icon_accent);
+            let hint = t("X Y Z constrain, Shift+X plane, type a value, Enter confirms, Esc cancels");
+            ui.painter().text(pos2(x + w + 18.0, cy), Align2::LEFT_CENTER, hint, theme::small(), tk.text_dim);
+        } else if app.selected_targets().is_empty() {
             ui.painter().text(pos2(x, cy), Align2::LEFT_CENTER, what, theme::small(), tk.text_dim);
         } else {
             for it in object_actions() {
@@ -904,6 +925,10 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
     if ctx.egui_wants_keyboard_input() {
         return;
     }
+    // A modal transform reads the keys itself (X, Y, Z, typed values).
+    if app.gizmo.modal() {
+        return;
+    }
     let cmd = Modifiers::COMMAND;
     let shift_cmd = Modifiers::COMMAND | Modifiers::SHIFT;
     let table: &[Binding] = &[
@@ -924,7 +949,11 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(Modifiers::NONE, Key::Q), "ui.tool", || json!({ "tool": "select" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::W), "ui.tool", || json!({ "tool": "move" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::E), "ui.tool", || json!({ "tool": "rotate" })),
-        (KeyboardShortcut::new(Modifiers::NONE, Key::R), "ui.tool", || json!({ "tool": "scale" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::T), "ui.tool", || json!({ "tool": "scale" })),
+        // Blender's modal transforms.
+        (KeyboardShortcut::new(Modifiers::NONE, Key::G), "view.modal", || json!({ "kind": "move" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::R), "view.modal", || json!({ "kind": "rotate" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::S), "view.modal", || json!({ "kind": "scale" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num1), "ui.mode", || json!({ "mode": "vert" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num2), "ui.mode", || json!({ "mode": "edge" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num3), "ui.mode", || json!({ "mode": "face" })),

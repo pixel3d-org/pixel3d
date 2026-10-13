@@ -115,6 +115,8 @@ pub struct TransformSettings {
     pub radius: f32,
     /// The 3D cursor (world, meters).
     pub cursor: [f32; 3],
+    /// Its rotation (Euler degrees, X then Y then Z), for the Cursor orientation.
+    pub cursor_rotation: [f32; 3],
 }
 
 impl Default for TransformSettings {
@@ -139,6 +141,7 @@ impl Default for TransformSettings {
             projected: false,
             radius: 1.0,
             cursor: [0.0; 3],
+            cursor_rotation: [0.0; 3],
         }
     }
 }
@@ -205,6 +208,7 @@ impl TransformSettings {
                     next.radius = r as f32;
                 }
                 "cursor" => next.cursor = parse(k, v)?,
+                "cursorRotation" => next.cursor_rotation = parse(k, v)?,
                 other => return Err(format!("{} `{other}`", t("unknown transform setting"))),
             }
         }
@@ -218,6 +222,11 @@ impl TransformSettings {
 
     pub fn cursor(&self) -> glam::Vec3 {
         glam::Vec3::from_array(self.cursor)
+    }
+
+    pub fn cursor_rotation(&self) -> glam::Quat {
+        let [x, y, z] = self.cursor_rotation;
+        p3d_math::transform::rotation_from_euler_deg(x, y, z)
     }
 }
 

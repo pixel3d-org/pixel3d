@@ -30,6 +30,7 @@ pub mod quick;
 pub mod remote;
 pub mod schema_form;
 pub mod screenshot;
+pub mod snap;
 pub mod stats;
 pub mod theme;
 pub mod transform;
@@ -518,7 +519,10 @@ impl PixelApp {
             }
         };
         self.ui.transform.cursor = at.to_array();
-        Ok(json!({ "cursor": self.ui.transform.cursor }))
+        if let Some(r) = params.get("rotation") {
+            self.ui.transform.cursor_rotation = serde_json::from_value(r.clone()).map_err(|e| format!("rotation: {e}"))?;
+        }
+        Ok(json!({ "cursor": self.ui.transform.cursor, "rotation": self.ui.transform.cursor_rotation }))
     }
 
     /// The center of the selection in world space: the selected elements'
@@ -897,6 +901,21 @@ impl PixelApp {
             "selection.run" => {
                 let op = str_param("op").ok_or("op is required: an op that takes a target")?;
                 self.run_on_selection(&op)
+            }
+            "view.modal" => {
+                // G, R, S: a transform that follows the pointer until a click.
+                let kind = match params.get("kind").and_then(Value::as_str) {
+                    Some("move") | None => gizmo::Kind::Move,
+                    Some("rotate") => gizmo::Kind::Rotate,
+                    Some("scale") => gizmo::Kind::Scale,
+                    Some(other) => return Err(format!("{} `{other}`: move, rotate or scale", t("unknown transform"))),
+                };
+                let has = if self.ui.mode.is_edit() { self.edit.flushed().is_some_and(|f| !f.verts.is_empty()) } else { !self.selection.is_empty() };
+                if !has {
+                    return Err(t("nothing selected").to_owned());
+                }
+                self.gizmo.pending = Some(kind);
+                Ok(json!({ "modal": params.get("kind").cloned().unwrap_or(json!("move")) }))
             }
             "view.benchmark" => {
                 // Orbits the camera every frame for `seconds` and measures.
@@ -1319,6 +1338,7 @@ impl PixelApp {
                 };
                 self.viewport.pick_elements = element_mode && self.edit.object.is_some();
                 self.viewport.knife = element_mode && self.ui.tool == Tool::Knife;
+                self.viewport.suppress = self.gizmo.modal();
                 let view_rect = chrome::viewport_header(self, ui, ui.max_rect());
                 viewport_events = ui
                     .scope_builder(egui::UiBuilder::new().max_rect(view_rect), |ui| {

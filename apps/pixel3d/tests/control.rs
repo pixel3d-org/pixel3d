@@ -80,6 +80,17 @@ fn open_edit_with_the_gizmo_undo_and_save() {
     // Undo with the keyboard, then save and check the file.
     c.call("ui.key", json!({ "key": "Z", "modifiers": { "cmd": true } })).unwrap();
     wait_for(30, || Some(pos_x(&mut c)).filter(|x| x.abs() < 1e-4));
+
+    // Modal G Z 0.5 Enter from the keyboard (Dynamic Input), then undo.
+    for (key, text) in [("G", None), ("Z", None), ("", Some("0.5")), ("Enter", None)] {
+        match text {
+            Some(t) => c.call("ui.text", json!({ "text": t })).unwrap(),
+            None => c.call("ui.key", json!({ "key": key })).unwrap(),
+        };
+    }
+    let pos_z = |c: &mut Client| c.call("ui.inspect", Value::Null).unwrap()["activeTransform"]["position"][2].as_f64().unwrap_or(f64::NAN);
+    wait_for(30, || Some(pos_z(&mut c)).filter(|z| (z - 0.5).abs() < 1e-4));
+    c.call("ui.command", json!({ "id": "edit.undo" })).unwrap();
     c.call("ui.command", json!({ "id": "file.save" })).unwrap();
     assert!(std::fs::metadata(&file).unwrap().len() > 0);
     let shot = dir.join("after.png");

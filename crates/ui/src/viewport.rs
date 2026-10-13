@@ -110,6 +110,8 @@ pub struct ViewportState {
     pub pick_elements: bool,
     /// Drags draw a knife line instead of a selection box.
     pub knife: bool,
+    /// A modal transform has the pointer: no picks or boxes.
+    pub suppress: bool,
     /// The box being dragged (start and current corner, points).
     marquee: Option<(egui::Pos2, egui::Pos2)>,
     /// Ray-cast structures of the meshes hit-tested so far, by mesh.
@@ -152,6 +154,7 @@ impl Default for ViewportState {
             edit_overlay: None,
             pick_elements: false,
             knife: false,
+            suppress: false,
             marquee: None,
             bvhs: BTreeMap::new(),
             size_px: [0, 0],
@@ -314,6 +317,26 @@ impl ViewportState {
     /// The world matrix of an object's part, if it is drawn.
     ///
     /// Complexity: O(parts).
+    /// Every part of the cached scene: object, mesh and world matrix.
+    ///
+    /// Complexity: O(parts).
+    pub fn parts_list(&self) -> Vec<(ObjectKey, Arc<p3d_mesh::Mesh>, Mat4)> {
+        let Some(c) = &self.cache else { return Vec::new() };
+        c.view.parts.iter().zip(&c.view.meshes).zip(c.models.iter()).map(|((p, m), model)| (p.object, Arc::clone(m), *model)).collect()
+    }
+
+    /// The ray-cast structure of `mesh`, built once and shared by picking,
+    /// the 3D cursor and snapping.
+    ///
+    /// Complexity: O(1) when cached, O(F log F) to build.
+    pub fn bvh(&mut self, mesh: &Arc<p3d_mesh::Mesh>) -> Arc<p3d_geo::bvh::TriBvh> {
+        let entry = self
+            .bvhs
+            .entry(Arc::as_ptr(mesh) as usize)
+            .or_insert_with(|| (Arc::clone(mesh), Arc::new(p3d_geo::bvh::TriBvh::from_mesh(mesh, glam::Affine3A::IDENTITY))));
+        Arc::clone(&entry.1)
+    }
+
     /// The nearest surface point under `at` (points) in world space. A
     /// mesh's ray-cast structure is built the first time the ray reaches
     /// its bounds.
@@ -522,7 +545,7 @@ impl ViewportState {
         let mut events = Vec::new();
         // A primary drag without Alt draws a selection box.
         let mods = ui.input(|i| i.modifiers);
-        if resp.drag_started_by(egui::PointerButton::Primary) && !mods.alt {
+        if resp.drag_started_by(egui::PointerButton::Primary) && !mods.alt && !self.suppress {
             self.marquee = resp.interact_pointer_pos().map(|p| (p, p));
         }
         if resp.dragged_by(egui::PointerButton::Primary)
@@ -559,7 +582,9 @@ impl ViewportState {
         let h = ((rect.max.y * ppp).round() - top).max(1.0) as u32;
         self.size_px = [w, h];
         let mut pick = None;
-        if element_mode
+        if self.suppress {
+            self.marquee = None;
+        } else if element_mode
             && resp.clicked()
             && let Some(p) = resp.interact_pointer_pos()
         {
