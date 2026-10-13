@@ -15,7 +15,7 @@ use serde::ser::Serializer;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-use crate::common::{check_length, check_new_object, thousands};
+use crate::common::{check_length, check_new_object, dims, label, mesh_groups, mesh_target, thousands};
 use crate::error::{ErrorCode, OpError};
 use crate::op::{Category, Op, OpCtx, OpExample, OpFlags, OpMeta, OpOutput, Warning};
 use crate::params::{Angle, Length};
@@ -195,6 +195,9 @@ pub struct SdfShapeOptions {
     /// Groups only: the group's center for `rotate` (the part's origin when omitted).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<[Length; 3]>,
+    /// Leave the shape out of the result; it stays in the list, and the other shapes keep their group names.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub hidden: bool,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -298,10 +301,11 @@ impl JsonSchema for SdfShapeParam {
             "bend": { "description": "Bend the shape's Y axis toward +X, degrees per meter (negative toward -X).", "allOf": [angle] },
             "mirror": g.subschema_for::<MirrorParam>(),
             "noise": g.subschema_for::<NoiseParam>(),
-            "at": { "description": "Groups only: the group's center for rotate.", "allOf": [vec3] }
+            "at": { "description": "Groups only: the group's center for rotate.", "allOf": [vec3] },
+            "hidden": { "type": "boolean", "description": "Leave the shape out of the result; it stays in the list." }
         });
         json_schema!({
-            "description": "One shape: exactly one primitive key (sphere, ellipsoid, box, capsule, cone, torus, cylinder or group) plus how it joins the shapes before it (union by default; smooth_union, subtract, smooth_subtract, intersect, smooth_intersect) and optional changes (rotate, round, shell, twist, bend, mirror, noise, name).",
+            "description": "One shape: exactly one primitive key (sphere, ellipsoid, box, capsule, cone, torus, cylinder or group) plus how it joins the shapes before it (union by default; smooth_union, subtract, smooth_subtract, intersect, smooth_intersect) and optional changes (rotate, round, shell, twist, bend, mirror, noise, name, hidden).",
             "type": "object",
             "properties": props,
             "additionalProperties": false,
@@ -328,6 +332,46 @@ pub struct SdfParams {
     /// Voxel size, about the edge length of the result: smaller is finer. The default fits about 64 voxels across the largest side.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<Length>,
+    /// Mesh object to rebuild in place from the shapes (it keeps its name, transform, parent and children) instead of making a new object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+}
+
+/// Where a kernel item came from: its index among the shapes as written
+/// (hidden shapes left out of the tree shift the kernel's numbering), and
+/// the same for a group's members.
+#[derive(Debug, Default)]
+struct Origin {
+    index: usize,
+    inner: Vec<Origin>,
+}
+
+/// The parameter path of a kernel item path such as `1.0`.
+///
+/// Complexity: O(depth).
+fn param_path(origins: &[Origin], kernel: &str) -> String {
+    let mut out = String::from("/shapes");
+    let mut level = origins;
+    for (depth, part) in kernel.split('.').enumerate() {
+        let Ok(i) = part.parse::<usize>() else { break };
+        let o = level.get(i);
+        if depth > 0 {
+            out.push_str("/group");
+        }
+        out.push_str(&format!("/{}", o.map_or(i, |o| o.index)));
+        level = o.map_or(&[], |o| o.inner.as_slice());
+    }
+    out
+}
+
+/// Prims in a shape, hidden ones included (for stable group numbers).
+///
+/// Complexity: O(shapes in it).
+fn leaf_count(s: &SdfShapeParam) -> usize {
+    match &s.prim {
+        SdfPrimParam::Group(g) => g.iter().map(leaf_count).sum(),
+        _ => 1,
+    }
 }
 
 fn v3(p: &[Length; 3]) -> Vec3 {
@@ -338,105 +382,119 @@ fn f(l: Length) -> f32 {
     l.0 as f32
 }
 
-/// The kernel tree of the parameters, numbering unnamed shapes in order.
-fn items(shapes: &[SdfShapeParam], seed: u64, path: &str) -> Result<Vec<Item>, OpError> {
-    shapes
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let here = format!("{path}/{i}");
-            let o = &s.options;
-            let joins = [o.smooth_union.is_some(), o.subtract, o.smooth_subtract.is_some(), o.intersect, o.smooth_intersect.is_some()];
-            if joins.iter().filter(|j| **j).count() > 1 {
-                return Err(OpError::invalid(
-                    &here,
-                    "a shape joins one way: union (default), smooth_union, subtract, smooth_subtract, intersect or smooth_intersect",
-                ));
-            }
-            let combine = if let Some(k) = o.smooth_union {
-                Combine::SmoothUnion(f(k))
-            } else if o.subtract {
-                Combine::Subtract
-            } else if let Some(k) = o.smooth_subtract {
-                Combine::SmoothSubtract(f(k))
-            } else if o.intersect {
-                Combine::Intersect
-            } else if let Some(k) = o.smooth_intersect {
-                Combine::SmoothIntersect(f(k))
-            } else {
-                Combine::Union
-            };
-            let (shape, center) = match &s.prim {
-                SdfPrimParam::Sphere(p) => (Shape::Prim(Prim::Sphere { radius: f(p.radius) }), v3(&p.at)),
-                SdfPrimParam::Ellipsoid(p) => (Shape::Prim(Prim::Ellipsoid { radii: v3(&p.radii) }), v3(&p.at)),
-                SdfPrimParam::Box(p) => (Shape::Prim(Prim::Box { half: v3(&p.size) * 0.5, round: f(p.corner) }), v3(&p.at)),
-                SdfPrimParam::Capsule(p) => {
-                    let (a, b) = (v3(&p.a), v3(&p.b));
-                    let c = (a + b) * 0.5;
-                    let r = f(p.radius);
-                    (Shape::Prim(Prim::Capsule { a: a - c, b: b - c, ra: r, rb: p.radius_b.map_or(r, f) }), c)
-                }
-                SdfPrimParam::Cone(p) => {
-                    (Shape::Prim(Prim::Cone { height: f(p.height), bottom: f(p.radius_bottom), top: f(p.radius_top) }), v3(&p.at))
-                }
-                SdfPrimParam::Torus(p) => (Shape::Prim(Prim::Torus { major: f(p.major), minor: f(p.minor) }), v3(&p.at)),
-                SdfPrimParam::Cylinder(p) => (Shape::Prim(Prim::Cylinder { height: f(p.height), radius: f(p.radius) }), v3(&p.at)),
-                SdfPrimParam::Group(g) => {
-                    let c = o.at.as_ref().map_or(Vec3::ZERO, v3);
-                    // Members are written in the part's space; the group's frame sits at its center.
-                    let mut inner = items(g, seed, &format!("{here}/group"))?;
-                    for it in &mut inner {
-                        it.center -= c;
-                    }
-                    (Shape::Group(inner), c)
-                }
-            };
-            if o.at.is_some() && !matches!(s.prim, SdfPrimParam::Group(_)) {
-                return Err(OpError::invalid(&format!("{here}/at"), "`at` outside a primitive is for groups; put it inside the primitive"));
-            }
-            let rotation = o.rotate.map_or(Quat::IDENTITY, |r| Quat::from_euler(EulerRot::XYZ, r[0].0 as f32, r[1].0 as f32, r[2].0 as f32));
-            let mut mirror = [false; 3];
-            let axes = match &o.mirror {
-                None => vec![],
-                Some(MirrorParam::One(a)) => vec![*a],
-                Some(MirrorParam::Many(v)) => v.clone(),
-            };
-            for a in axes {
-                mirror[a as usize] = true;
-            }
-            let noise = match &o.noise {
-                Some(n) => {
-                    if !(1..=6).contains(&n.octaves) {
-                        return Err(OpError::out_of_range(&format!("{here}/noise/octaves"), "noise octaves go from 1 to 6"));
-                    }
-                    Some(Noise {
-                        amplitude: f(n.amplitude),
-                        scale: f(n.scale),
-                        seed: n.seed.unwrap_or(seed.wrapping_add(i as u64)),
-                        octaves: n.octaves,
-                    })
-                }
-                None => None,
-            };
-            let modifiers = Modifiers {
-                round: o.round.map_or(0.0, f),
-                shell: o.shell.map_or(0.0, f),
-                twist: o.twist.map_or(0.0, |a| a.0 as f32),
-                bend: o.bend.map_or(0.0, |a| a.0 as f32),
-                mirror,
-                noise,
-            };
-            Ok(Item { shape, center, rotation, combine, modifiers, name: o.name.clone() })
-        })
-        .collect()
+/// The kernel tree of the parameters without the hidden shapes, and where
+/// each item came from. Unnamed prims are named `item_<n>` by their place
+/// among all prims, hidden ones included, so hiding a shape never renames
+/// another shape's group.
+///
+/// Complexity: O(shapes).
+fn tree(shapes: &[SdfShapeParam], seed: u64) -> Result<(Vec<Item>, Vec<Origin>), OpError> {
+    let mut leaf = 0;
+    let mut origins = Vec::new();
+    let items = items(shapes, seed, "/shapes", &mut leaf, &mut origins)?;
+    Ok((items, origins))
 }
 
-fn sdf_error(e: SdfError) -> OpError {
+fn items(shapes: &[SdfShapeParam], seed: u64, path: &str, leaf: &mut usize, origins: &mut Vec<Origin>) -> Result<Vec<Item>, OpError> {
+    let mut out = Vec::with_capacity(shapes.len());
+    for (i, s) in shapes.iter().enumerate() {
+        if s.options.hidden {
+            *leaf += leaf_count(s);
+            continue;
+        }
+        let here = format!("{path}/{i}");
+        let mut origin = Origin { index: i, inner: Vec::new() };
+        let o = &s.options;
+        let joins = [o.smooth_union.is_some(), o.subtract, o.smooth_subtract.is_some(), o.intersect, o.smooth_intersect.is_some()];
+        if joins.iter().filter(|j| **j).count() > 1 {
+            return Err(OpError::invalid(
+                &here,
+                "a shape joins one way: union (default), smooth_union, subtract, smooth_subtract, intersect or smooth_intersect",
+            ));
+        }
+        let combine = if let Some(k) = o.smooth_union {
+            Combine::SmoothUnion(f(k))
+        } else if o.subtract {
+            Combine::Subtract
+        } else if let Some(k) = o.smooth_subtract {
+            Combine::SmoothSubtract(f(k))
+        } else if o.intersect {
+            Combine::Intersect
+        } else if let Some(k) = o.smooth_intersect {
+            Combine::SmoothIntersect(f(k))
+        } else {
+            Combine::Union
+        };
+        let mut name = o.name.clone();
+        if !matches!(s.prim, SdfPrimParam::Group(_)) {
+            name = name.or_else(|| Some(format!("item_{leaf}")));
+            *leaf += 1;
+        }
+        let (shape, center) = match &s.prim {
+            SdfPrimParam::Sphere(p) => (Shape::Prim(Prim::Sphere { radius: f(p.radius) }), v3(&p.at)),
+            SdfPrimParam::Ellipsoid(p) => (Shape::Prim(Prim::Ellipsoid { radii: v3(&p.radii) }), v3(&p.at)),
+            SdfPrimParam::Box(p) => (Shape::Prim(Prim::Box { half: v3(&p.size) * 0.5, round: f(p.corner) }), v3(&p.at)),
+            SdfPrimParam::Capsule(p) => {
+                let (a, b) = (v3(&p.a), v3(&p.b));
+                let c = (a + b) * 0.5;
+                let r = f(p.radius);
+                (Shape::Prim(Prim::Capsule { a: a - c, b: b - c, ra: r, rb: p.radius_b.map_or(r, f) }), c)
+            }
+            SdfPrimParam::Cone(p) => (Shape::Prim(Prim::Cone { height: f(p.height), bottom: f(p.radius_bottom), top: f(p.radius_top) }), v3(&p.at)),
+            SdfPrimParam::Torus(p) => (Shape::Prim(Prim::Torus { major: f(p.major), minor: f(p.minor) }), v3(&p.at)),
+            SdfPrimParam::Cylinder(p) => (Shape::Prim(Prim::Cylinder { height: f(p.height), radius: f(p.radius) }), v3(&p.at)),
+            SdfPrimParam::Group(g) => {
+                let c = o.at.as_ref().map_or(Vec3::ZERO, v3);
+                // Members are written in the part's space; the group's frame sits at its center.
+                let mut inner = items(g, seed, &format!("{here}/group"), leaf, &mut origin.inner)?;
+                for it in &mut inner {
+                    it.center -= c;
+                }
+                (Shape::Group(inner), c)
+            }
+        };
+        if o.at.is_some() && !matches!(s.prim, SdfPrimParam::Group(_)) {
+            return Err(OpError::invalid(&format!("{here}/at"), "`at` outside a primitive is for groups; put it inside the primitive"));
+        }
+        let rotation = o.rotate.map_or(Quat::IDENTITY, |r| Quat::from_euler(EulerRot::XYZ, r[0].0 as f32, r[1].0 as f32, r[2].0 as f32));
+        let mut mirror = [false; 3];
+        let axes = match &o.mirror {
+            None => vec![],
+            Some(MirrorParam::One(a)) => vec![*a],
+            Some(MirrorParam::Many(v)) => v.clone(),
+        };
+        for a in axes {
+            mirror[a as usize] = true;
+        }
+        let noise = match &o.noise {
+            Some(n) => {
+                if !(1..=6).contains(&n.octaves) {
+                    return Err(OpError::out_of_range(&format!("{here}/noise/octaves"), "noise octaves go from 1 to 6"));
+                }
+                Some(Noise { amplitude: f(n.amplitude), scale: f(n.scale), seed: n.seed.unwrap_or(seed.wrapping_add(i as u64)), octaves: n.octaves })
+            }
+            None => None,
+        };
+        let modifiers = Modifiers {
+            round: o.round.map_or(0.0, f),
+            shell: o.shell.map_or(0.0, f),
+            twist: o.twist.map_or(0.0, |a| a.0 as f32),
+            bend: o.bend.map_or(0.0, |a| a.0 as f32),
+            mirror,
+            noise,
+        };
+        origins.push(origin);
+        out.push(Item { shape, center, rotation, combine, modifiers, name });
+    }
+    Ok(out)
+}
+
+fn sdf_error(e: SdfError, origins: &[Origin]) -> OpError {
     match e {
-        SdfError::Empty => OpError::new(ErrorCode::Topology, "the shapes leave nothing: every part is cut away or outside an intersection")
+        SdfError::Empty => OpError::new(ErrorCode::Topology, "the shapes leave nothing: every part is cut away, outside an intersection or hidden")
             .at("/shapes")
             .with_hint("check subtract and intersect: a list that starts with a cut starts from nothing"),
-        SdfError::Invalid { path, message } => OpError::invalid(&format!("/shapes/{}", path.replace('.', "/group/")), message),
+        SdfError::Invalid { path, message } => OpError::invalid(&param_path(origins, &path), message),
         SdfError::TooManyItems => OpError::new(ErrorCode::BudgetExceeded, e.to_string()).at("/shapes"),
         SdfError::TooDeep => OpError::new(ErrorCode::InvalidParam, e.to_string()).at("/shapes"),
         SdfError::TooLarge(n) => OpError::new(ErrorCode::BudgetExceeded, format!("{} voxels is more than one mesh takes", thousands(n as usize)))
@@ -466,6 +524,9 @@ impl Op for GenSdf {
                    Every face joins a group named after the shape that made it (`name`, or `shape_<n>`), so perception and \
                    diagnostics can name the shapes. `detail` is the voxel size, about the edge length of the result; walls thinner \
                    than a voxel make the mesher refine on its own.\n\n\
+                   A shape with `hidden: true` is left out but stays in the list (the others keep their group names). With \
+                   `target`, the shapes rebuild that mesh object in place (it keeps its name, transform, parent and children): \
+                   the object's history then holds the shapes to edit and run again.\n\n\
                    **Use for** heads, bodies, creatures, rocks, organic props and stylized forms: blocking out with ellipsoids and \
                    capsules, then blending detail in. Hard-surface parts are better built with primitives, extrusions and bevels.",
             examples: &[OpExample {
@@ -480,22 +541,34 @@ impl Op for GenSdf {
     }
 
     fn validate(doc: &Document, p: &SdfParams) -> Result<(), OpError> {
-        check_new_object(doc, p.name.as_deref(), p.parent.as_deref())?;
+        match &p.target {
+            Some(t) => {
+                if p.name.is_some() || p.parent.is_some() || p.position.is_some() {
+                    return Err(OpError::invalid("/target", "name, parent and position are for a new object; leave them out to rebuild the target"));
+                }
+                mesh_target(doc, t)?;
+            }
+            None => {
+                check_new_object(doc, p.name.as_deref(), p.parent.as_deref())?;
+            }
+        }
         if p.shapes.is_empty() {
             return Err(OpError::invalid("/shapes", "give at least one shape").with_hint("{\"sphere\": {\"at\": [0, 0, 0], \"radius\": 0.1}}"));
         }
         if let Some(d) = p.detail {
             check_length("/detail", d, MIN_DETAIL, MAX_DETAIL)?;
         }
-        Sdf::new(items(&p.shapes, 0, "/shapes")?).map(|_| ()).map_err(sdf_error)
+        let (items, origins) = tree(&p.shapes, 0)?;
+        Sdf::new(items).map(|_| ()).map_err(|e| sdf_error(e, &origins))
     }
 
     fn apply(tx: &mut Tx, p: &SdfParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
-        let sdf = Sdf::new(items(&p.shapes, ctx.seed, "/shapes")?).map_err(sdf_error)?;
+        let (items, origins) = tree(&p.shapes, ctx.seed)?;
+        let sdf = Sdf::new(items).map_err(|e| sdf_error(e, &origins))?;
         let (lo, hi) = sdf.bounds();
         let voxel = p.detail.map_or_else(|| ((hi - lo).max_element() / 64.0).clamp(MIN_DETAIL as f32, MAX_DETAIL as f32), f);
         ctx.check_cancel()?;
-        let r = mesh(&sdf, &MeshSpec { voxel }).map_err(sdf_error)?;
+        let r = mesh(&sdf, &MeshSpec { voxel }).map_err(|e| sdf_error(e, &origins))?;
         ctx.check_cancel()?;
         let mut m = r.mesh;
         let leaves = sdf.leaves();
@@ -512,15 +585,37 @@ impl Op for GenSdf {
                 m.set_group(&group, ElementKind::Face, list).map_err(|e| OpError::internal(e.to_string()))?;
             }
         }
-        let key = crate::common::create_mesh_object(
-            tx,
-            p.name.as_deref(),
-            "sdf",
-            p.parent.as_deref(),
-            p.position.as_ref().unwrap_or(&[Length(0.0); 3]),
-            m,
-        )?;
-        let mut out = created_summary(tx, key, "sdf");
+        let mut out = match &p.target {
+            Some(t) => {
+                // Rebuild in place: the object keeps its name, transform,
+                // parent and children; only its mesh is new.
+                let key = mesh_target(tx.doc(), t)?;
+                *tx.mesh_mut(key, "/target")? = m;
+                let doc = tx.doc();
+                let (dims, faces, tris) = doc.object_mesh(key).map_or_else(|| ("?".into(), 0, 0), |m| (dims(m), m.face_count(), m.triangle_count()));
+                let mut out = OpOutput::summary(format!(
+                    "rebuilt {} sdf {dims}: {} faces ({} tris; budget {})",
+                    label(doc, key),
+                    thousands(faces),
+                    thousands(tris),
+                    thousands(doc.settings.tri_budget() as usize)
+                ));
+                out.changed.push(key);
+                out.groups = mesh_groups(doc, key);
+                out
+            }
+            None => {
+                let key = crate::common::create_mesh_object(
+                    tx,
+                    p.name.as_deref(),
+                    "sdf",
+                    p.parent.as_deref(),
+                    p.position.as_ref().unwrap_or(&[Length(0.0); 3]),
+                    m,
+                )?;
+                created_summary(tx, key, "sdf")
+            }
+        };
         if r.voxel < voxel * 0.99 {
             out.warnings.push(Warning {
                 message: format!("walls thinner than the {} mm detail: meshed at {} mm instead (more faces)", fmt_mm(voxel), fmt_mm(r.voxel)),
