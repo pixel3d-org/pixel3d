@@ -7,6 +7,9 @@ export type Angle = number | string;
 /** How array copies are placed. */
 export type ArrayMode = "linear" | "radial" | "curve";
 
+/** A part axis. */
+export type AxisName = "x" | "y" | "z";
+
 /** An axis of object space. */
 export type AxisParam = "x" | "y" | "z";
 
@@ -45,6 +48,15 @@ export type BoxFilter = {
   min: [number, number, number];
 };
 
+/** A box around `at`, optionally with rounded corners. */
+export type BoxPrim = {
+  at: [Length, Length, Length];
+  /** Corner and edge rounding radius (inside the size). */
+  corner?: Length;
+  /** Full size along x, y, z. */
+  size: [Length, Length, Length];
+};
+
 /** How cylinder caps are filled. */
 export type CapParam = "quad_grid" | "ngon" | "fan" | "none";
 
@@ -54,10 +66,30 @@ export type CapsuleAdvanced = {
   height_segments?: number;
 };
 
+/**
+ * A segment from `a` to `b` swept by a sphere: a capsule, or a tapered one
+ * (horns, fingers, limbs) when `radius_b` differs.
+ */
+export type CapsulePrim = {
+  a: [Length, Length, Length];
+  b: [Length, Length, Length];
+  /** Radius at `a` (and at `b` unless `radius_b` is given). */
+  radius: Length;
+  radius_b?: Length | null;
+};
+
 /** Advanced cone settings. */
 export type ConeAdvanced = {
   /** Segments along the height. */
   height_segments?: number;
+};
+
+/** A cone or frustum standing on its base center `at`, along +Y. */
+export type ConePrim = {
+  at: [Length, Length, Length];
+  height: Length;
+  radius_bottom: Length;
+  radius_top?: Length;
 };
 
 /** Advanced cylinder settings. */
@@ -66,11 +98,24 @@ export type CylinderAdvanced = {
   height_segments?: number;
 };
 
+/** A capped cylinder along Y centered at `at`. */
+export type CylinderPrim = {
+  at: [Length, Length, Length];
+  height: Length;
+  radius: Length;
+};
+
 /** What `edit.dissolve` removes. */
 export type DissolveModeParam = "auto" | "limited";
 
 /** Copy or instance. */
 export type DuplicateMode = "copy" | "instance";
+
+/** An ellipsoid around `at` with semi-axes along x, y, z. */
+export type EllipsoidPrim = {
+  at: [Length, Length, Length];
+  radii: [Length, Length, Length];
+};
 
 /** What to test. */
 export type ExpectArgs = {
@@ -188,6 +233,21 @@ export type MergeModeParam = "center" | "collapse";
 /** A mirror axis. */
 export type MirrorAxis = "x" | "y" | "z";
 
+/** Axes to mirror across: `"x"` or a list such as `["x", "z"]`. */
+export type MirrorParam = AxisName | AxisName[];
+
+/** Seeded bumps on the surface. */
+export type NoiseParam = {
+  /** Largest bump height. */
+  amplitude: Length;
+  /** Layers of finer bumps (1 to 6). */
+  octaves?: number;
+  /** Size of the bumps. */
+  scale: Length;
+  /** Same seed, same bumps; the call's seed when omitted. */
+  seed?: number | null;
+};
+
 /** Direction and tolerance for the `normal` filter. */
 export type NormalFilter = {
   /** Direction in object space (need not be unit length). */
@@ -239,6 +299,44 @@ export type ProportionalParams = {
 
 /** Uniform or per-axis scale. */
 export type Scale = number | [number, number, number];
+
+/** One shape: exactly one primitive key (sphere, ellipsoid, box, capsule, cone, torus, cylinder or group) plus how it joins the shapes before it (union by default; smooth_union, subtract, smooth_subtract, intersect, smooth_intersect) and optional changes (rotate, round, shell, twist, bend, mirror, noise, name). */
+export type SdfShape = {
+  /** Groups only: the group's center for rotate. */
+  at?: unknown;
+  /** Bend the shape's Y axis toward +X, degrees per meter (negative toward -X). */
+  bend?: unknown;
+  box?: BoxPrim;
+  capsule?: CapsulePrim;
+  cone?: ConePrim;
+  cylinder?: CylinderPrim;
+  ellipsoid?: EllipsoidPrim;
+  /** Shapes combined among themselves first, then joined as one. */
+  group?: SdfShape[];
+  /** Keep only what this shape and the shapes before it share. */
+  intersect?: boolean;
+  mirror?: MirrorParam;
+  /** Name of the shape: its faces form a group of this name. */
+  name?: string;
+  noise?: NoiseParam;
+  /** Euler angles in degrees about X, then Y, then Z, around the shape's own center. */
+  rotate?: unknown;
+  /** Grow the shape by this much with rounded edges. */
+  round?: unknown;
+  /** Hollow the shape into a skin this thick. */
+  shell?: unknown;
+  smooth_intersect?: unknown;
+  /** Cut with a rounded fillet of this size. */
+  smooth_subtract?: unknown;
+  /** Join with a fillet of this size instead of a hard union. */
+  smooth_union?: unknown;
+  sphere?: SpherePrim;
+  /** Cut this shape out of the shapes before it. */
+  subtract?: boolean;
+  torus?: TorusPrim;
+  /** Turn around the shape's Y axis, degrees per meter of height. */
+  twist?: unknown;
+};
 
 /** A cross section seen looking along the path (x right, y up): points [x, y], {"curve": "<curve object>"} (its axis plane), {"circle": radius} or {"rectangle": [width, height]}. */
 export type Section = [Length, Length][] | {
@@ -295,6 +393,12 @@ export type SmoothAdvanced = {
   pin_sharp?: boolean;
 };
 
+/** A sphere around `at`. */
+export type SpherePrim = {
+  at: [Length, Length, Length];
+  radius: Length;
+};
+
 /** Advanced settings of `subd.catmull_clark`. */
 export type SubdAdvanced = {
   /** Open-border corners (vertices with two edges) stay in place. */
@@ -305,6 +409,15 @@ export type SubdAdvanced = {
 
 /** One object or several. */
 export type ToolsParam = string | string[];
+
+/** A ring around Y centered at `at`. */
+export type TorusPrim = {
+  at: [Length, Length, Length];
+  /** Distance from the center to the middle of the ring. */
+  major: Length;
+  /** Radius of the ring's cross-section. */
+  minor: Length;
+};
 
 /** Advanced settings of `edit.tris_to_quads`. */
 export type TrisToQuadsAdvanced = {
@@ -1016,6 +1129,20 @@ export type GenScatterParams = {
   target: string;
 };
 
+/** `gen.sdf`: Builds an organic shape from named primitives blended in order (smooth unions, cuts) into a closed quad mesh. */
+export type GenSdfParams = {
+  /** Voxel size, about the edge length of the result: smaller is finer. The default fits about 64 voxels across the largest side. */
+  detail?: Length | null;
+  /** Object name; a free name such as `sdf_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length] | null;
+  /** The shapes in order: each joins the shapes before it. */
+  shapes: SdfShape[];
+};
+
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
 export type PrimPlaneParams = {
   /** Rarely needed settings. */
@@ -1610,6 +1737,7 @@ export interface OpParams {
   "gen.array": GenArrayParams;
   "gen.mirror": GenMirrorParams;
   "gen.scatter": GenScatterParams;
+  "gen.sdf": GenSdfParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

@@ -23,6 +23,7 @@ pub mod params;
 pub mod prim;
 mod registry;
 pub mod scene;
+pub mod sdf;
 pub mod select;
 pub mod shade;
 pub mod subd;

@@ -27,6 +27,11 @@ fn fantasy_sword() {
 }
 
 #[test]
+fn sdf_head() {
+    replay(include_str!("../../../docs/agents/examples/sdf_head.json"));
+}
+
+#[test]
 fn stylized_tree() {
     replay(include_str!("../../../docs/agents/examples/stylized_tree.json"));
 }

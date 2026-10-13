@@ -1,0 +1,120 @@
+{
+ "prompt": "Stylized head blockout with pointed ears, nose, eye sockets and eyes, sculpted from blended shapes",
+ "calls": [
+  {
+   "tool": "run",
+   "args": {
+    "ops": [
+     {
+      "op": "gen.sdf",
+      "args": {
+       "name": "head",
+       "detail": "4mm",
+       "shapes": [
+        {
+         "ellipsoid": {
+          "at": [
+           0,
+           0.13,
+           0
+          ],
+          "radii": [
+           0.075,
+           0.105,
+           0.09
+          ]
+         },
+         "name": "cranium"
+        },
+        {
+         "ellipsoid": {
+          "at": [
+           0,
+           0.06,
+           0.035
+          ],
+          "radii": [
+           0.055,
+           0.045,
+           0.055
+          ]
+         },
+         "name": "jaw",
+         "smooth_union": "2.5cm"
+        },
+        {
+         "capsule": {
+          "a": [
+           0,
+           0.115,
+           0.085
+          ],
+          "b": [
+           0,
+           0.09,
+           0.105
+          ],
+          "radius": "0.9cm",
+          "radius_b": "1.3cm"
+         },
+         "name": "nose",
+         "smooth_union": "1.2cm"
+        },
+        {
+         "capsule": {
+          "a": [
+           0.07,
+           0.13,
+           -0.01
+          ],
+          "b": [
+           0.12,
+           0.21,
+           -0.05
+          ],
+          "radius": "1.4cm",
+          "radius_b": "2mm"
+         },
+         "name": "ear",
+         "mirror": "x",
+         "smooth_union": "1cm"
+        },
+        {
+         "sphere": {
+          "at": [
+           0.032,
+           0.14,
+           0.088
+          ],
+          "radius": "1.5cm"
+         },
+         "name": "eye_socket",
+         "mirror": "x",
+         "smooth_subtract": "8mm"
+        },
+        {
+         "sphere": {
+          "at": [
+           0.03,
+           0.138,
+           0.078
+          ],
+          "radius": "1.25cm"
+         },
+         "name": "eye",
+         "mirror": "x"
+        }
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "describe",
+   "args": {
+    "target": "head"
+   }
+  }
+ ]
+}

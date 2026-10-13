@@ -86,7 +86,9 @@ pub struct Modifiers {
     pub twist: f32,
     /// Bend toward +X along Y, radians per meter.
     pub bend: f32,
-    /// Mirror across the item frame's planes x = 0, y = 0, z = 0.
+    /// Mirror across the parent's planes x = 0, y = 0, z = 0: the item's
+    /// part on the positive side is kept and reflected (one ear written,
+    /// both made).
     pub mirror: [bool; 3],
     pub noise: Option<Noise>,
 }
@@ -303,13 +305,6 @@ impl Sdf {
                 lo = Vec3::new(-r, lo.y, -r);
                 hi = Vec3::new(r, hi.y, r);
             }
-            for axis in 0..3 {
-                if m.mirror[axis] {
-                    let r = lo[axis].abs().max(hi[axis].abs());
-                    lo[axis] = -r;
-                    hi[axis] = r;
-                }
-            }
             // Distances in warped frames are estimates: keep a margin.
             if m.bend != 0.0 || m.twist != 0.0 {
                 let pad = (hi - lo).max_element() * 0.05 + grow;
@@ -319,7 +314,15 @@ impl Sdf {
             // Turned box corners, then moved.
             let corners = (0..8).map(|c| Vec3::new([lo.x, hi.x][c & 1], [lo.y, hi.y][(c >> 1) & 1], [lo.z, hi.z][(c >> 2) & 1]));
             let pts: Vec<Vec3> = corners.map(|c| it.center + it.rotation * c).collect();
-            let b = pts.iter().fold((Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY)), |(a, z), &p| (a.min(p), z.max(p)));
+            let mut b = pts.iter().fold((Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY)), |(a, z), &p| (a.min(p), z.max(p)));
+            // A mirror keeps the positive side and reflects it.
+            for axis in 0..3 {
+                if m.mirror[axis] {
+                    let r = b.1[axis].max(0.0);
+                    b.0[axis] = -r;
+                    b.1[axis] = r;
+                }
+            }
             let b = match it.combine {
                 Combine::SmoothUnion(k) => (b.0 - Vec3::splat(k * 0.25), b.1 + Vec3::splat(k * 0.25)),
                 _ => b,
@@ -377,13 +380,14 @@ impl Sdf {
 
     fn eval_item_at(it: &Item, p: Vec3, leaf: &mut u32) -> (f32, u32) {
         let m = &it.modifiers;
-        // Into the item's frame.
-        let mut q = it.rotation.inverse() * (p - it.center);
+        // Mirrored in the parent's space, then into the item's frame.
+        let mut p = p;
         for axis in 0..3 {
             if m.mirror[axis] {
-                q[axis] = q[axis].abs();
+                p[axis] = p[axis].abs();
             }
         }
+        let mut q = it.rotation.inverse() * (p - it.center);
         if m.twist != 0.0 {
             let a = -m.twist * q.y;
             let (s, c) = a.sin_cos();
@@ -612,10 +616,12 @@ mod tests {
         it.modifiers.mirror = [true, false, false];
         it.modifiers.round = 0.05;
         let s = Sdf::new(vec![it]).unwrap();
-        // Mirrored across the frame's x = 0, which sits at x = 1 in the part.
+        // One box written at x = 1, its twin made at x = -1.
         assert!(s.eval(Vec3::new(1.0, 0.0, 0.0)) < 0.0);
+        assert!(s.eval(Vec3::new(-1.0, 0.0, 0.0)) < 0.0);
+        assert!(s.eval(Vec3::ZERO) > 0.0);
         let (lo, hi) = s.bounds();
-        assert!(lo.x <= 0.75 && hi.x >= 1.25, "{lo:?} {hi:?}");
+        assert!(lo.x <= -1.25 && hi.x >= 1.25, "{lo:?} {hi:?}");
         assert!(close(s.eval(Vec3::new(1.3, 0.0, 0.0)), 0.05));
         let mut shell = Item::prim(Prim::Sphere { radius: 1.0 }, Vec3::ZERO);
         shell.modifiers.shell = 0.1;

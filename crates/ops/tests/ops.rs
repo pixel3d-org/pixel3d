@@ -1010,3 +1010,54 @@ fn io_import_refuses_paths_outside_and_missing_files() {
     assert_eq!(e.path.as_deref(), Some("/name"));
     assert_eq!(tx.doc().object_count(), before);
 }
+
+#[test]
+fn gen_sdf_blends_named_shapes_and_mirrors() {
+    let mut tx = Tx::new(Document::new());
+    let s = ok(
+        &mut tx,
+        "gen.sdf",
+        json!({ "name": "head", "detail": "6mm", "shapes": [
+            { "ellipsoid": { "at": [0, 0.13, 0], "radii": [0.075, 0.105, 0.09] }, "name": "cranium" },
+            { "ellipsoid": { "at": [0, 0.06, 0.035], "radii": [0.055, 0.045, 0.055] }, "name": "jaw", "smooth_union": "2.5cm" },
+            { "capsule": { "a": [0.07, 0.13, -0.01], "b": [0.11, 0.2, -0.04], "radius": "1.2cm", "radius_b": "2mm" }, "name": "ear", "mirror": "x", "smooth_union": "1cm" },
+            { "sphere": { "at": [0.03, 0.14, 0.085], "radius": "1.4cm" }, "name": "eye_socket", "mirror": "x", "smooth_subtract": "6mm" }
+        ] }),
+    );
+    assert!(s.starts_with("created head (o:1) sdf"), "{s}");
+    let m = tx.doc().object_mesh(tx.resolve("head", "/t").unwrap()).unwrap();
+    assert!(m.edges().all(|e| !m.is_boundary_edge(e)));
+    for g in ["cranium", "jaw", "ear", "eye_socket"] {
+        assert!(m.group(g).is_some_and(|g| g.count() > 0), "{g}");
+    }
+    // Both ears: faces of the ear group on either side of x = 0.
+    let ear = m.group("ear").unwrap();
+    let side = |f: u32| m.face_verts(f).map(|v| m.positions[v as usize].x).sum::<f32>();
+    assert!(ear.iter().any(|f| side(f) > 0.0) && ear.iter().any(|f| side(f) < 0.0));
+    assert!(m.faces().all(|f| m.face_len(f) == 4), "quads only");
+}
+
+#[test]
+fn gen_sdf_errors_are_precise() {
+    let mut tx = Tx::new(Document::new());
+    let e = err(&mut tx, "gen.sdf", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 }, "smooth_unoin": 0.02 }] }));
+    assert!(e.message.contains("smooth_unoin"), "{}", e.message);
+    let e = err(
+        &mut tx,
+        "gen.sdf",
+        json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 }, "box": { "at": [0, 0, 0], "size": [1, 1, 1] } }] }),
+    );
+    assert!(e.message.contains("one primitive"), "{}", e.message);
+    let e = err(&mut tx, "gen.sdf", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 }, "subtract": true, "intersect": true }] }));
+    assert_eq!(e.path.as_deref(), Some("/shapes/0"));
+    let e = err(&mut tx, "gen.sdf", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": -0.1 } }] }));
+    assert_eq!(e.path.as_deref(), Some("/shapes/0"));
+    let e = err(
+        &mut tx,
+        "gen.sdf",
+        json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 } }, { "sphere": { "at": [0, 0, 0], "radius": 0.2 }, "subtract": true }] }),
+    );
+    assert_eq!(e.code, ErrorCode::Topology);
+    let e = err(&mut tx, "gen.sdf", json!({ "shapes": [] }));
+    assert_eq!(e.path.as_deref(), Some("/shapes"));
+}

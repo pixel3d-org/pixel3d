@@ -100,7 +100,7 @@ Acceptance:
 - [ ] `spec`: constraints and solver
 - [ ] `spec`: joins `separate`, `blend`, `weld`, `decal`; mirror and instance; edit layers
 - [ ] `spec`: incremental compile to the op graph, provenance
-- [ ] `sdf`: SDF trees, narrow-band surface nets
+- [x] `sdf`: SDF trees, narrow-band surface nets (`crates/sdf`: sphere, ellipsoid, rounded box, tapered capsule, cone, torus, cylinder and groups joined by hard or smooth union, subtract and intersect, with round, shell, twist, bend, seeded noise and part-space mirror; octree culling on the Lipschitz bound with missed blocks recovered through the quads that need them; one vertex per surface piece per voxel (asymptotic decider) so thin walls stay manifold, refinement where walls are thinner than a voxel, sub-voxel specks dropped; faces grouped by shape; random trees mesh closed at 10,000 cases; slope 0.96, 64k triangles in 32 ms. Op `gen.sdf`)
 - [ ] `remesh`: isotropic, then field-aligned quads with category topology rules
 - [ ] Shape kinds `silhouettes` and `shell`; deform handles
 - [ ] Perception `proportions`, `visibility`, `brief`
