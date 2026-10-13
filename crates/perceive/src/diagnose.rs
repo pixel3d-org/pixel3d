@@ -150,6 +150,8 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
     let m = part.mesh;
     let topo = part.topology();
     let flat = part.size().min_element() < 1e-3_f32.max(0.01 * part.size().max_element());
+    // Strands (hair cards, clumps, shells) are open, crossing and thin by design.
+    let strands = view.doc.object(part.key).is_some_and(|o| o.tags.iter().any(|t| t == "strands"));
     let draft = |code, severity, at, message: String| Draft {
         code,
         severity,
@@ -194,7 +196,7 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
     }
 
     // Holes in surfaces that are not flat sheets.
-    if topo.boundary_loops > 0 && !flat {
+    if topo.boundary_loops > 0 && !flat && !strands {
         let loops = p3d_analyze::boundary_loops(m, &parts);
         let biggest = loops.iter().max_by(|a, b| a.length.total_cmp(&b.length).then(b.start.cmp(&a.start)));
         if let Some(b) = biggest {
@@ -276,6 +278,9 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
     let mut crossings = 0u32;
     let mut sum = Vec3::ZERO;
     part.bvh().self_crossings(|t, u| {
+        if strands {
+            return false;
+        }
         crossings += 1;
         let c = |x: u32| part.bvh().triangle(x).iter().copied().sum::<Vec3>() / 3.0;
         sum += (c(t) + c(u)) / 2.0;
@@ -306,7 +311,7 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
             d.hint = Some("no automatic fix yet; reshape the folded area".into());
         }
         out.push(d);
-    } else if pieces > 1 {
+    } else if pieces > 1 && !strands {
         // Several separate pieces in one part: fine, but each could be a part.
         let mut d = draft("LOOSE_PIECES", Severity::Info, part.center(), format!("{pieces} separate pieces in one part"));
         d.measured = Some(pieces as f32);
@@ -320,7 +325,7 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
     }
 
     // Walls thinner than 1 mm in closed parts.
-    if topo.is_closed() {
+    if topo.is_closed() && !strands {
         let eps = part.size().length() * 1e-5;
         let mut thinnest: Option<(f32, Vec3)> = None;
         for s in crate::sample::surface_samples(part, THIN_SAMPLES) {

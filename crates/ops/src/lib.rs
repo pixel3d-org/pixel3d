@@ -29,6 +29,7 @@ pub mod scene;
 pub mod sdf;
 pub mod select;
 pub mod shade;
+pub mod strands;
 pub mod subd;
 mod tx;
 

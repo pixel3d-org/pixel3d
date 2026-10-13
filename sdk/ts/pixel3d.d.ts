@@ -226,6 +226,9 @@ export type InsetModeParam = "region" | "individual";
 /** Which side of the plane `edit.plane_cut` keeps. */
 export type KeepParam = "both" | "above" | "below";
 
+/** A strand preset. */
+export type KindParam = "hair" | "fur" | "eyebrows" | "beard" | "grass";
+
 /** Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. "30cm". */
 export type Length = number | string;
 
@@ -283,6 +286,9 @@ export type OriginParam = "center" | "bottom";
  */
 export type OutlineParam = string | [Length, Length][];
 
+/** What strands become. */
+export type OutputParam = "cards" | "clumps" | "shells";
+
 /** One JSON Patch operation. */
 export type PatchOp = {
   /** Source pointer of `move` and `copy`. */
@@ -331,6 +337,11 @@ export type ProportionalParams = {
   /** Unselected vertices closer than this to the selection follow, less the farther they are. */
   radius: Length;
 };
+
+/** Where strands grow. */
+export type RegionParam = null | {
+  groups: string[];
+} | PointParam[];
 
 /** Uniform or per-axis scale. */
 export type Scale = number | [number, number, number];
@@ -438,6 +449,9 @@ export type SpherePrim = {
   at: [Length, Length, Length];
   radius: Length;
 };
+
+/** Which way strands run. */
+export type StyleParam = "swept_back" | "parted" | "spiky" | "straight" | "combed" | "upright" | "wind_blown" | "ponytail";
 
 /** Advanced settings of `subd.catmull_clark`. */
 export type SubdAdvanced = {
@@ -1257,6 +1271,66 @@ export type GenFeatureParams = {
   position?: [Length, Length, Length];
 };
 
+/** `gen.strands`: Grows hair, fur, eyebrows, beards or grass on an object's surface as alpha cards, stylized clumps or fur shells, from about ten parameters. */
+export type GenStrandsParams = {
+  /** Where a `ponytail` gathers (a landmark or coordinates). */
+  anchor?: PointParam | null;
+  /** A scalp cap under the cards. */
+  cap?: boolean | null;
+  /** Guides: one card or clump each per layer (1 to 4096). */
+  clumps?: number | null;
+  /** Waviness (0 straight to 1 tight curls). */
+  curl?: number | null;
+  /** Curl turns along the length (0 to 20). */
+  curl_turns?: number | null;
+  /** Direction for `combed` (the flow) and `wind_blown` (the wind). */
+  flow?: [number, number, number] | null;
+  /** Thin flyaway cards as a share of the guides (0 to 1). */
+  flyaways?: number | null;
+  /** Droop toward -Y along the length (0 to 1). */
+  gravity?: number | null;
+  /** A point inside a loop's patch when it is not the smaller side. */
+  inside?: PointParam | null;
+  /** Preset: `hair` (cards, swept back), `fur` (shells), `eyebrows` (cards combed outward), `beard` (clumps hanging) or `grass` (upright cards). */
+  kind?: KindParam;
+  /** Card layers, inner to outer (1 to 3). */
+  layers?: number | null;
+  /** Strand length along the curve. */
+  length?: Length | null;
+  /** Random shortening as a share of the length (0 to 0.95). */
+  length_variation?: number | null;
+  /** Distance off the surface at the root. */
+  lift?: Length | null;
+  /** Object name; the kind is used when omitted. */
+  name?: string | null;
+  /** Random direction changes (0 to 1). */
+  noise?: number | null;
+  /** The object the strands grow on (name, path or id); they become its child. */
+  on: string;
+  /** What strands become: `cards`, `clumps` or `shells`. */
+  output?: OutputParam | null;
+  /** For `combed`: mirror the flow's x away from x = 0 on both sides. */
+  outward?: boolean | null;
+  /** Where the part line is for `parted` (x; 0 is the center). */
+  part?: Length | null;
+  /** `"all"`, `{"groups": [...]}` face groups, or a loop of points around the patch such as `["hairline_front", "temple_l", "nape", "temple_r"]` (vertex groups, `lm.<name>` landmarks by name, or coordinates in the object's space). */
+  region?: RegionParam;
+  /** Steps along each strand (2 to 64). */
+  segments?: number | null;
+  /** Offset copies for `shells` (1 to 32). */
+  shells?: number | null;
+  /** Points around a clump (3 to 16). */
+  sides?: number | null;
+  /** Which way strands run: `swept_back`, `parted`, `spiky`, `straight`, `combed`, `upright`, `wind_blown` or `ponytail`. */
+  style?: StyleParam | null;
+  /** Tip width as a share of the root width (0 to 1). */
+  tip_width?: number | null;
+  /** Extra distance off the surface toward the tips (hair volume). */
+  volume?: Length | null;
+  /** Root width of a card or clump; sized from the spacing when omitted. */
+  width?: Length | null;
+};
+
 /** `remesh.quad`: Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field. */
 export type RemeshQuadParams = {
   /** Flow along an object axis (limbs, blades, tails). */
@@ -1947,6 +2021,7 @@ export interface OpParams {
   "sdf.silhouettes": SdfSilhouettesParams;
   "gen.shell": GenShellParams;
   "gen.feature": GenFeatureParams;
+  "gen.strands": GenStrandsParams;
   "remesh.quad": RemeshQuadParams;
   "remesh.isotropic": RemeshIsotropicParams;
   "prim.plane": PrimPlaneParams;

@@ -1237,3 +1237,31 @@ fn gen_feature_builds_templates_with_landmarks() {
     assert_eq!(e.path.as_deref(), Some("/params/variant"));
     assert!(e.suggestions.contains(&"elf".to_owned()), "{:?}", e.suggestions);
 }
+
+#[test]
+fn gen_strands_grows_hair_between_landmarks() {
+    let mut tx = Tx::new(Document::new());
+    ok(&mut tx, "gen.feature", json!({ "name": "head", "feature": "head_base", "detail": "4mm" }));
+    let s = ok(&mut tx, "gen.strands", json!({ "on": "head", "region": ["hairline_front", "temple_l", "nape", "temple_r"], "length": "12cm" }));
+    assert!(s.starts_with("created head/hair") && s.contains("cards") && s.contains("coverage"), "{s}");
+    let k = tx.resolve("head/hair", "/t").unwrap();
+    assert!(tx.doc().object(k).unwrap().tags.iter().any(|t| t == "strands"));
+    let m = tx.doc().object_mesh(k).unwrap();
+    assert!(m.group("cap").is_some() && m.group("flyaways").is_some() && m.uv_layer_count() == 1);
+    // The scalp stays off the face: cap vertices toward the front are above the eyes.
+    let head = tx.doc().object_mesh(tx.resolve("head", "/t").unwrap()).unwrap();
+    let eye = head.positions[head.group("lm.eye_l").unwrap().iter().next().unwrap() as usize];
+    let cap = m.group("cap").unwrap();
+    let front: Vec<Vec3> =
+        cap.iter().flat_map(|f| m.face_verts(f).collect::<Vec<_>>()).map(|v| m.positions[v as usize]).filter(|p| p.z > eye.z * 0.7).collect();
+    assert!(!front.is_empty() && front.iter().all(|p| p.y > eye.y), "cap off the face");
+    let e = err(&mut tx, "gen.strands", json!({ "on": "head", "region": ["hairline_front", "temple_l", "nape", "tempel_r"] }));
+    assert_eq!(e.path.as_deref(), Some("/region/3"));
+    assert!(e.suggestions.contains(&"temple_r".to_owned()), "{e:?}");
+    let e = err(&mut tx, "gen.strands", json!({ "on": "head", "style": "ponytail" }));
+    assert_eq!(e.path.as_deref(), Some("/anchor"));
+    let e = err(&mut tx, "gen.strands", json!({ "on": "head", "clumps": 0 }));
+    assert_eq!(e.path.as_deref(), Some("/clumps"));
+    let s = ok(&mut tx, "gen.strands", json!({ "on": "head", "kind": "beard", "region": ["jaw_l", "chin", "jaw_r", "mouth"], "inside": "chin" }));
+    assert!(s.contains("clumps"), "{s}");
+}
