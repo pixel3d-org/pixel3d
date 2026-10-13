@@ -88,6 +88,18 @@ Check it without images:
 
 Worked example: `docs/agents/examples/broadleaf_tree.json`.
 
+## Characters, weapons and wings from archetypes
+
+Do not build a body, a weapon or a pair of wings from primitives: start from an archetype in a Model Spec and patch what differs (the spec guide's Archetypes section, ADR 0016). `features {"archetype": "dwarf"}` lists its parameters, joints and parts.
+
+- `{"archetypes": {"dwarf": {"kind": "dwarf", "params": {"hold": "right"}}, "axe": {"kind": "axe", "at": "dwarf.grip_r"}}}` gives a dwarf 4.3 heads tall with a braided beard and an axe in its right fist, in one call.
+- Gear goes on joints: `"helmet": {"sdf": [...], "anchor": {"on": "dwarf", "landmark": "head_top", "orient": "normal"}}`; `spec get` lists every joint in millimeters to size it.
+- Ornament makes it read as crafted: a `rune` band around a haft or a helmet rim, `stud` or `pyramid` rows along a belt, `rope` trim on a hem.
+- Beards and hair take grooming genes (`braids`, `beads`, `tie`, clump `bulge`, `clump_layers`) and `collide` with the body or the mail so they rest on it.
+- `perceive dna` measures the result against the archetype (head count, shoulders, legs, blade ratios, wing gesture) and gives each critique a spec patch with its predicted result.
+
+Examples: `docs/agents/examples/dwarf_warrior.json` (a dwarf warrior with mail, belt, helmet, pauldrons, bracers and a rune-banded axe, five calls) and `feathered_wings.json` (a winged elf with an elven sword, three calls).
+
 ## Placing parts
 
 - Children are placed in their parent's space: `{"op": "prim.box", "args": {"name": "lid", "parent": "crate", "position": [0, "600mm", 0]}}` sits on top of a 600 mm crate.

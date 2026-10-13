@@ -1,0 +1,67 @@
+{
+ "prompt": "A winged elf ranger: an 8-heads elf with long hair, a pair of feathered wings spread on display from the back (primaries, secondaries and covert rows), and a curved elven sword in the right hand",
+ "calls": [
+  {
+   "tool": "features",
+   "args": {
+    "archetype": "feathered_wings"
+   }
+  },
+  {
+   "tool": "spec",
+   "args": {
+    "action": "set",
+    "target": "winged_elf",
+    "spec": {
+     "archetypes": {
+      "elf": {
+       "kind": "elf",
+       "params": {
+        "hold": "right",
+        "hair": "long"
+       }
+      },
+      "wings": {
+       "kind": "feathered_wings",
+       "at": "elf.back",
+       "params": {
+        "span": "1.35m",
+        "raise": 28,
+        "tilt": 65,
+        "coverts": 3
+       }
+      },
+      "sword": {
+       "kind": "sword",
+       "at": "elf.grip_r",
+       "prefix": "sword_",
+       "params": {
+        "style": "elven",
+        "curve": 10,
+        "length": "0.9m"
+       }
+      }
+     },
+     "parts": {
+      "hair": {
+       "params": {
+        "collide": [
+         "torso",
+         "wing_l",
+         "wing_r"
+        ]
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "tool": "perceive",
+   "args": {
+    "aspect": "dna",
+    "target": "winged_elf"
+   }
+  }
+ ]
+}
