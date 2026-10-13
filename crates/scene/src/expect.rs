@@ -45,6 +45,10 @@ pub enum Check {
     Budget { target: Option<ObjectRef>, min_tris: Option<u64>, max_tris: u64 },
     /// The target's meshes are closed and face outward.
     Watertight { target: ObjectRef },
+    /// A tree or plant: crown width (the larger of X and Z) and height
+    /// within ranges (meters), silhouette coverage within a range (a share)
+    /// and overdraw (card layers per covered pixel) at most a budget.
+    Vegetation { target: ObjectRef, crown_width: Option<Range>, crown_height: Option<Range>, coverage: Option<Range>, max_overdraw: Option<f64> },
 }
 
 impl Check {
@@ -61,13 +65,14 @@ impl Check {
             Check::Budget { target: Some(t), .. } => format!("budget({})", t.name),
             Check::Budget { target: None, .. } => "budget(scene)".into(),
             Check::Watertight { target } => format!("watertight({})", target.name),
+            Check::Vegetation { target, .. } => format!("vegetation({})", target.name),
         }
     }
 
     /// Ids of the objects the check refers to.
     pub fn objects(&self) -> Vec<u32> {
         match self {
-            Check::Dims { target, .. } | Check::Watertight { target } => vec![target.id],
+            Check::Dims { target, .. } | Check::Watertight { target } | Check::Vegetation { target, .. } => vec![target.id],
             Check::Symmetric { a, b, .. } => std::iter::once(a.id).chain(b.as_ref().map(|b| b.id)).collect(),
             Check::Attached { part, to, .. } => vec![part.id, to.id],
             Check::NotIntersecting { parts } => parts.iter().map(|p| p.id).collect(),

@@ -178,6 +178,19 @@ export type ExpectArgs = {
     /** Object (name, path or id). */
     target: string;
   };
+} | {
+  vegetation: {
+    /** Covered share of the crown silhouette (front and side mean), for example `{"min": 0.85}`. */
+    coverage?: ShareRange | null;
+    /** Crown height. */
+    crown_height?: LengthRange | null;
+    /** Crown width (the larger of its X and Z extents). */
+    crown_width?: LengthRange | null;
+    /** Overdraw budget: most card layers per covered pixel on average. */
+    max_overdraw?: number | null;
+    /** Object (name, path or id). */
+    target: string;
+  };
 };
 
 /** How several faces are extruded. */
@@ -437,6 +450,14 @@ export type ShapeBevel = {
   sides?: BevelSides;
   /** Bevel width, inward from the outline and up from the cap. */
   width: Length;
+};
+
+/** A range of shares from 0 to 1; either end may be left open. */
+export type ShareRange = {
+  /** Highest share. */
+  max?: number | null;
+  /** Lowest share. */
+  min?: number | null;
 };
 
 /** Advanced settings of `edit.smooth`. */
@@ -2025,7 +2046,7 @@ export type CleanupReportParams = {
 
 /** `expect.add`: Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. */
 export type ExpectAddParams = {
-  /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight. */
+  /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight, vegetation. */
   expect: ExpectArgs;
   /** Name; `E1`, `E2`, ... when omitted. */
   name?: string | null;

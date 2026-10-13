@@ -61,3 +61,19 @@ fn vegetation_features_are_tagged() {
         assert!(tx.doc().object(k).unwrap().tags.iter().any(|t| t == "vegetation"), "{n}");
     }
 }
+
+#[test]
+fn vegetation_expectations_check_crown_coverage_and_overdraw() {
+    let mut tx = fixture();
+    ok(&mut tx, "gen.tree", json!({ "name": "oak", "budget": 6000 }));
+    let s = ok(
+        &mut tx,
+        "expect.add",
+        json!({ "expect": { "vegetation": { "target": "oak", "crown_width": { "min": "9m", "max": "15m" }, "max_overdraw": 4 } } }),
+    );
+    assert!(s.contains("vegetation(oak)"), "{s}");
+    let e = err(&mut tx, "expect.add", json!({ "expect": { "vegetation": { "target": "oak", "coverage": { "min": 85 } } } }));
+    assert_eq!(e.path.as_deref(), Some("/expect/vegetation/coverage"), "{e:?}");
+    let e = err(&mut tx, "expect.add", json!({ "expect": { "vegetation": { "target": "oak" } } }));
+    assert_eq!(e.path.as_deref(), Some("/expect/vegetation"), "{e:?}");
+}

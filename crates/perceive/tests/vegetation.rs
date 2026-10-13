@@ -64,3 +64,27 @@ fn other_species_and_plain_meshes() {
     assert!(rep.text.contains("no part has foliage"), "{}", rep.text);
     assert!(gene_lines(&View::new(&doc, None).unwrap(), &VegetationGene::Preset("oak".into())).is_err());
 }
+
+#[test]
+fn vegetation_expectations_pass_and_fail() {
+    use p3d_perceive::expect::check;
+    use p3d_scene::{Check, Expectation, ObjectRef};
+    let (doc, _) = doc_with(Species::Broadleaf);
+    let k = doc.resolve("tree").unwrap();
+    let target = ObjectRef { name: "tree".into(), id: doc.object(k).unwrap().id() };
+    let exp = |crown_width: Option<Range>, coverage: Option<Range>, max_overdraw: Option<f64>| Expectation {
+        name: "E1".into(),
+        check: Check::Vegetation {
+            target: target.clone(),
+            crown_width,
+            crown_height: Some(Range { min: Some(6.0), max: Some(12.0) }),
+            coverage,
+            max_overdraw,
+        },
+    };
+    let o = check(&doc, &exp(Some(Range { min: Some(10.0), max: Some(14.0) }), Some(Range { min: Some(0.8), max: None }), Some(3.5)));
+    assert!(o.pass, "{}", o.message);
+    assert_eq!(o.label, "vegetation(tree)");
+    let o = check(&doc, &exp(Some(Range { min: Some(15.0), max: None }), Some(Range { min: Some(0.97), max: None }), None));
+    assert!(!o.pass && o.message.contains("crown width") && o.message.contains("coverage"), "{}", o.message);
+}

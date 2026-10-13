@@ -955,6 +955,70 @@ expression: tools
                     "watertight"
                   ],
                   "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A tree or plant (an object with a `foliage` or `trunk` group): crown size, silhouette coverage and overdraw.",
+                  "properties": {
+                    "vegetation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "coverage": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/ShareRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Covered share of the crown silhouette (front and side mean), for example `{\"min\": 0.85}`."
+                        },
+                        "crown_height": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LengthRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Crown height."
+                        },
+                        "crown_width": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LengthRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Crown width (the larger of its X and Z extents)."
+                        },
+                        "max_overdraw": {
+                          "description": "Overdraw budget: most card layers per covered pixel on average.",
+                          "format": "double",
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "target": {
+                          "description": "Object (name, path or id).",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "target"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "vegetation"
+                  ],
+                  "type": "object"
                 }
               ]
             },
@@ -1016,6 +1080,29 @@ expression: tools
                   "type": "string"
                 }
               ]
+            },
+            "ShareRange": {
+              "additionalProperties": false,
+              "description": "A range of shares from 0 to 1; either end may be left open.",
+              "properties": {
+                "max": {
+                  "description": "Highest share.",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "min": {
+                  "description": "Lowest share.",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
             }
           },
           "$schema": "https://json-schema.org/draft/2020-12/schema",
