@@ -46,6 +46,7 @@ For characters, creatures and organic props, model spec-first: `brief set` turns
 | `diagnose` | find problems with causes and fixes; `explain` or `fix` one |
 | `brief` | record what was asked (category, style, size, budget, must-haves) as checks; `coverage` shows how the model answers it |
 | `spec` | author the model as a Model Spec: `set`, `patch` (merge patch or JSON Patch), `compile`, `get` |
+| `deform` | sculpt by numbers: move named points or coordinates by offsets with pins held (spec parts keep the handles) |
 | `expect` | add, remove, list and check model tests |
 | `query` | count and locate elements a selector picks; `save_as` a group |
 | `analyze` | topology metrics (the numbers quality is judged by) |

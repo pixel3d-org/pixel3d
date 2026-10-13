@@ -122,6 +122,7 @@ impl Registry {
             Arc::new(Typed::<deform::Twist>::new()),
             Arc::new(Typed::<deform::Taper>::new()),
             Arc::new(Typed::<deform::Displace>::new()),
+            Arc::new(Typed::<deform::Handles>::new()),
             Arc::new(Typed::<cleanup::Auto>::new()),
             Arc::new(Typed::<cleanup::Report>::new()),
             Arc::new(Typed::<expect::Add>::new()),

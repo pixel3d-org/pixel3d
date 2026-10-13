@@ -322,3 +322,28 @@ fn shells_and_silhouettes_are_shape_kinds() {
     // `top` is the surface above the part's center: the sloped edge there.
     assert!((at(&tx, "axe/feather").y - 0.1164).abs() < 0.004, "on the head's top: {}", at(&tx, "axe/feather"));
 }
+
+#[test]
+fn deform_handles_reshape_a_part_and_survive_recompiles() {
+    let mut tx = Tx::new(Document::new());
+    let ear = |deform: Option<Value>| {
+        let mut p = json!({ "sdf": [{ "capsule": { "a": [0, 0, 0], "b": [0, 0.08, 0], "radius": "1.5cm", "radius_b": "5mm" }, "name": "lobe" }], "detail": "3mm" });
+        if let Some(d) = deform {
+            p["deform"] = d;
+        }
+        json!({ "name": "s", "spec": { "parts": { "ear": p } } })
+    };
+    ok(&mut tx, "spec.set", ear(None));
+    let before = tx.doc().object_mesh(key(&tx, "s/ear")).unwrap().bounds().unwrap();
+    let s = ok(&mut tx, "spec.set", ear(Some(json!({ "handles": [{ "move": "top", "by": [0, 0.01, 0] }], "pins": ["bottom"], "radius": "7cm" }))));
+    assert!(s.contains("1 built"), "{s}");
+    let after = tx.doc().object_mesh(key(&tx, "s/ear")).unwrap().bounds().unwrap();
+    assert!((after.1.y - before.1.y - 0.01).abs() < 1.5e-3, "the tip rose 1 cm: {before:?} -> {after:?}");
+    assert!((after.0.y - before.0.y).abs() < 1e-3, "the root stayed: {before:?} -> {after:?}");
+    // A recompile keeps the deformed mesh (same hash) and names the error path.
+    let s = ok(&mut tx, "spec.compile", json!({ "target": "s" }));
+    assert!(s.contains("0 built, 1 unchanged"), "{s}");
+    let e = run(&mut tx, "spec.set", ear(Some(json!({ "handles": [{ "move": "tipp", "by": [0, 0.01, 0] }] })))).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/spec/parts/ear/deform/handles/0/move"), "{e:?}");
+    assert!(e.suggestions.iter().any(|s| s == "top" || s == "lobe"), "{e:?}");
+}

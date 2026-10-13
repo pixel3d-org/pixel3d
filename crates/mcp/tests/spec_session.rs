@@ -74,6 +74,23 @@ fn elf_head_from_brief_to_passing_spec() {
     assert!(t.starts_with("visibility at 5 m on 1080p (character)"), "{t}");
     let t = call(&mut a, "spec", json!({ "target": "elf_head" }));
     assert!(t.contains("ear_l: blended into its parent") && t.contains("eye_l: o:"), "{t}");
+    // Sculpt by numbers: lift the left ear inside the head mesh, crown pinned.
+    let t = call(
+        &mut a,
+        "deform",
+        json!({ "target": "elf_head/head", "handles": [{ "move": "ear_l.helix", "by": [0, 0.008, 0] }], "pins": ["crown"], "radius": "4cm" }),
+    );
+    assert!(t.contains("1 built"), "{t}");
+    let t = call(&mut a, "spec", json!({ "target": "elf_head" }));
+    assert!(t.contains("\"deform\":{\"handles\":[{\"by\":"), "kept in the spec: {t}");
+    // A plain mesh takes world coordinates.
+    call(
+        &mut a,
+        "run",
+        json!({ "ops": [{ "op": "prim.cylinder", "args": { "name": "post", "radius": 0.05, "height": 1, "advanced": { "height_segments": 10 } } }] }),
+    );
+    let t = call(&mut a, "deform", json!({ "target": "post", "handles": [{ "move": [0, 1, 0], "by": [0.1, 0, 0] }], "pins": [[0, 0, 0]] }));
+    assert!(t.contains("1 handle moved"), "{t}");
 }
 
 #[test]

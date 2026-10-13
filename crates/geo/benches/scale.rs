@@ -118,6 +118,21 @@ fn scale(c: &mut Criterion) {
         });
     }
     g.finish();
+    // Two handles and a pin reaching most of the sphere.
+    let mut g = c.benchmark_group("scale_deform_handles");
+    for (t, m) in &spheres {
+        let Some((lo, hi)) = m.bounds() else { continue };
+        let r = (hi - lo).length() * 0.6;
+        let spec = p3d_geo::deform::HandleSpec {
+            moves: vec![(Vec3::new(0.0, hi.y, 0.0), Vec3::new(0.0, 0.1, 0.0)), (Vec3::new(hi.x, 0.0, 0.0), Vec3::new(0.05, 0.0, 0.0))],
+            pins: vec![Vec3::new(0.0, lo.y, 0.0)],
+            radius: r,
+        };
+        g.bench_with_input(BenchmarkId::from_parameter(t), &spec, |b, spec| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::deform::handles(&mut x, spec), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
     let mut g = c.benchmark_group("scale_deform_displace");
     for (t, m) in &spheres {
         let all: Vec<u32> = m.verts().collect();

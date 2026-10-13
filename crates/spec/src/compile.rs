@@ -648,6 +648,7 @@ impl<'a> Compiler<'a> {
         h.bytes(op.as_bytes());
         h.json(&args);
         h.json(&part.edits);
+        h.json(&part.deform);
         h.u64(self.seed(name));
         let hash = h.0;
         if let Some(c) = self.cached(name, hash) {
@@ -712,6 +713,7 @@ impl<'a> Compiler<'a> {
         h.bytes(b"sdf");
         h.json(&part.detail);
         h.json(&part.edits);
+        h.json(&part.deform);
         let (items, groups) = self.sdf_tree(name, "", &mut h)?;
         let hash = h.0;
         if let Some(c) = self.cached(name, hash) {
@@ -772,7 +774,10 @@ impl<'a> Compiler<'a> {
                 by_group.push((g.name.clone(), entry));
             }
         }
-        let mesh = tx.doc().object_mesh(pk).cloned().ok_or_else(|| err(path, "the part's edits removed its mesh"))?;
+        let mut mesh = tx.doc().object_mesh(pk).cloned().ok_or_else(|| err(path, "the part's edits removed its mesh"))?;
+        if let Some(d) = &part.deform {
+            self.deform(name, part, &format!("{path}/deform"), d, &mut mesh)?;
+        }
         let mut slot = vec![u32::MAX; mesh.face_slots()];
         for (i, f) in mesh.faces().enumerate() {
             slot[f as usize] = i as u32;
@@ -980,6 +985,67 @@ impl Compiler<'_> {
                 Correction::Scale(part, (*ratio as f32 * vb / va).clamp(0.01, 100.0))
             }
         })
+    }
+
+    /// A point of a part in part space, on its (pre-deform) mesh.
+    fn local_point(
+        &mut self,
+        name: &str,
+        part: &Part,
+        mesh: &Mesh,
+        surface: &Surface,
+        q: &crate::model::LocalPoint,
+        path: &str,
+    ) -> Result<Vec3, OpError> {
+        let n = match q {
+            crate::model::LocalPoint::At(c) => return Ok(v3(c)),
+            crate::model::LocalPoint::Name(n) => n.as_str(),
+        };
+        if let Some(g) = mesh.group(n) {
+            let vs: Vec<u32> = match g.kind() {
+                ElementKind::Vert => g.iter().collect(),
+                ElementKind::Edge => g.iter().flat_map(|e| mesh.edge_verts(e)).collect(),
+                ElementKind::Face => g.iter().flat_map(|f| mesh.face_verts(f).collect::<Vec<_>>()).collect(),
+            };
+            if !vs.is_empty() {
+                let c = vs.iter().map(|&v| mesh.positions[v as usize]).sum::<Vec3>() / vs.len() as f32;
+                return Ok(surface.nearest(c).map_or(c, |h| h.point));
+            }
+        }
+        let category = self.category_of(part);
+        if let Some(d) = landmarks::direction(n, category.as_deref()) {
+            return surface.toward(Vec3::from(d)).map(|h| h.point).ok_or_else(|| err(path, format!("`{n}` misses the surface")));
+        }
+        if let Some(c) = self.shape_center(name, n)? {
+            let (lo, hi) = surface.part_bounds();
+            let out = (c - (lo + hi) * 0.5).try_normalize().unwrap_or(Vec3::Y);
+            return surface.ray(c + out * (hi - lo).length(), -out).map(|h| h.point).ok_or_else(|| err(path, format!("`{n}` misses the surface")));
+        }
+        let mut known: Vec<String> = landmarks::GENERIC.iter().map(|(g, _)| (*g).to_owned()).collect();
+        if let Some(t) = category.as_deref().and_then(landmarks::category) {
+            known.extend(t.iter().map(|(g, _)| (*g).to_owned()));
+        }
+        known.extend(mesh.groups().map(|(g, _)| g.to_owned()));
+        let mut e = err(path, format!("`{name}` has no landmark, shape or group `{n}`"));
+        e.suggestions = p3d_scene::name::suggest(n, known.iter().map(String::as_str), 3);
+        Err(e)
+    }
+
+    /// Runs a part's handle deformation on its mesh (part space).
+    fn deform(&mut self, name: &str, part: &Part, path: &str, d: &crate::model::DeformSpec, mesh: &mut Mesh) -> Result<(), OpError> {
+        let surface = Surface::of_mesh(mesh, Affine3A::IDENTITY).ok_or_else(|| err(path, "the part has no faces to deform"))?;
+        let mut moves = Vec::with_capacity(d.handles.len());
+        for (i, h) in d.handles.iter().enumerate() {
+            let at = self.local_point(name, part, mesh, &surface, &h.at, &format!("{path}/handles/{i}/move"))?;
+            moves.push((at, v3(&h.by)));
+        }
+        let mut pins = Vec::with_capacity(d.pins.len());
+        for (i, q) in d.pins.iter().enumerate() {
+            pins.push(self.local_point(name, part, mesh, &surface, q, &format!("{path}/pins/{i}"))?);
+        }
+        let radius = d.radius.map_or_else(|| mesh.bounds().map_or(1.0, |(lo, hi)| (hi - lo).length() * 0.4), |r| r.0 as f32);
+        p3d_geo::deform::handles(mesh, &p3d_geo::deform::HandleSpec { moves, pins, radius }).map_err(|e| err(path, e.to_string()))?;
+        Ok(())
     }
 
     /// Moves and scales parts until every constraint holds (or the rounds

@@ -124,6 +124,11 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<SpecArgs>(),
         },
         ToolInfo {
+            name: "deform",
+            description: "Sculpt by numbers: move named points (landmarks, shapes, groups) or coordinates by offsets with pins held; spec parts keep the handles across recompiles.",
+            schema: schema::<DeformArgs>(),
+        },
+        ToolInfo {
             name: "query",
             description: "Count and locate mesh elements picked by a selector (groups, normals, boundaries, boxes); optionally save them as a group.",
             schema: schema::<QueryArgs>(),
@@ -214,6 +219,7 @@ impl Agent {
             "expect" => parse_params(&args).and_then(|a| self.expect(&a)),
             "brief" => parse_params(&args).and_then(|a| self.brief(&a)),
             "spec" => parse_params(&args).and_then(|a| self.spec(&a)),
+            "deform" => parse_params(&args).and_then(|a| self.deform(&a)),
             "query" => parse_params(&args).and_then(|a| self.query(&a)),
             "analyze" => parse_params(&args).and_then(|a| self.analyze(&a)),
             "list_ops" => parse_params(&args).and_then(|a| self.list_ops(&a)),
@@ -628,6 +634,46 @@ impl Agent {
             t.push('\n');
         }
         Ok(ToolOutput::ok(self.finish(t), json!({ "revision": r.revision, "summary": out.summary })))
+    }
+
+    fn deform(&mut self, a: &DeformArgs) -> Result<ToolOutput, OpError> {
+        if a.handles.is_empty() {
+            return Err(OpError::invalid("/handles", "give at least one handle").with_hint("{\"move\": \"tip\", \"by\": [0, 0.01, 0]}"));
+        }
+        let doc = self.doc();
+        let key = doc.resolve(&a.target).map_err(|e| OpError::from_scene(e, "/target"))?;
+        let o = doc.object(key).ok_or_else(|| OpError::internal("object vanished"))?;
+        // A spec part: the handles join its `deform` block.
+        let part = o.parent().and_then(|p| {
+            let rec = doc.spec(p)?;
+            rec.parts.get(o.name()).filter(|r| r.object == Some(o.id()))?;
+            Some((p, rec.source.clone(), o.name().to_owned()))
+        });
+        if let Some((root, source, name)) = part {
+            let old =
+                source.pointer(&format!("/parts/{name}/deform")).cloned().filter(|_| !a.replace).unwrap_or(json!({ "handles": [], "pins": [] }));
+            let mut handles = old.get("handles").and_then(Value::as_array).cloned().unwrap_or_default();
+            handles.extend(a.handles.iter().map(|h| json!({ "move": h.at, "by": h.by })));
+            let mut pins = old.get("pins").and_then(Value::as_array).cloned().unwrap_or_default();
+            pins.extend(a.pins.iter().cloned());
+            let mut deform = json!({ "handles": handles, "pins": pins });
+            if let Some(r) = a.radius.or_else(|| old.get("radius").and_then(|v| serde_json::from_value(v.clone()).ok())) {
+                deform["radius"] = json!(r);
+            }
+            let target = doc.path(root).unwrap_or_default();
+            return self.spec(&SpecArgs {
+                action: SpecAction::Patch,
+                target,
+                merge: Some(json!({ "parts": { name: { "deform": deform } } })),
+                ..SpecArgs::default()
+            });
+        }
+        let mut args =
+            json!({ "target": a.target, "handles": a.handles.iter().map(|h| json!({ "at": h.at, "by": h.by })).collect::<Vec<_>>(), "pins": a.pins });
+        if let Some(r) = a.radius {
+            args["radius"] = json!(r);
+        }
+        self.one_op("deform.handles", args)
     }
 
     fn one_op(&mut self, op: &str, args: Value) -> Result<ToolOutput, OpError> {

@@ -281,6 +281,34 @@ pub struct SpecArgs {
     pub dry_run: bool,
 }
 
+/// One handle of the `deform` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeformHandleArg {
+    /// What to grab: a name (a landmark such as `tip` or `top`, an SDF shape or a face group) or coordinates.
+    #[serde(rename = "move")]
+    pub at: Value,
+    /// How far it moves.
+    pub by: [Length; 3],
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeformArgs {
+    /// A spec part (`elf_head/ear_l`; kept in the spec, so recompiles keep it) or any mesh object.
+    pub target: String,
+    pub handles: Vec<DeformHandleArg>,
+    /// Points that stay put (names or coordinates).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pins: Vec<Value>,
+    /// Reach along the surface; 40% of the part's diagonal when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<Length>,
+    /// Spec parts: replace the part's earlier handles instead of adding to them.
+    #[serde(default)]
+    pub replace: bool,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ExpectAction {
