@@ -160,8 +160,14 @@ fn features_are_listed_described_and_used_in_specs() {
     let mut a = Agent::new(Session::new());
     let t = call(&mut a, "features", json!({}));
     assert!(t.starts_with("13 features") && t.contains("nose (sdf):") && t.contains("wing:"), "{t}");
+    assert!(t.contains("archetypes") && t.contains("dwarf:") && t.contains("feathered_wings:"), "{t}");
     let t = call(&mut a, "features", json!({ "search": "horn" }));
     assert!(t.contains("horn:"), "{t}");
+    let t = call(&mut a, "features", json!({ "archetype": "dwarf" }));
+    assert!(t.contains("heads:") && t.contains("grip_l") && t.contains("hold:"), "{t}");
+    assert!(t.contains("torso:"), "{t}");
+    let out = a.call("features", json!({ "archetype": "dwarff" }));
+    assert!(out.is_error && out.text.contains("dwarf"), "{}", out.text);
     let t = call(&mut a, "features", json!({ "feature": "ear" }));
     assert!(t.contains("variant: human | elf") && t.contains("landmarks:") && t.contains("tip:"), "{t}");
     let out = a.call("features", json!({ "feature": "eer" }));

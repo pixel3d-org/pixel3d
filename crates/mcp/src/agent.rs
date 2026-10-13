@@ -130,7 +130,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "features",
-            description: "Feature templates (head bases, hands, ears, eyes, noses, horns, cables, bolts, rivets, vents, panels, moldings) built from semantic parameters: list, search or describe one with its parameters and landmarks.",
+            description: "Feature templates (head bases, hands, ears, eyes, noses, horns, cables, wings, bolts, rivets, vents, panels, moldings) built from semantic parameters, and archetypes (humanoid races, weapons, wings) that expand into a skeleton and parts: list, search or describe one with its parameters, landmarks or joints.",
             schema: schema::<FeaturesArgs>(),
         },
         ToolInfo {
@@ -176,6 +176,11 @@ pub fn tools() -> Vec<ToolInfo> {
 ///
 /// Complexity: O(features x words).
 fn features(a: &FeaturesArgs) -> Result<ToolOutput, OpError> {
+    if let Some(id) = &a.archetype {
+        let arch = p3d_spec::archetype::get(id).map_err(|(m, s)| OpError::new(ErrorCode::NotFound, m).at("/archetype").with_suggestions(s))?;
+        let info = arch.info();
+        return Ok(ToolOutput::ok(info.describe(), info.to_json()));
+    }
     if let Some(id) = &a.feature {
         let f = p3d_features::get(id).or_else(|e| {
             // An alias names one feature: describe it.
@@ -197,7 +202,19 @@ fn features(a: &FeaturesArgs) -> Result<ToolOutput, OpError> {
     }
     t.push_str("describe one with {\"feature\": \"<id>\"}; build with op gen.feature or a spec part {\"feature\": \"<id>\"}\n");
     let rows: Vec<Value> = list.iter().map(|i| json!({ "id": i.id, "summary": i.summary, "sdf": i.sdf })).collect();
-    Ok(ToolOutput::ok(t, json!({ "features": rows })))
+    let archetypes = match &a.search {
+        Some(q) => p3d_spec::archetype::search(q),
+        None => p3d_spec::archetype::library().iter().map(|a| a.info()).collect(),
+    };
+    if !archetypes.is_empty() {
+        t.push_str(&format!("{} archetype{}\n", archetypes.len(), if archetypes.len() == 1 { "" } else { "s" }));
+        for i in &archetypes {
+            t.push_str(&format!("{}: {}\n", i.id, i.summary));
+        }
+        t.push_str("describe one with {\"archetype\": \"<id>\"}; use it in a spec as {\"archetypes\": {\"<name>\": {\"kind\": \"<id>\"}}}\n");
+    }
+    let arch_rows: Vec<Value> = archetypes.iter().map(|i| json!({ "id": i.id, "summary": i.summary })).collect();
+    Ok(ToolOutput::ok(t, json!({ "features": rows, "archetypes": arch_rows })))
 }
 
 /// Findings of the latest revision, cached: diagnose costs up to about
