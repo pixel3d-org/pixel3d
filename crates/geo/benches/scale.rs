@@ -278,6 +278,20 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Poisson-disk points on a sphere of t triangles: t / 8 points at the default spacing.
+    let mut g = c.benchmark_group("scale_gen_scatter");
+    for &t in &sizes {
+        let m = sphere(t);
+        let faces: Vec<u32> = m.faces().collect();
+        let count = (t / 8) as u32;
+        let area = p3d_geo::generate::surface_area(&m, &faces);
+        let spec = p3d_geo::generate::ScatterSpec { count, min_distance: 0.6 * (area / count as f32).sqrt(), seed: 3 };
+        g.bench_with_input(BenchmarkId::from_parameter(t), &(m, faces), |b, (m, faces)| {
+            b.iter(|| p3d_geo::generate::scatter(black_box(m), faces, &spec))
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)

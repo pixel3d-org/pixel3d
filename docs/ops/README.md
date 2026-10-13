@@ -60,6 +60,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`gen.loft`](gen.loft.md) | Builds a surface through a sequence of cross sections, resampling them so their point counts match. |
 | [`gen.array`](gen.array.md) | Repeats a mesh in a line, around an axis or along a curve, welding copies that touch. |
 | [`gen.mirror`](gen.mirror.md) | Adds the mirror image of a mesh across an axis plane, welding the seam; optionally bisects first. |
+| [`gen.scatter`](gen.scatter.md) | Places seeded, evenly spaced instances of an object over a surface, standing on it with random turns and scales. |
 
 ## select
 

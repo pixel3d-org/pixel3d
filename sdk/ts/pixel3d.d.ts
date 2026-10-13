@@ -974,6 +974,30 @@ export type GenMirrorParams = {
   weld?: Length;
 };
 
+/** `gen.scatter`: Places seeded, evenly spaced instances of an object over a surface, standing on it with random turns and scales. */
+export type GenScatterParams = {
+  /** Stand instances on the surface: their +Y follows the face normal. */
+  align?: boolean;
+  /** Instances wanted; fewer are placed when the spacing does not allow them. */
+  count?: number;
+  /** No two instances closer than this; derived from the area and the count when omitted. */
+  min_distance?: Length | null;
+  /** Name of the empty that holds the instances; a free name such as `scatter_1` is picked when omitted. */
+  name?: string | null;
+  /** Turn each instance by a random angle around its up axis. */
+  random_turn?: boolean;
+  /** Random uniform scale between these two values. */
+  scale?: [number, number];
+  /** Same seed, same layout. */
+  seed?: number;
+  /** Faces to scatter on (for example a `top` group); the whole surface when omitted. */
+  select?: Selector | null;
+  /** The mesh object to place copies of (instances share its mesh). */
+  source: string;
+  /** The surface mesh object to scatter on (the instances become children of it). */
+  target: string;
+};
+
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
 export type PrimPlaneParams = {
   /** Rarely needed settings. */
@@ -1512,6 +1536,7 @@ export interface OpParams {
   "gen.loft": GenLoftParams;
   "gen.array": GenArrayParams;
   "gen.mirror": GenMirrorParams;
+  "gen.scatter": GenScatterParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

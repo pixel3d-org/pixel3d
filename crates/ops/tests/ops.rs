@@ -900,6 +900,44 @@ fn arrays_and_mirrors_repeat_meshes() {
 }
 
 #[test]
+fn scatter_places_seeded_instances_on_surfaces() {
+    let layout = |seed: u64| {
+        let mut tx = curve_fixture();
+        ok(&mut tx, "prim.plane", json!({ "name": "ground", "width": 4, "depth": 4, "advanced": { "segments": [4, 4] } }));
+        ok(&mut tx, "prim.ico_sphere", json!({ "name": "rock", "radius": 0.1, "subdivisions": 1 }));
+        let s = ok(
+            &mut tx,
+            "gen.scatter",
+            json!({ "name": "rocks", "target": "ground", "source": "rock", "count": 30, "seed": seed, "scale": [0.5, 1.5] }),
+        );
+        assert!(s.starts_with("scattered 30 instances of rock"), "{s}");
+        let doc = tx.doc();
+        let holder = doc.resolve("ground/rocks").unwrap();
+        let kids = doc.object(holder).unwrap().children().to_vec();
+        assert_eq!(kids.len(), 30);
+        let rock_mesh = doc.object(doc.resolve("rock").unwrap()).unwrap().mesh_key();
+        kids.iter()
+            .map(|&k| {
+                let o = doc.object(k).unwrap();
+                assert_eq!(o.mesh_key(), rock_mesh, "instances share the source mesh");
+                assert!(o.transform.translation.y.abs() < 1e-6, "on the ground");
+                o.transform
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(layout(4), layout(4), "same seed, same layout");
+    assert_ne!(layout(4), layout(5));
+
+    let mut tx = curve_fixture();
+    let e = err(&mut tx, "gen.scatter", json!({ "target": "crate", "source": "path" }));
+    assert_eq!(e.path.as_deref(), Some("/source"));
+    let e = err(&mut tx, "gen.scatter", json!({ "target": "crate", "source": "crate", "scale": [2, 1] }));
+    assert_eq!(e.path.as_deref(), Some("/scale"));
+    let e = err(&mut tx, "gen.scatter", json!({ "target": "crate", "source": "crate", "select": { "faces": { "group": "nope" } } }));
+    assert!(e.path.as_deref().is_some_and(|p| p.starts_with("/select")), "{e}");
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

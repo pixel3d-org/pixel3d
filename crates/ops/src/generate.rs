@@ -13,6 +13,7 @@ use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use smallvec::SmallVec;
 
 use crate::common::{check_count, check_length, check_new_object, create_mesh_object};
 use crate::curve::{curve_target, kernel_error as curve_error};
@@ -1680,6 +1681,179 @@ impl Op for MirrorOp {
             crate::common::thousands(faces)
         ));
         out.changed.push(key);
+        Ok(out)
+    }
+}
+
+// ---- gen.scatter -------------------------------------------------------------------------
+
+fn fifty() -> u32 {
+    50
+}
+
+fn seed_one() -> u64 {
+    1
+}
+
+/// Parameters of `gen.scatter`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ScatterParams {
+    /// Name of the empty that holds the instances; a free name such as `scatter_1` is picked when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// The surface mesh object to scatter on (the instances become children of it).
+    pub target: String,
+    /// The mesh object to place copies of (instances share its mesh).
+    pub source: String,
+    /// Faces to scatter on (for example a `top` group); the whole surface when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub select: Option<p3d_query::Selector>,
+    /// Instances wanted; fewer are placed when the spacing does not allow them.
+    #[serde(default = "fifty")]
+    pub count: u32,
+    /// No two instances closer than this; derived from the area and the count when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_distance: Option<Length>,
+    /// Same seed, same layout.
+    #[serde(default = "seed_one")]
+    pub seed: u64,
+    /// Stand instances on the surface: their +Y follows the face normal.
+    #[serde(default = "yes")]
+    pub align: bool,
+    /// Turn each instance by a random angle around its up axis.
+    #[serde(default = "yes")]
+    pub random_turn: bool,
+    /// Random uniform scale between these two values.
+    #[serde(default = "ones")]
+    pub scale: [f64; 2],
+}
+
+impl Default for ScatterParams {
+    fn default() -> Self {
+        ScatterParams {
+            name: None,
+            target: String::new(),
+            source: String::new(),
+            select: None,
+            count: 50,
+            min_distance: None,
+            seed: 1,
+            align: true,
+            random_turn: true,
+            scale: ones(),
+        }
+    }
+}
+
+/// `gen.scatter`.
+pub struct ScatterOp;
+
+impl Op for ScatterOp {
+    const ID: &'static str = "gen.scatter";
+    type Params = ScatterParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Scatter",
+            category: Category::Gen,
+            summary: "Places seeded, evenly spaced instances of an object over a surface, standing on it with random turns and scales.",
+            docs: "Points are spread over the target's faces (or the `select`ed ones) by area with Poisson-disk spacing: no two \
+                   closer than `min_distance` (by default about 0.6 x sqrt(area / count), which fits the count on open \
+                   surfaces). Each point gets an instance of `source` (sharing its mesh, so edits reach every copy) standing on \
+                   the face (`align`), turned randomly around its up axis and scaled between `scale` values. The instances are \
+                   children of a new empty under the target, named `<source>_<i>`. The same `seed` gives the same layout.\n\n\
+                   **Use for** rocks and grass tufts on terrain, rivets on a panel, mushrooms on a log, props on a table top. \
+                   Instances use the source mesh, not its transform; keep the source near the origin standing on +Y.",
+            examples: &[OpExample {
+                args: r#"{"name": "studs", "target": "crate", "source": "crate", "select": {"faces": {"group": "top"}}, "count": 5, "scale": [0.05, 0.1]}"#,
+                result: "scattered 5 instances of crate (o:1) on crate (o:1) as crate/studs (o:4), at least 0.161 m apart",
+            }],
+            aliases: &["scatter", "distribute", "particle instances", "instance on points", "poisson disk", "populate"],
+            complexity: "O(c + a log t) for c corners, t triangles and a throws, plus O(log n) per instance",
+            flags: OpFlags::UNDOABLE.union(OpFlags::CREATES_OBJECTS),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &ScatterParams) -> Result<(), OpError> {
+        crate::common::mesh_target(doc, &p.target)?;
+        let src = doc.resolve(&p.source).map_err(|e| OpError::from_scene(e, "/source"))?;
+        if doc.object_mesh(src).is_none() {
+            return Err(OpError::invalid("/source", format!("{} is not a mesh", crate::common::label(doc, src))));
+        }
+        check_new_object(doc, p.name.as_deref(), None)?;
+        check_count("/count", p.count, 1, p3d_geo::generate::MAX_SCATTER)?;
+        if let Some(d) = p.min_distance {
+            check_length("/min_distance", d, 0.0, 1e4)?;
+        }
+        if p.scale.iter().any(|s| !(s.is_finite() && (1e-3..=1e3).contains(s))) || p.scale[0] > p.scale[1] {
+            return Err(OpError::out_of_range("/scale", "scales must be between 0.001 and 1000, smallest first"));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &ScatterParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = crate::common::mesh_target(tx.doc(), &p.target)?;
+        let src = tx.resolve(&p.source, "/source")?;
+        let src_mesh = tx.doc().object(src).and_then(|o| o.mesh_key()).ok_or_else(|| OpError::invalid("/source", "not a mesh"))?;
+        let mesh = tx.mesh(key, "/target")?;
+        let faces: Vec<u32> = match &p.select {
+            None => mesh.faces().collect(),
+            Some(s) => {
+                let sel = p3d_query::select(mesh, s).map_err(|e| OpError::from_query(e, "/select"))?;
+                if sel.kind != p3d_mesh::ElementKind::Face {
+                    return Err(OpError::invalid("/select", "scatter works on faces").with_hint("for example {\"faces\": {\"group\": \"top\"}}"));
+                }
+                sel.iter().collect()
+            }
+        };
+        let area = p3d_geo::generate::surface_area(mesh, &faces);
+        let d = p.min_distance.map_or_else(|| 0.6 * (area / p.count as f32).sqrt(), |l| l.0 as f32);
+        let spec = p3d_geo::generate::ScatterSpec { count: p.count, min_distance: d, seed: p.seed };
+        let points = p3d_geo::generate::scatter(mesh, &faces, &spec).map_err(|e| match e {
+            p3d_geo::edit::KernelError::Empty(m) => OpError::new(crate::error::ErrorCode::EmptySelection, m).at("/select"),
+            e => crate::edit::kernel_error(e),
+        })?;
+        // The holder sits on the target with an identity transform: points are already in its space.
+        let holder_name = match &p.name {
+            Some(n) => n.clone(),
+            None => tx.doc().unique_name("scatter", Some(key)),
+        };
+        let holder =
+            tx.doc_mut().create_object(&holder_name, Some(key), p3d_scene::ObjectKind::Empty).map_err(|e| OpError::from_scene(e, "/name"))?;
+        let base = tx.doc().object(src).map(|o| o.name().to_owned()).unwrap_or_default();
+        let mut created = SmallVec::<[ObjectKey; 2]>::new();
+        created.push(holder);
+        for (i, pt) in points.iter().enumerate() {
+            let up = if p.align { pt.normal } else { Vec3::Y };
+            let mut rot = glam::Quat::from_rotation_arc(Vec3::Y, up.normalize_or(Vec3::Y));
+            if p.random_turn {
+                rot *= glam::Quat::from_rotation_y(pt.random[0] * std::f32::consts::TAU);
+            }
+            let s = (p.scale[0] + (p.scale[1] - p.scale[0]) * f64::from(pt.random[1])) as f32;
+            let k = tx
+                .doc_mut()
+                .create_object(&format!("{base}_{}", i + 1), Some(holder), p3d_scene::ObjectKind::Mesh { mesh: src_mesh })
+                .map_err(|e| OpError::from_scene(e, "/source"))?;
+            if let Some(o) = tx.doc_mut().object_mut(k) {
+                o.transform.translation = pt.position;
+                o.transform.rotation = rot;
+                o.transform.scale = Vec3::splat(s);
+            }
+            created.push(k);
+        }
+        let doc = tx.doc();
+        let short = if points.len() < p.count as usize { format!(" (asked for {}; lower min_distance for more)", p.count) } else { String::new() };
+        let mut out = OpOutput::summary(format!(
+            "scattered {} instances of {} on {} as {}, at least {} apart{short}",
+            points.len(),
+            crate::common::label(doc, src),
+            crate::common::label(doc, key),
+            crate::common::label(doc, holder),
+            p3d_math::format_length(f64::from(d))
+        ));
+        out.created = created;
         Ok(out)
     }
 }
