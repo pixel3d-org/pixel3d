@@ -14,8 +14,10 @@ const USAGE: &str = "\
 usage: pixel3d-cli <command> [options]
 
 commands:
-  mcp [--open <scene.p3d>]
-      serve the agent tools over MCP on stdin and stdout
+  mcp [--open <scene.p3d>] [--connect <[host:]port>]
+      serve the agent tools over MCP on stdin and stdout; --connect drives
+      a running desktop app instead (started with --control <port>, or File >
+      Allow agents to connect, port 7879) so you watch the agent work
   run <script.json> [--open <in.p3d>] [--save <out.p3d>] [--timings]
       run a list of ops as one transaction and print the result; the script
       is {\"ops\": [{\"op\": \"prim.box\", \"args\": {...}}, ...]} or just the list
@@ -92,11 +94,19 @@ fn session(open: Option<&str>) -> Result<Session> {
 
 fn mcp(args: &[String]) -> Result<ExitCode> {
     let f = Flags::parse(args, &[])?;
-    f.only(&["open"])?;
+    f.only(&["open", "connect"])?;
     if let Some(p) = &f.positional {
         bail!("mcp takes no positional argument (got `{p}`); use --open <scene.p3d>");
     }
-    p3d_mcp::serve_stdio(session(f.value("open"))?)?;
+    if let Some(to) = f.value("connect") {
+        if f.has("open") {
+            bail!("--open and --connect do not go together: the app has its scene open (open files there)");
+        }
+        let addr = p3d_mcp::connect::parse_addr(to).map_err(anyhow::Error::msg)?;
+        p3d_mcp::serve_connected_stdio(addr)?;
+    } else {
+        p3d_mcp::serve_stdio(session(f.value("open"))?)?;
+    }
     Ok(ExitCode::SUCCESS)
 }
 

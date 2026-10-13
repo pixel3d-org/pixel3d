@@ -20,6 +20,9 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
+/// The port the app listens on when agents are allowed to connect from the
+/// menu (`pixel3d-cli mcp --connect` uses it when given only a host).
+pub const DEFAULT_PORT: u16 = 7879;
 /// Most clients served at once.
 pub const MAX_CONNECTIONS: usize = 16;
 /// How long a client waits for the app to answer.

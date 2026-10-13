@@ -1,7 +1,9 @@
 //! The MCP server: rmcp over stdio (project spec 17.14). The [`Agent`]
 //! lives on its own thread (the session is single-owner); tool calls reach
-//! it over a channel and the async side awaits the answer.
+//! it over a channel and the async side awaits the answer. Connected to a
+//! desktop app, that thread forwards the calls to the app instead.
 
+use std::net::SocketAddr;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -19,7 +21,8 @@ use rmcp::{ErrorData as McpError, RoleServer, ServerHandler, ServiceExt};
 use serde_json::{Map, Value};
 use tokio::sync::oneshot;
 
-use crate::agent::{Agent, ToolOutput, tools};
+use crate::agent::{Agent, ToolInfo, ToolOutput, tools};
+use crate::connect::{Remote, ui_tools};
 use crate::docs;
 
 /// What the server tells clients when they connect.
@@ -27,6 +30,11 @@ pub const INSTRUCTIONS: &str = "pixel3d builds 3D game assets from typed ops and
 Read `docs` (topic quickstart) once. Loop: `expect add` tests from the request, `run` ops in one batch, read the problems \
 and test lines at the end of each answer, `perceive` or `describe` to look closer, `diagnose` for fixes with predicted results. \
 Units are meters (or strings like \"12mm\"), +Y is up, +Z is the front.";
+
+/// Added to [`INSTRUCTIONS`] when connected to the desktop app.
+const CONNECTED: &str = " You are connected to the pixel3d desktop app: the user sees every change live and may edit the scene \
+between your calls, so read it again before relying on an older answer. `ui_state`, `ui_command` and `ui_screenshot` read and \
+drive the app's interface.";
 
 type Request = (String, Value, oneshot::Sender<ToolOutput>);
 
@@ -37,28 +45,50 @@ pub enum ServeError {
     Runtime(std::io::Error),
     #[error("mcp: {0}")]
     Mcp(String),
+    #[error("cannot reach the desktop app at {addr}: {reason}; start it with `pixel3d --control {port}` or turn on File > Allow agents to connect", port = addr.port())]
+    Connect { addr: SocketAddr, reason: String },
 }
 
 /// The rmcp handler.
 pub struct Server {
     tx: mpsc::Sender<Request>,
     tools: Vec<Tool>,
+    connected: bool,
 }
 
 /// Tools that never change the scene (`query` does with `save_as`, `expect`
 /// with add and remove).
-const READ_ONLY: [&str; 7] = ["scene_overview", "describe", "perceive", "analyze", "list_ops", "describe_op", "docs"];
+const READ_ONLY: [&str; 9] = ["scene_overview", "describe", "perceive", "analyze", "list_ops", "describe_op", "docs", "ui_state", "ui_screenshot"];
 
 impl Server {
     /// Starts the session thread.
     pub fn new(session: Session) -> Result<Server, ServeError> {
+        let mut agent = Agent::new(session);
+        Self::start("pixel3d-session", tools(), false, move |tool, args| agent.call(tool, args))
+    }
+
+    /// Forwards every tool to the desktop app listening at `addr` and adds
+    /// the `ui_*` tools. Fails when nothing listens there.
+    pub fn connect(addr: SocketAddr) -> Result<Server, ServeError> {
+        let mut remote = Remote::connect(addr).map_err(|e| ServeError::Connect { addr, reason: e.to_string() })?;
+        let mut list = tools();
+        list.extend(ui_tools());
+        Self::start("pixel3d-connect", list, true, move |tool, args| remote.call(tool, args))
+    }
+
+    /// Starts the thread that answers tool calls with `answer`.
+    fn start(
+        thread: &str,
+        list: Vec<ToolInfo>,
+        connected: bool,
+        mut answer: impl FnMut(&str, Value) -> ToolOutput + Send + 'static,
+    ) -> Result<Server, ServeError> {
         let (tx, rx) = mpsc::channel::<Request>();
         std::thread::Builder::new()
-            .name("pixel3d-session".into())
+            .name(thread.into())
             .spawn(move || {
-                let mut agent = Agent::new(session);
                 while let Ok((tool, args, reply)) = rx.recv() {
-                    let out = catch_unwind(AssertUnwindSafe(|| agent.call(&tool, args))).unwrap_or_else(|_| {
+                    let out = catch_unwind(AssertUnwindSafe(|| answer(&tool, args))).unwrap_or_else(|_| {
                         ToolOutput::error(&OpError::internal(format!("tool {tool} failed unexpectedly; the scene is unchanged")))
                     });
                     // The client may have gone; nothing to do then.
@@ -66,7 +96,7 @@ impl Server {
                 }
             })
             .map_err(ServeError::Runtime)?;
-        let tools = tools()
+        let tools = list
             .into_iter()
             .map(|t| {
                 let schema = match t.schema {
@@ -77,7 +107,7 @@ impl Server {
                 Tool::new(t.name, t.description, Arc::new(schema)).with_annotations(ToolAnnotations::new().read_only(read_only).open_world(false))
             })
             .collect();
-        Ok(Server { tx, tools })
+        Ok(Server { tx, tools, connected })
     }
 
     /// Asks the session thread to run a tool.
@@ -103,7 +133,7 @@ impl ServerHandler for Server {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
             .with_server_info(Implementation::new("pixel3d", env!("CARGO_PKG_VERSION")))
-            .with_instructions(INSTRUCTIONS)
+            .with_instructions(if self.connected { format!("{INSTRUCTIONS}{CONNECTED}") } else { INSTRUCTIONS.to_owned() })
     }
 
     async fn list_tools(&self, _request: Option<PaginatedRequestParams>, _context: RequestContext<RoleServer>) -> Result<ListToolsResult, McpError> {
@@ -148,9 +178,19 @@ impl ServerHandler for Server {
 
 /// Serves MCP over stdin and stdout until the client disconnects.
 pub fn serve_stdio(session: Session) -> Result<(), ServeError> {
+    serve(|| Server::new(session))
+}
+
+/// Serves MCP over stdin and stdout with every tool acting on the desktop
+/// app at `addr` (`pixel3d-cli mcp --connect`).
+pub fn serve_connected_stdio(addr: SocketAddr) -> Result<(), ServeError> {
+    serve(|| Server::connect(addr))
+}
+
+fn serve(server: impl FnOnce() -> Result<Server, ServeError>) -> Result<(), ServeError> {
+    let server = server()?;
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().map_err(ServeError::Runtime)?;
     rt.block_on(async {
-        let server = Server::new(session)?;
         let running = server.serve(rmcp::transport::stdio()).await.map_err(|e| ServeError::Mcp(e.to_string()))?;
         running.waiting().await.map_err(|e| ServeError::Mcp(e.to_string()))?;
         Ok(())

@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 base64 = { workspace = true }
 glam = { workspace = true }
+p3d-control = { workspace = true }
 p3d-engine = { workspace = true }
 p3d-mesh = { workspace = true }
 p3d-ops = { workspace = true }

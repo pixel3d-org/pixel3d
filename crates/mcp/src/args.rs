@@ -298,3 +298,27 @@ pub struct RenderArgs {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub labels: Option<bool>,
 }
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UiScreenshotArgs {
+    /// Only the 3D viewport instead of the whole window.
+    #[serde(default)]
+    pub viewport_only: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UiStateArgs {}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UiCommandArgs {
+    /// Command id, for example `ui.mode`, `view.frame` or `file.save` (an
+    /// op id also works); omit it to list the commands.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// Command parameters, for example `{"mode": "face"}` for `ui.mode`.
+    #[serde(default)]
+    pub params: Value,
+}

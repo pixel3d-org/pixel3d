@@ -209,7 +209,7 @@ Acceptance:
 - [ ] UV Editor
 - [ ] Health, Bake and Export panels
 - [x] Workspaces (`docking::preset`: Model, UV, Bake, Rig, Animate and Export layouts with the UV Editor, Timeline, Bake and Export panels; switching keeps each workspace's own arrangement and saves it with the preferences, Reset panel layout restores the current preset; tested in `tests::workspaces_switch_layouts_and_keep_their_own` and the `workspace_uv_dark` snapshot. The UV, bake, rig, animation and export tools themselves arrive with their phases)
-- [ ] `pixel3d-cli mcp --connect` to watch agents live
+- [x] `pixel3d-cli mcp --connect` to watch agents live (`crates/mcp/src/connect.rs`: tools forward as `mcp.call` to the app, which runs the same `Agent` on its own session; `ui_state`, `ui_command` and `ui_screenshot` only when connected; reconnects after the app restarts, timeouts report `not-run` or `may-have-run`. Tested in `crates/mcp/tests/server.rs` (`connected_tools_act_on_the_app`, `connecting_to_nothing_explains_how_to_start_the_app`), `connect::tests` and `remote::tests::mcp_tools_run_on_the_app_scene`; checked by hand against the running app (objects appear live, selected, undoable))
 
 Acceptance:
 

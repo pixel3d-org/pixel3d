@@ -964,9 +964,13 @@ impl PixelApp {
             "app.control" => {
                 let on = params.get("on").and_then(Value::as_bool).unwrap_or(self.remote.addr().is_none());
                 if on {
-                    let port = params.get("port").and_then(Value::as_u64).unwrap_or(0);
-                    let port = u16::try_from(port).map_err(|_| t("port must be 0 to 65535"))?;
-                    self.start_control(port).map(|a| json!({ "control": a.to_string() }))
+                    // The default port lets `pixel3d-cli mcp --connect` find the
+                    // app; another free one when a second app holds it.
+                    let r = match params.get("port").and_then(Value::as_u64) {
+                        Some(port) => self.start_control(u16::try_from(port).map_err(|_| t("port must be 0 to 65535"))?),
+                        None => self.start_control(p3d_control::DEFAULT_PORT).or_else(|_| self.start_control(0)),
+                    };
+                    r.map(|a| json!({ "control": a.to_string() }))
                 } else {
                     self.stop_control();
                     Ok(json!({ "control": null }))

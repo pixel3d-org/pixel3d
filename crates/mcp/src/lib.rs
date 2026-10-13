@@ -5,13 +5,15 @@
 //! [`Agent`] is the agent surface without a transport: it owns the
 //! [`p3d_engine::Session`] and answers tool calls with compact text plus
 //! structured JSON (project spec 17.13 to 17.18). The MCP server runs the
-//! agent on its own thread and forwards tool calls to it.
+//! agent on its own thread and forwards tool calls to it, or forwards them
+//! to a running desktop app ([`connect`]).
 
 pub mod agent;
 pub mod args;
+pub mod connect;
 pub mod describe;
 pub mod docs;
 pub mod server;
 
 pub use agent::{Agent, ToolInfo, ToolOutput, tools};
-pub use server::{INSTRUCTIONS, ServeError, Server, serve_stdio};
+pub use server::{INSTRUCTIONS, ServeError, Server, serve_connected_stdio, serve_stdio};
