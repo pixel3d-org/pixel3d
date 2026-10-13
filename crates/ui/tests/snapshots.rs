@@ -127,3 +127,25 @@ fn import_warning_with_a_fix() {
     snapshot(&mut h, "import_light");
     let _ = std::fs::remove_dir_all(dir);
 }
+
+#[test]
+fn the_result_card_grows_to_show_new_warnings() {
+    // The card first shows a boolean's settings (closed), then an import
+    // with a warning: it must grow so the warning's Fix button is on screen.
+    let dir = std::env::temp_dir().join(format!("p3d-snapshot-grow-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let obj = "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n\
+               f 1 4 3 2\nf 1 2 6 5\nf 3 4 8 7\nf 1 5 8 4\nf 2 3 7 6\n";
+    std::fs::write(dir.join("bin.obj"), obj).unwrap();
+    let select = [("edit.select", json!({ "target": "barrel" })), ("edit.select", json!({ "target": "crate", "add": true }))];
+    let mut a = app(ThemePref::Dark, &select);
+    a.run("file.save", json!({ "path": dir.join("scene.p3d").display().to_string() })).unwrap();
+    a.run("selection.boolean", json!({ "operation": "union" })).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("io.import", json!({ "path": "bin.obj" })).unwrap();
+    h.run_steps(30);
+    let fix = p3d_ui::control::widgets(&h.ctx).into_iter().find(|w| w.label == "Fix: Clean up").expect("the Fix button is drawn");
+    let view = h.state().viewport.rect;
+    assert!(view.contains_rect(fix.rect), "the button {:?} is inside the viewport {view:?}", fix.rect);
+    let _ = std::fs::remove_dir_all(dir);
+}
