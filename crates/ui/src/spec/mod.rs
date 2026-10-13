@@ -742,10 +742,39 @@ impl PixelApp {
     }
 }
 
+/// Label rectangles already placed on screen, bucketed in square cells so
+/// a new label is only checked against its neighbours (placed labels do
+/// not overlap, so a cell holds a few at most).
+#[derive(Default)]
+struct Placed(BTreeMap<(i32, i32), Vec<egui::Rect>>);
+
+impl Placed {
+    const CELL: f32 = 64.0;
+
+    /// Complexity: O(cells the rectangle spans).
+    fn cells(r: egui::Rect) -> impl Iterator<Item = (i32, i32)> {
+        let c = |v: f32| (v / Self::CELL).floor() as i32;
+        let (x0, x1, y0, y1) = (c(r.left()), c(r.right()), c(r.top()), c(r.bottom()));
+        (x0..=x1).flat_map(move |x| (y0..=y1).map(move |y| (x, y)))
+    }
+
+    /// Complexity: O(labels in the cells the rectangle spans).
+    fn free(&self, r: egui::Rect) -> bool {
+        Self::cells(r).all(|c| self.0.get(&c).is_none_or(|v| v.iter().all(|o| !o.intersects(r))))
+    }
+
+    /// Complexity: O(cells the rectangle spans x log cells).
+    fn add(&mut self, r: egui::Rect) {
+        for c in Self::cells(r) {
+            self.0.entry(c).or_default().push(r);
+        }
+    }
+}
+
 /// The landmark overlay (View > Overlays > Landmarks, or while picking an
-/// anchor): labelled points with short ticks along their normals. A click
-/// on one while picking anchors the selected part there (and selects no
-/// object).
+/// anchor): points with short ticks along their normals, labelled where a
+/// label fits (the one under the pointer always). A click on one while
+/// picking anchors the selected part there (and selects no object).
 ///
 /// Complexity: O(landmarks) per frame; the landmarks are found once per
 /// document state.
@@ -758,25 +787,35 @@ pub fn overlay(app: &mut PixelApp, ui: &egui::Ui, events: &mut Vec<ViewportEvent
     let tk = Tokens::get();
     let vp = app.viewport.camera.view_proj(rect.width() / rect.height().max(1.0));
     let p = ui.painter_at(rect);
-    let pointer = ui.input(|i| i.pointer.hover_pos());
-    let near = |at: Pos2| pointer.is_some_and(|q| q.distance(at) <= 9.0);
+    let pointer = ui.input(|i| i.pointer.hover_pos()).filter(|q| rect.contains(*q));
     let color = if app.spec.picking { tk.accent } else { tk.axis_y };
-    let mut screen: Vec<(Pos2, &LandmarkPoint)> = Vec::with_capacity(points.len());
-    for l in points.iter() {
-        let Some(at) = project(vp, rect, l.point) else { continue };
-        // The tick: 16 points along the normal on screen.
+    let screen: Vec<(Pos2, &LandmarkPoint)> = points.iter().filter_map(|l| Some((project(vp, rect, l.point)?, l))).collect();
+    // The landmark under the pointer, if any.
+    let hot = pointer.and_then(|q| {
+        screen.iter().filter(|(s, _)| s.distance(q) <= 9.0).min_by(|a, b| a.0.distance(q).total_cmp(&b.0.distance(q))).map(|(s, _)| *s)
+    });
+    for (at, l) in &screen {
         if let Some(q) = project(vp, rect, l.point + l.normal * 0.01)
-            && q.distance(at) > 0.5
+            && q.distance(*at) > 0.5
         {
-            p.line_segment([at, at + (q - at).normalized() * 16.0], Stroke::new(1.5, color));
+            p.line_segment([*at, *at + (q - *at).normalized() * 16.0], Stroke::new(1.5, color));
         }
-        let hot = app.spec.picking && near(at);
-        p.circle(at, if hot { 5.5 } else { 4.0 }, color, Stroke::new(1.0, egui::Color32::from_black_alpha(170)));
+        let r = if Some(*at) == hot { 5.5 } else { 4.0 };
+        p.circle(*at, r, color, Stroke::new(1.0, egui::Color32::from_black_alpha(170)));
+    }
+    // Labels: the hot one first, then each where it fits beside its point.
+    let mut placed = Placed::default();
+    let mut order: Vec<&(Pos2, &LandmarkPoint)> = screen.iter().collect();
+    order.sort_by_key(|(s, _)| Some(*s) != hot);
+    for (at, l) in order {
         let g = p.layout_no_wrap(l.name.clone(), theme::small(), tk.text);
-        let label = egui::Rect::from_min_size(at + vec2(7.0, -g.size().y - 5.0), g.size() + vec2(8.0, 4.0));
-        p.rect_filled(label, 4.0, tk.popup.gamma_multiply(if hot { 1.0 } else { 0.85 }));
+        let size = g.size() + vec2(8.0, 4.0);
+        let spots = [vec2(7.0, -size.y - 3.0), vec2(7.0, 3.0), vec2(-size.x - 7.0, -size.y - 3.0), vec2(-size.x - 7.0, 3.0)];
+        let is_hot = Some(*at) == hot;
+        let Some(label) = spots.iter().map(|d| egui::Rect::from_min_size(*at + *d, size)).find(|r| is_hot || placed.free(*r)) else { continue };
+        placed.add(label);
+        p.rect_filled(label, 4.0, tk.popup.gamma_multiply(if is_hot { 1.0 } else { 0.85 }));
         p.galley(label.min + vec2(4.0, 2.0), g, tk.text);
-        screen.push((at, l));
     }
     if !app.spec.picking {
         return;

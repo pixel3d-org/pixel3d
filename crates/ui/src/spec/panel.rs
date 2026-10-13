@@ -93,14 +93,15 @@ fn normalize(kind: &Kind, x: &mut Value) {
     }
 }
 
-/// The values of `schema`'s properties in `src`, normalized for a form.
+/// The values of `schema`'s properties in `src` (or their defaults),
+/// normalized for a form.
 ///
 /// Complexity: O(properties).
 fn form_value(schema: &Value, root: &Value, src: &Value) -> Value {
     let mut out = Map::new();
     if let Some(props) = schema.get("properties").and_then(Value::as_object) {
         for (k, s) in props {
-            if let Some(v) = src.get(k) {
+            if let Some(v) = src.get(k).or_else(|| s.get("default")) {
                 let mut v = v.clone();
                 normalize(&schema_form::kind_of(s, root), &mut v);
                 out.insert(k.clone(), v);
