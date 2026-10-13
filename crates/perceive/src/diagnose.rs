@@ -150,8 +150,9 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
     let m = part.mesh;
     let topo = part.topology();
     let flat = part.size().min_element() < 1e-3_f32.max(0.01 * part.size().max_element());
-    // Strands (hair cards, clumps, shells) are open, crossing and thin by design.
-    let strands = view.doc.object(part.key).is_some_and(|o| o.tags.iter().any(|t| t == "strands"));
+    // Strands (hair cards, clumps, shells) and vegetation (leaf cards,
+    // overlapping branch tubes) are open, crossing and thin by design.
+    let strands = view.doc.object(part.key).is_some_and(|o| o.tags.iter().any(|t| t == "strands" || t == "vegetation"));
     let draft = |code, severity, at, message: String| Draft {
         code,
         severity,

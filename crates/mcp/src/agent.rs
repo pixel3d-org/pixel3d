@@ -100,7 +100,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "perceive",
-            description: "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief or dna, as compact text.",
+            description: "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief, dna or vegetation, as compact text.",
             schema: schema::<PerceiveArgs>(),
         },
         ToolInfo {
@@ -461,6 +461,7 @@ impl Agent {
                         })?
                     }
                     Aspect::Visibility => p3d_perceive::visibility::report(&view),
+                    Aspect::Vegetation => p3d_perceive::vegetation::report(&view),
                     Aspect::Dna => {
                         let genes = a
                             .dna

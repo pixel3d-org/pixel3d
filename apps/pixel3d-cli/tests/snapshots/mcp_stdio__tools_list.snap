@@ -145,7 +145,7 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": true
         },
-        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief or dna, as compact text.",
+        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief, dna or vegetation, as compact text.",
         "inputSchema": {
           "$defs": {
             "Aspect": {
@@ -203,6 +203,11 @@ expression: tools
                 {
                   "const": "dna",
                   "description": "Visual DNA: form genes measured against the spec's `dna` (or `dna` given here) and the art-direction critique.",
+                  "type": "string"
+                },
+                {
+                  "const": "vegetation",
+                  "description": "Trees and plants: crown size and proportions, fork and trunk, cards, silhouette coverage and gaps, overdraw, trunk visibility.",
                   "type": "string"
                 }
               ]
