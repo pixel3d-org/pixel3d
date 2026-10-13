@@ -33,6 +33,8 @@ proptest! {
         prop_assert_eq!(m.validate(), Ok(()));
         prop_assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "{:?}", r);
         prop_assert!(m.faces().all(|f| m.face_len(f) == 4), "{:?}", r);
+        // No pole above valence 6, and none of valence 2.
+        prop_assert!(r.poles[3] == 0 && r.valence_two == 0, "{:?}", r);
         let mean = m.edges().map(|e| {
             let [a, b] = m.edge_verts(e);
             m.positions[a as usize].distance(m.positions[b as usize])

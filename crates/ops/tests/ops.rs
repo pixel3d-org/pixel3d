@@ -1111,6 +1111,20 @@ fn remesh_quad_turns_a_torus_into_even_quads() {
 }
 
 #[test]
+fn remesh_quad_leaves_no_high_poles_on_a_sculpted_head() {
+    let mut tx = Tx::new(Document::new());
+    let head: Value = serde_json::from_str(include_str!("../../../docs/agents/examples/sdf_head.json")).unwrap();
+    let args = head["calls"][0]["args"]["ops"][0]["args"].clone();
+    ok(&mut tx, "sdf.mesh", args);
+    let name = head["calls"][0]["args"]["ops"][0]["args"]["name"].as_str().unwrap().to_owned();
+    let s = ok(&mut tx, "remesh.quad", json!({ "target": name, "edge": "6mm" }));
+    assert!(s.contains("0 of 7 or more") && !s.contains("of 2"), "{s}");
+    let m = tx.doc().object_mesh(tx.resolve(&name, "/t").unwrap()).unwrap();
+    assert!(m.faces().all(|f| m.face_len(f) == 4), "quads only");
+    assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "closed");
+}
+
+#[test]
 fn remesh_quad_refuses_open_meshes() {
     let mut tx = Tx::new(Document::new());
     ok(&mut tx, "prim.plane", json!({ "name": "floor" }));

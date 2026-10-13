@@ -9,7 +9,7 @@ Rebuilds a closed mesh as all quads with even edges that follow a smooth directi
 - Flags: undoable, long_running
 - Also known as: quad remesh, quadriflow, instant meshes, retopology, retopo, zremesher, autoretopo
 
-Field-aligned quad remeshing (Instant Meshes, Jakob et al. 2015): a smooth direction field and a lattice of points about `edge` apart are solved on the surface, quads are extracted from the lattice and subdivided once, so every face is a quad and poles sit where the field needs them. The new vertices are relaxed onto the old surface; face groups and materials carry over by the nearest old face. UVs, creases and edge groups do not.
+Field-aligned quad remeshing (Instant Meshes, Jakob et al. 2015): a smooth direction field and a lattice of points about `edge` apart are solved on the surface, quads are extracted from the lattice and subdivided once, so every face is a quad. Before subdividing, local edits (merging triangle pairs, turning edges, splitting vertices of valence 6 or more and big faces) lower the poles, so none has valence 2 or above 6. The new vertices are relaxed onto the old surface; face groups and materials carry over by the nearest old face. UVs, creases and edge groups do not.
 
 **Use for** turning `sdf.mesh` results, boolean-heavy blockouts and scans into clean, even quads before UVs, subdivision or rigging. Hard edges round off: remesh organic parts, model hard-surface parts directly.
 
@@ -28,4 +28,4 @@ Field-aligned quad remeshing (Instant Meshes, Jakob et al. 2015): a smooth direc
 {"edge":"8mm","target":"post"}
 ```
 
-Result: `post (o:3): remeshed into 5,352 quads (5,352 faces, edge 8 mm); poles 271 of valence 3, 218 of 5, 49 of 6, 43 of 7 or more`
+Result: `post (o:3): remeshed into 5,196 quads (5,196 faces, edge 8 mm); poles 150 of valence 3, 142 of 5, 0 of 6, 0 of 7 or more`

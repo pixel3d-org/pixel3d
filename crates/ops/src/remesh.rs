@@ -96,14 +96,15 @@ impl Op for QuadRemesh {
             summary: "Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field.",
             docs: "Field-aligned quad remeshing (Instant Meshes, Jakob et al. 2015): a smooth direction field and a lattice of \
                    points about `edge` apart are solved on the surface, quads are extracted from the lattice and subdivided \
-                   once, so every face is a quad and poles sit where the field needs them. The new vertices are relaxed onto \
+                   once, so every face is a quad. Before subdividing, local edits (merging triangle pairs, turning edges, splitting \
+                   vertices of valence 6 or more and big faces) lower the poles, so none has valence 2 or above 6. The new vertices are relaxed onto \
                    the old surface; face groups and materials carry over by the nearest old face. UVs, creases and edge groups \
                    do not.\n\n\
                    **Use for** turning `sdf.mesh` results, boolean-heavy blockouts and scans into clean, even quads before \
                    UVs, subdivision or rigging. Hard edges round off: remesh organic parts, model hard-surface parts directly.",
             examples: &[OpExample {
                 args: r#"{"target": "post", "edge": "8mm"}"#,
-                result: "post (o:3): remeshed into 5,352 quads (5,352 faces, edge 8 mm); poles 271 of valence 3, 218 of 5, 49 of 6, 43 of 7 or more",
+                result: "post (o:3): remeshed into 5,196 quads (5,196 faces, edge 8 mm); poles 150 of valence 3, 142 of 5, 0 of 6, 0 of 7 or more",
             }],
             aliases: &["quad remesh", "quadriflow", "instant meshes", "retopology", "retopo", "zremesher", "autoretopo"],
             complexity: "O(S x iterations) for the S samples (about area / (edge / 1.25)^2), plus O(S log S) for the hierarchy",
@@ -157,8 +158,9 @@ impl Op for QuadRemesh {
         ctx.check_cancel()?;
         let faces = mesh.face_count();
         *tx.mesh_mut(key, "/target")? = mesh;
+        let two = if r.valence_two > 0 { format!(", {} of 2", thousands(r.valence_two)) } else { String::new() };
         let mut out = OpOutput::summary(format!(
-            "{}: remeshed into {} quads ({} faces, edge {} mm); poles {} of valence 3, {} of 5, {} of 6, {} of 7 or more",
+            "{}: remeshed into {} quads ({} faces, edge {} mm); poles {} of valence 3, {} of 5, {} of 6, {} of 7 or more{two}",
             label(tx.doc(), key),
             thousands(r.quads),
             thousands(faces),

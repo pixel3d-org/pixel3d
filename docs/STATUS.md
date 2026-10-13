@@ -101,7 +101,7 @@ Acceptance:
 - [ ] `spec`: joins `separate`, `blend`, `weld`, `decal`; mirror and instance; edit layers
 - [ ] `spec`: incremental compile to the op graph, provenance
 - [x] `sdf`: SDF trees, narrow-band surface nets (`crates/sdf`: sphere, ellipsoid, rounded box, tapered capsule, cone, torus, cylinder and groups joined by hard or smooth union, subtract and intersect, with round, shell, twist, bend, seeded noise and part-space mirror; octree culling on the Lipschitz bound with missed blocks recovered through the quads that need them; one vertex per surface piece per voxel (asymptotic decider) so thin walls stay manifold, refinement where walls are thinner than a voxel, sub-voxel specks dropped; faces grouped by shape; random trees mesh closed at 10,000 cases; slope 0.96, 64k triangles in 32 ms. Op `sdf.mesh`; `target` rebuilds an object in place so its history holds the shapes, `hidden` shapes stay in the list and keep the others' group names)
-- [ ] `remesh`: isotropic, then field-aligned quads with category topology rules (field-aligned quads done in `crates/remesh`: multi-resolution 4-RoSy orientation and position fields solved by graph-colored parallel Gauss-Seidel, extraction by error-sorted cluster merge at twice the edge then one Catmull-Clark step so every face is a quad, holes closed, flat pieces dropped, tangential relax onto the source; anisotropic inputs are first resampled through a mesh distance field; slope 0.71, 16k target in 323 ms. Ops `remesh.quad` and `sdf.from_mesh` (voxel remesh). Open: isotropic triangles, category topology rules, and pole quality: a torus still gets about 7 poles of valence 7 or more)
+- [ ] `remesh`: isotropic, then field-aligned quads with category topology rules (field-aligned quads done in `crates/remesh`: multi-resolution 4-RoSy orientation and position fields solved by graph-colored parallel Gauss-Seidel, extraction by error-sorted cluster merge at twice the edge then one Catmull-Clark step so every face is a quad, holes closed, flat pieces dropped, tangential relax onto the source; before subdividing, a pole cleanup (`crates/remesh/src/poles.rs`) lowers the energy sum (n - 4)^2 over face sizes and valences with greedy disjoint local edits: face merges, edge turns, chords, valence-2 dissolves, vertex splits and quad pokes of faces above six corners (torus poles 106 to 48, none above valence 5; 800 random solids with no pole of valence 2 or above 6); anisotropic inputs are first resampled through a mesh distance field; slope 0.76, 16k target in 323 ms. Ops `remesh.quad` and `sdf.from_mesh` (voxel remesh). Open: isotropic triangles and category topology rules)
 - [ ] Shape kinds `silhouettes` and `shell`; deform handles
 - [ ] Perception `proportions`, `visibility`, `brief`
 - [ ] Expectations from briefs and categories
@@ -113,7 +113,7 @@ Acceptance:
 - [ ] The elf head blockout compiles from a spec
 - [ ] A one-part patch recompiles in < 100 ms
 - [ ] Every face has provenance
-- [ ] Remeshed SDF parts reach >= 95% quads with no poles above valence 6 outside designed spots
+- [x] Remeshed SDF parts reach >= 95% quads with no poles above valence 6 outside designed spots (100% quads; `remesh_quad_leaves_no_high_poles_on_a_sculpted_head` remeshes the sculpted head example, and the remesh property test checks 800 random solids)
 
 ## Phase 3c: Feature library, strands, full diagnostics
 

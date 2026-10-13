@@ -47,6 +47,8 @@ pub struct QuadReport {
     pub other: usize,
     /// Vertices whose valence is not 4 (poles): valence 3, 5, 6 and 7 or more.
     pub poles: [usize; 4],
+    /// Vertices with only two edges (two faces folded over each other).
+    pub valence_two: usize,
     /// Vertices of the dense sampling the fields were solved on.
     pub samples: usize,
 }
@@ -355,6 +357,7 @@ pub fn quad_remesh(mesh: &Mesh, spec: &QuadSpec) -> Result<(Mesh, QuadReport), R
     // Degenerate and repeated faces of the walk go before subdividing.
     let tidy = p3d_geo::cleanup::CleanupSpec { weld: scale * 0.05, ..p3d_geo::cleanup::CleanupSpec::default() };
     p3d_geo::cleanup::cleanup(&mut coarse, &tidy);
+    crate::poles::reduce_poles(&mut coarse, 64);
     relax(&mut coarse, &bvh, spec.relax);
     let subd = SubdSpec { levels: 1, keep_corners: true, sharp_as_crease: false };
     let mut out = catmull_clark(&coarse, &subd).map_err(|e| RemeshError::Build(e.to_string()))?;
@@ -490,6 +493,7 @@ fn report(mesh: &Mesh, samples: usize) -> QuadReport {
         let open = mesh.vert_outgoing(v).any(|h| mesh.face(h).is_none() || mesh.face(h ^ 1).is_none());
         match mesh.valence(v) {
             _ if open => {}
+            0..=2 => r.valence_two += 1,
             3 => r.poles[0] += 1,
             4 => {}
             5 => r.poles[1] += 1,

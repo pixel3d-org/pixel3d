@@ -6,3 +6,7 @@
 # everyone who runs the test benefits from these saved cases.
 cc dd91c32c9388b57ca8510345d20081eb1b674bc242cc42e0abfc9a81e442e9f9 # shrinks to kind = 3, size = 0.3, ratio = 21.888798, seed = 0
 cc 438c35a0e811c5fd2b50be7b733c68d31cea681dcfb9b03d2b7af7a3397ca390 # shrinks to kind = 3, size = 1.3229233075512412, ratio = 23.037477, seed = 19
+cc 7d8b50957ad16efdbf263742b800f373bf10106a13dfe7168063ce1078055350 # shrinks to kind = 1, size = 1.756174440647163, ratio = 26.857288, seed = 371
+cc 6fd5d7f74c06a4d523e63c2da140f01732b12ff74012d90314b3f8a804128213 # shrinks to kind = 3, size = 1.844093029925256, ratio = 22.09562, seed = 931
+cc 1a82a401ee340ce0285a2654c9784d4c2034713c382b429f99c3048ae7641b76 # shrinks to kind = 3, size = 1.4857155477330781, ratio = 26.859407, seed = 571
+cc 0a17bff1262a251ec61c8ec1f2eaea2d4a9b0e7b833fb930472447787bc9c10e # shrinks to kind = 1, size = 1.3103261614021553, ratio = 29.120203, seed = 71
