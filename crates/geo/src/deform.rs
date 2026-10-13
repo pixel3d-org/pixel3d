@@ -1,4 +1,5 @@
-//! Deformers: bend, twist, taper and noise displacement of vertex positions.
+//! Deformers: bend, twist, taper, noise displacement and handles (move
+//! points, pin others, smooth falloff over the surface).
 //!
 //! Bend, twist and taper progress along an axis through the object origin:
 //! `t` runs from 0 at the lowest affected vertex along the axis to 1 at the
@@ -253,6 +254,206 @@ pub fn displace(mesh: &mut Mesh, verts: &[u32], spec: &DisplaceSpec) -> Result<u
     Ok(vs.len())
 }
 
+// ---- handles ---------------------------------------------------------------------
+
+/// Most handles and pins together (the solve is dense in them).
+pub const MAX_HANDLES: usize = 64;
+
+/// Handle deformation: points moved by offsets, pins held still, the rest
+/// following with a smooth falloff over the surface.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HandleSpec {
+    /// (point, offset) in the mesh's space; each snaps to its nearest vertex.
+    pub moves: Vec<(Vec3, Vec3)>,
+    /// Points that must not move.
+    pub pins: Vec<Vec3>,
+    /// Reach of each handle along the surface.
+    pub radius: f32,
+}
+
+/// What a handle deformation did.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct HandleReport {
+    pub moved: usize,
+    /// Largest vertex displacement.
+    pub largest: f32,
+}
+
+/// Wendland's C2 kernel: 1 at 0, smoothly 0 at and beyond `r = 1`.
+#[inline]
+fn wendland(r: f32) -> f32 {
+    if r >= 1.0 {
+        0.0
+    } else {
+        let s = 1.0 - r;
+        s * s * s * s * (4.0 * r + 1.0)
+    }
+}
+
+/// Geodesic distances from `start` along mesh edges, up to `limit`
+/// (Dijkstra); vertices further away or unreachable are left out.
+///
+/// Complexity: O(k log k) for the k vertices within `limit`.
+fn geodesic(mesh: &Mesh, start: u32, limit: f32) -> Vec<(u32, f32)> {
+    use std::cmp::Ordering;
+    use std::collections::BinaryHeap;
+    #[derive(PartialEq)]
+    struct Item(f32, u32);
+    impl Eq for Item {}
+    impl PartialOrd for Item {
+        fn partial_cmp(&self, o: &Self) -> Option<Ordering> {
+            Some(self.cmp(o))
+        }
+    }
+    impl Ord for Item {
+        fn cmp(&self, o: &Self) -> Ordering {
+            // A min-heap on distance, ties by vertex for determinism.
+            o.0.total_cmp(&self.0).then(o.1.cmp(&self.1))
+        }
+    }
+    let mut dist: rustc_hash::FxHashMap<u32, f32> = rustc_hash::FxHashMap::default();
+    let mut heap = BinaryHeap::new();
+    dist.insert(start, 0.0);
+    heap.push(Item(0.0, start));
+    let mut out = Vec::new();
+    while let Some(Item(d, v)) = heap.pop() {
+        if dist.get(&v).is_some_and(|&b| d > b) {
+            continue;
+        }
+        out.push((v, d));
+        let p = mesh.positions[v as usize];
+        for w in mesh.vert_neighbors(v) {
+            let nd = d + p.distance(mesh.positions[w as usize]);
+            if nd < limit && dist.get(&w).is_none_or(|&b| nd < b) {
+                dist.insert(w, nd);
+                heap.push(Item(nd, w));
+            }
+        }
+    }
+    out.sort_unstable_by_key(|&(v, _)| v);
+    out
+}
+
+/// Solves `a x = b` for small dense systems (Gaussian elimination with
+/// partial pivoting) for three right-hand sides at once.
+///
+/// Complexity: O(n^3) for n at most [`MAX_HANDLES`].
+fn solve(mut a: Vec<Vec<f64>>, mut b: Vec<[f64; 3]>) -> Option<Vec<[f64; 3]>> {
+    let n = a.len();
+    for c in 0..n {
+        let p = (c..n).max_by(|&i, &j| a[i][c].abs().total_cmp(&a[j][c].abs()))?;
+        if a[p][c].abs() < 1e-12 {
+            return None;
+        }
+        a.swap(c, p);
+        b.swap(c, p);
+        let (pivot_row, pivot_b) = (a[c].clone(), b[c]);
+        for (row, rb) in a.iter_mut().zip(b.iter_mut()).skip(c + 1) {
+            let f = row[c] / pivot_row[c];
+            for (x, p) in row.iter_mut().zip(&pivot_row).skip(c) {
+                *x -= f * p;
+            }
+            for (x, p) in rb.iter_mut().zip(&pivot_b) {
+                *x -= f * p;
+            }
+        }
+    }
+    let mut x = vec![[0.0f64; 3]; n];
+    for r in (0..n).rev() {
+        for k in 0..3 {
+            let s: f64 = (r + 1..n).map(|j| a[r][j] * x[j][k]).sum();
+            x[r][k] = (b[r][k] - s) / a[r][r];
+        }
+    }
+    Some(x)
+}
+
+/// Moves each handle point by its offset and keeps pins still; other
+/// vertices follow by compactly supported radial basis functions over
+/// geodesic distance, so the change stays on the surface near the handles
+/// and never reaches geometry that is not connected to them.
+///
+/// Complexity: O(V) to snap points to vertices, O(h x k log k) for the
+/// geodesic fields (k vertices within the radius), O(h^3) for the solve
+/// (h handles and pins, at most [`MAX_HANDLES`]).
+pub fn handles(mesh: &mut Mesh, spec: &HandleSpec) -> Result<HandleReport, KernelError> {
+    let h = spec.moves.len() + spec.pins.len();
+    if spec.moves.is_empty() {
+        return Err(KernelError::Empty("give at least one handle to move".into()));
+    }
+    if h > MAX_HANDLES {
+        return Err(KernelError::OutOfRange {
+            param: "handles",
+            message: format!("{h} handles and pins; at most {MAX_HANDLES}"),
+            hint: "merge nearby handles".into(),
+        });
+    }
+    if !(spec.radius.is_finite() && spec.radius > 0.0) {
+        return Err(KernelError::OutOfRange { param: "radius", message: "the radius must be positive".into(), hint: String::new() });
+    }
+    let verts: Vec<u32> = mesh.verts().collect();
+    if verts.is_empty() {
+        return Err(KernelError::Empty("the mesh has no vertices".into()));
+    }
+    let snap = |p: Vec3| -> u32 {
+        verts
+            .iter()
+            .copied()
+            .min_by(|&a, &b| mesh.positions[a as usize].distance_squared(p).total_cmp(&mesh.positions[b as usize].distance_squared(p)))
+            .unwrap_or(0)
+    };
+    let centers: Vec<u32> = spec.moves.iter().map(|m| snap(m.0)).chain(spec.pins.iter().map(|&p| snap(p))).collect();
+    let mut sorted = centers.clone();
+    sorted.sort_unstable();
+    if sorted.windows(2).any(|w| w[0] == w[1]) {
+        return Err(KernelError::OutOfRange {
+            param: "handles",
+            message: "two handles or pins land on the same vertex".into(),
+            hint: "move them apart or remove one".into(),
+        });
+    }
+    let fields: Vec<Vec<(u32, f32)>> = centers.iter().map(|&c| geodesic(mesh, c, spec.radius)).collect();
+    let phi = |d: f32| f64::from(wendland(d / spec.radius));
+    let a: Vec<Vec<f64>> = (0..h)
+        .map(|i| {
+            (0..h)
+                .map(|j| {
+                    let d = fields[i].binary_search_by_key(&centers[j], |&(v, _)| v).ok().map(|k| fields[i][k].1);
+                    d.map_or(0.0, phi) + if i == j { 1e-9 } else { 0.0 }
+                })
+                .collect()
+        })
+        .collect();
+    let b: Vec<[f64; 3]> =
+        spec.moves.iter().map(|m| [f64::from(m.1.x), f64::from(m.1.y), f64::from(m.1.z)]).chain(spec.pins.iter().map(|_| [0.0; 3])).collect();
+    let w = solve(a, b).ok_or_else(|| KernelError::OutOfRange {
+        param: "handles",
+        message: "the handles and pins cannot all be met".into(),
+        hint: "move pins away from handles or use a smaller radius".into(),
+    })?;
+    let mut disp: rustc_hash::FxHashMap<u32, Vec3> = rustc_hash::FxHashMap::default();
+    for (field, wi) in fields.iter().zip(&w) {
+        let wv = Vec3::new(wi[0] as f32, wi[1] as f32, wi[2] as f32);
+        for &(v, d) in field {
+            *disp.entry(v).or_insert(Vec3::ZERO) += wv * wendland(d / spec.radius);
+        }
+    }
+    let mut largest = 0.0f32;
+    let mut moved = 0;
+    let mut keys: Vec<u32> = disp.keys().copied().collect();
+    keys.sort_unstable();
+    for v in keys {
+        let d = disp[&v];
+        if d.length() > 1e-9 {
+            mesh.positions[v as usize] += d;
+            largest = largest.max(d.length());
+            moved += 1;
+        }
+    }
+    mesh.revision += 1;
+    Ok(HandleReport { moved, largest })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -330,5 +531,48 @@ mod tests {
             assert!((n - near).abs() < 0.01);
         }
         assert!(max <= 1.0 && max > 0.3, "{max}");
+    }
+
+    #[test]
+    fn handles_move_the_tip_and_keep_the_pins() {
+        // A tall, segmented box: pull the top up, pin the bottom.
+        let mut m = crate::prim::cuboid(
+            &crate::prim::BoxSpec { size: glam::DVec3::new(0.1, 1.0, 0.1), segments: [2, 20, 2], ..Default::default() },
+            Origin::Bottom,
+        )
+        .unwrap();
+        let top = Vec3::new(0.0, 1.0, 0.0);
+        let bottom = Vec3::new(0.0, 0.0, 0.0);
+        let before = m.positions.clone();
+        let r = handles(&mut m, &HandleSpec { moves: vec![(top, Vec3::new(0.0, 0.0, 0.2))], pins: vec![bottom], radius: 1.2 }).unwrap();
+        assert!(r.moved > 10 && (r.largest - 0.2).abs() < 0.02, "{r:?}");
+        let near = |p: Vec3| m.verts().min_by(|&a, &b| before[a as usize].distance(p).total_cmp(&before[b as usize].distance(p))).unwrap();
+        let (t, b) = (near(top), near(bottom));
+        assert!((m.positions[t as usize] - before[t as usize] - Vec3::new(0.0, 0.0, 0.2)).length() < 1e-3);
+        assert!((m.positions[b as usize] - before[b as usize]).length() < 1e-3);
+        // The middle moves part of the way: a smooth falloff.
+        let mid = near(Vec3::new(0.05, 0.5, 0.05));
+        let dz = m.positions[mid as usize].z - before[mid as usize].z;
+        assert!(dz > 0.01 && dz < 0.19, "{dz}");
+        assert_eq!(m.validate(), Ok(()));
+    }
+
+    #[test]
+    fn handles_do_not_reach_disconnected_pieces_or_beyond_the_radius() {
+        let a =
+            crate::prim::cuboid(&crate::prim::BoxSpec { size: glam::DVec3::splat(0.2), segments: [4, 4, 4], ..Default::default() }, Origin::Center)
+                .unwrap();
+        let mut m = a.clone();
+        let mut b = a.clone();
+        b.transform(glam::Affine3A::from_translation(Vec3::new(0.21, 0.0, 0.0)));
+        m.append(&b);
+        let before = m.positions.clone();
+        handles(&mut m, &HandleSpec { moves: vec![(Vec3::new(0.1, 0.0, 0.0), Vec3::new(0.05, 0.0, 0.0))], pins: vec![], radius: 0.15 }).unwrap();
+        let moved_other =
+            m.verts().filter(|&v| before[v as usize].x > 0.105 && (m.positions[v as usize] - before[v as usize]).length() > 1e-9).count();
+        assert_eq!(moved_other, 0, "the other box is not connected");
+        assert!(handles(&mut m, &HandleSpec { moves: vec![], pins: vec![], radius: 0.1 }).is_err());
+        let p = Vec3::new(0.1, 0.0, 0.0);
+        assert!(handles(&mut m, &HandleSpec { moves: vec![(p, Vec3::X)], pins: vec![p], radius: 0.1 }).is_err(), "same vertex");
     }
 }

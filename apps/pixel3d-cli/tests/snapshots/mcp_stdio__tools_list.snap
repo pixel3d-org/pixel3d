@@ -1199,6 +1199,94 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": false
         },
+        "description": "Sculpt by numbers: move named points (landmarks, shapes, groups) or coordinates by offsets with pins held; spec parts keep the handles across recompiles.",
+        "inputSchema": {
+          "$defs": {
+            "DeformHandleArg": {
+              "additionalProperties": false,
+              "description": "One handle of the `deform` tool.",
+              "properties": {
+                "by": {
+                  "description": "How far it moves.",
+                  "items": {
+                    "$ref": "#/$defs/Length"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": "array"
+                },
+                "move": {
+                  "description": "What to grab: a name (a landmark such as `tip` or `top`, an SDF shape or a face group) or coordinates."
+                }
+              },
+              "required": [
+                "move",
+                "by"
+              ],
+              "type": "object"
+            },
+            "Length": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\s*[-+]?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?\\s*(mm|cm|dm|m|km|in|ft)?\\s*$",
+                  "type": "string"
+                }
+              ],
+              "description": "Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. \"30cm\"."
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "handles": {
+              "items": {
+                "$ref": "#/$defs/DeformHandleArg"
+              },
+              "type": "array"
+            },
+            "pins": {
+              "description": "Points that stay put (names or coordinates).",
+              "items": true,
+              "type": "array"
+            },
+            "radius": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Length"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Reach along the surface; 40% of the part's diagonal when omitted."
+            },
+            "replace": {
+              "default": false,
+              "description": "Spec parts: replace the part's earlier handles instead of adding to them.",
+              "type": "boolean"
+            },
+            "target": {
+              "description": "A spec part (`elf_head/ear_l`; kept in the spec, so recompiles keep it) or any mesh object.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target",
+            "handles"
+          ],
+          "title": "DeformArgs",
+          "type": "object"
+        },
+        "name": "deform"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
         "description": "Count and locate mesh elements picked by a selector (groups, normals, boundaries, boxes); optionally save them as a group.",
         "inputSchema": {
           "$defs": {
@@ -1723,6 +1811,78 @@ expression: tools
         "description": "Undo, redo, checkpoints, revert and diffs between states.",
         "inputSchema": {
           "$defs": {
+            "BisectTest": {
+              "description": "What `history bisect` looks for.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "An expectation failing, by name: `{\"expect\": \"E2\"}`.",
+                  "properties": {
+                    "expect": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "expect"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A diagnostics finding: `{\"finding\": {\"code\": \"PENETRATION\", \"part\": \"ear_l\"}}`.",
+                  "properties": {
+                    "finding": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "part": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "finding"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A brief item failing: `{\"brief\": {\"name\": \"elf\", \"item\": \"ear length\"}}`.",
+                  "properties": {
+                    "brief": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "item": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "item"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "brief"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
             "HistoryAction": {
               "oneOf": [
                 {
@@ -1751,6 +1911,11 @@ expression: tools
                   "const": "diff",
                   "description": "What changed between two states (`from`, `to`).",
                   "type": "string"
+                },
+                {
+                  "const": "bisect",
+                  "description": "Find the transaction that made `test` fail (binary search over the history).",
+                  "type": "string"
                 }
               ]
             }
@@ -1761,7 +1926,7 @@ expression: tools
             "action": {
               "$ref": "#/$defs/HistoryAction",
               "default": "list",
-              "description": "`list` (default), `undo`, `redo`, `checkpoint`, `revert` or `diff`."
+              "description": "`list` (default), `undo`, `redo`, `checkpoint`, `revert`, `diff` or `bisect`."
             },
             "from": {
               "description": "`diff` base: a revision number or a checkpoint name; the previous revision by default.",
@@ -1792,6 +1957,17 @@ expression: tools
                 "string",
                 "null"
               ]
+            },
+            "test": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BisectTest"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`bisect`: the test that fails now."
             },
             "to": {
               "description": "`diff` end: a revision number or a checkpoint name; the current state by default.",

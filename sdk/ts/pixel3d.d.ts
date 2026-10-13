@@ -212,6 +212,14 @@ export type Filter = {
   sharper_than_deg?: number | null;
 };
 
+/** One handle: where, and by how much. */
+export type HandleParam = {
+  /** The point to grab (the nearest vertex moves exactly). */
+  at: PointParam;
+  /** How far it moves. */
+  by: [Length, Length, Length];
+};
+
 /** How several faces are inset. */
 export type InsetModeParam = "region" | "individual";
 
@@ -295,6 +303,9 @@ export type PlaneAdvanced = {
 
 /** The plane a flat curve is drawn in. */
 export type PlaneParam = "xy" | "xz" | "yz";
+
+/** A point: coordinates, or a group whose center is taken. */
+export type PointParam = [Length, Length, Length] | string;
 
 /** A profile: a preset name, points [radius, height] from bottom to top (either order works), or {"curve": "<curve object>"} whose X is the radius and Y the height. */
 export type Profile = ProfilePreset | [Length, Length][] | {
@@ -411,6 +422,9 @@ export type SmoothAdvanced = {
   /** Keep vertices on sharp edges in place. */
   pin_sharp?: boolean;
 };
+
+/** Space of handle coordinates. */
+export type SpaceParam = "world" | "local";
 
 /** A sphere around `at`. */
 export type SpherePrim = {
@@ -1731,6 +1745,20 @@ export type DeformDisplaceParams = {
   target: string;
 };
 
+/** `deform.handles`: Moves points by offsets and pins others; the surface follows smoothly (sculpting by numbers: pull the tip up 1 cm). */
+export type DeformHandlesParams = {
+  /** Points to move, each by its offset. */
+  handles: HandleParam[];
+  /** Points that stay where they are. */
+  pins?: PointParam[];
+  /** How far along the surface a handle reaches; 40% of the mesh's diagonal when omitted. */
+  radius?: Length | null;
+  /** Space of point coordinates and offsets. */
+  space?: SpaceParam;
+  /** Mesh object (name, path or id). */
+  target: string;
+};
+
 /** `cleanup.auto`: Makes a mesh clean in one call: welds seams, collapses degenerate faces, removes specks and hidden parts, fills small holes, joins flat triangles into quads and turns parts outward. */
 export type CleanupAutoParams = {
   /** Collapse faces with no area (their tiny edge folds away). */
@@ -1921,6 +1949,7 @@ export interface OpParams {
   "deform.twist": DeformTwistParams;
   "deform.taper": DeformTaperParams;
   "deform.displace": DeformDisplaceParams;
+  "deform.handles": DeformHandlesParams;
   "cleanup.auto": CleanupAutoParams;
   "cleanup.report": CleanupReportParams;
   "expect.add": ExpectAddParams;

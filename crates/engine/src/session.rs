@@ -427,3 +427,48 @@ pub enum JobStatus {
     Done(BatchResult),
     Failed(BatchError),
 }
+
+/// Where a problem first appeared in the undo history.
+#[derive(Debug, Clone)]
+pub enum Bisected {
+    /// The test passes now: nothing to look for.
+    NotNow,
+    /// It already failed in the oldest state still in the history.
+    AlwaysBad { oldest: u64 },
+    /// The transaction that took the document from `before` (passing) to
+    /// `after` (failing).
+    Found { label: String, before: Arc<Document>, after: Arc<Document>, checks: usize },
+}
+
+impl Session {
+    /// Binary search over the undo history for the transaction that made
+    /// `bad` true, assuming it stays true once it is (a regression).
+    ///
+    /// Complexity: O(log states) calls of `bad`, plus O(undo steps).
+    pub fn bisect(&self, bad: impl Fn(&Document) -> bool) -> Bisected {
+        // States in order: before each undo step, then the current document.
+        let states: Vec<&Arc<Document>> = self.undo.iter().map(|s| &s.doc).chain(std::iter::once(&self.doc)).collect();
+        let n = states.len();
+        let mut checks = 1;
+        if !bad(states[n - 1]) {
+            return Bisected::NotNow;
+        }
+        checks += 1;
+        if n == 1 || bad(states[0]) {
+            return Bisected::AlwaysBad { oldest: states[0].revision };
+        }
+        // Invariant: states[lo] passes, states[hi] fails.
+        let (mut lo, mut hi) = (0, n - 1);
+        while hi - lo > 1 {
+            let mid = (lo + hi) / 2;
+            checks += 1;
+            if bad(states[mid]) {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        // Transaction `lo` (the undo step stored with state `lo`) made it.
+        Bisected::Found { label: self.undo[lo].label.clone(), before: Arc::clone(states[lo]), after: Arc::clone(states[hi]), checks }
+    }
+}

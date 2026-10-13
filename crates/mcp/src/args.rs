@@ -112,14 +112,35 @@ pub enum HistoryAction {
     Revert,
     /// What changed between two states (`from`, `to`).
     Diff,
+    /// Find the transaction that made `test` fail (binary search over the history).
+    Bisect,
+}
+
+/// What `history bisect` looks for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum BisectTest {
+    /// An expectation failing, by name: `{"expect": "E2"}`.
+    Expect(String),
+    /// A diagnostics finding: `{"finding": {"code": "PENETRATION", "part": "ear_l"}}`.
+    Finding {
+        code: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        part: Option<String>,
+    },
+    /// A brief item failing: `{"brief": {"name": "elf", "item": "ear length"}}`.
+    Brief { name: String, item: String },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HistoryArgs {
-    /// `list` (default), `undo`, `redo`, `checkpoint`, `revert` or `diff`.
+    /// `list` (default), `undo`, `redo`, `checkpoint`, `revert`, `diff` or `bisect`.
     #[serde(default)]
     pub action: HistoryAction,
+    /// `bisect`: the test that fails now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test: Option<BisectTest>,
     /// Checkpoint name for `checkpoint` and `revert`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -279,6 +300,34 @@ pub struct SpecArgs {
     /// Preview the result without changing anything.
     #[serde(default)]
     pub dry_run: bool,
+}
+
+/// One handle of the `deform` tool.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeformHandleArg {
+    /// What to grab: a name (a landmark such as `tip` or `top`, an SDF shape or a face group) or coordinates.
+    #[serde(rename = "move")]
+    pub at: Value,
+    /// How far it moves.
+    pub by: [Length; 3],
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeformArgs {
+    /// A spec part (`elf_head/ear_l`; kept in the spec, so recompiles keep it) or any mesh object.
+    pub target: String,
+    pub handles: Vec<DeformHandleArg>,
+    /// Points that stay put (names or coordinates).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pins: Vec<Value>,
+    /// Reach along the surface; 40% of the part's diagonal when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<Length>,
+    /// Spec parts: replace the part's earlier handles instead of adding to them.
+    #[serde(default)]
+    pub replace: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

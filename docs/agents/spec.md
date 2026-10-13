@@ -44,6 +44,16 @@ Optional keys:
 
 Landmarks of every part: `top`, `bottom`, `front`, `back`, `left` (+X, the character's left), `right`, `center`, and the names of its SDF shapes. Category `humanoid_head` adds `crown`, `chin`, `forehead`, `nose_root`, `nose_base`, `mouth`, `eye_l/r`, `brow_l/r`, `cheek_l/r`, `jaw_l/r`, `ear_root_l/r`, `temple_l/r`, `hairline_front`, `nape` and `back_of_head`. Anchors re-resolve when the parent changes: lengthen the lamp's pole and the shade moves up without a rebuild.
 
+## Sculpting by numbers
+
+A part's `deform` block moves points by offsets after its shape and edits, with pins held and a smooth falloff along the surface (it never reaches geometry that is not connected):
+
+```json
+"ear_l": {"sdf": [...], "deform": {"handles": [{"move": "tip", "by": [0, 0.01, -0.005]}], "pins": ["bottom"], "radius": "5cm"}}
+```
+
+Points are names (a landmark of the part, one of its SDF shapes, or a face group such as `ear_l.lobe` in the head a blended ear joined) or part-space coordinates. The `deform` tool does the same in one call: on a spec part it adds the handles to the part's `deform` block, so recompiles keep them; on any other mesh it runs `deform.handles` with world coordinates.
+
 ## Constraints
 
 `"constraints": [...]` relate parts after their anchors resolve; the compiler moves (or for `proportion`, scales) parts until every one holds, in the order written. Landmark references are `part.landmark`.

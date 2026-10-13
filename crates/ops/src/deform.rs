@@ -1,5 +1,6 @@
 //! `deform.*`: bend, twist, taper and noise displacement.
 
+use glam::Vec3;
 use p3d_geo::deform::{DeformAxis, DisplaceSpec, MAX_OCTAVES, bend, displace, taper, twist};
 use p3d_geo::edit::KernelError;
 use p3d_mesh::{ElementKind, Mesh};
@@ -381,6 +382,153 @@ impl Op for Displace {
                 thousands(n),
                 p3d_math::format_length(p.strength.0.abs()),
                 p3d_math::format_length(p.scale.0)
+            ),
+        ))
+    }
+}
+
+// ---- deform.handles ------------------------------------------------------------------------
+
+/// A point: coordinates, or a group whose center is taken.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum PointParam {
+    At([Length; 3]),
+    Group(String),
+}
+
+/// One handle: where, and by how much.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HandleParam {
+    /// The point to grab (the nearest vertex moves exactly).
+    pub at: PointParam,
+    /// How far it moves.
+    pub by: [Length; 3],
+}
+
+/// Space of handle coordinates.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SpaceParam {
+    /// World coordinates (what perception reports).
+    #[default]
+    World,
+    /// The object's own coordinates.
+    Local,
+}
+
+/// Parameters of `deform.handles`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HandlesParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// Points to move, each by its offset.
+    pub handles: Vec<HandleParam>,
+    /// Points that stay where they are.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pins: Vec<PointParam>,
+    /// How far along the surface a handle reaches; 40% of the mesh's diagonal when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<Length>,
+    /// Space of point coordinates and offsets.
+    #[serde(default)]
+    pub space: SpaceParam,
+}
+
+/// The center of a group's vertices (local space).
+fn group_center(mesh: &Mesh, name: &str, path: &str) -> Result<Vec3, OpError> {
+    let g = mesh.group(name).ok_or_else(|| {
+        let mut e = OpError::new(ErrorCode::NotFound, format!("no group `{name}`")).at(path);
+        e.suggestions = p3d_scene::name::suggest(name, mesh.groups().map(|(n, _)| n), 3);
+        e
+    })?;
+    let vs: Vec<u32> = match g.kind() {
+        ElementKind::Vert => g.iter().collect(),
+        ElementKind::Edge => g.iter().flat_map(|e| mesh.edge_verts(e)).collect(),
+        ElementKind::Face => g.iter().flat_map(|f| mesh.face_verts(f).collect::<Vec<_>>()).collect(),
+    };
+    if vs.is_empty() {
+        return Err(OpError::new(ErrorCode::EmptySelection, format!("group `{name}` is empty")).at(path));
+    }
+    Ok(vs.iter().map(|&v| mesh.positions[v as usize]).sum::<Vec3>() / vs.len() as f32)
+}
+
+/// `deform.handles`.
+pub struct Handles;
+
+impl Op for Handles {
+    const ID: &'static str = "deform.handles";
+    type Params = HandlesParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Handles",
+            category: Category::Deform,
+            summary: "Moves points by offsets and pins others; the surface follows smoothly (sculpting by numbers: pull the tip up 1 cm).",
+            docs: "Each handle grabs the vertex nearest `at` (coordinates, or a group's center) and moves it by `by`; pins stay \
+                   still; everything within `radius` along the surface follows with a smooth falloff (compactly supported radial \
+                   basis functions over geodesic distance), so geometry that is not connected to a handle never moves. Points are \
+                   world coordinates (what perception reports) unless `space` is `local`.\n\n\
+                   **Use for** reshaping without vertices: lift an ear tip, flare a blade, push a cheek in, droop a leaf, with \
+                   the root pinned.",
+            examples: &[OpExample {
+                args: r#"{"target": "post", "handles": [{"at": "cap_top", "by": ["5cm", 0, 0]}], "pins": ["cap_bottom"]}"#,
+                result: "post (o:3): 1 handle moved 17 vertices by up to 50 mm (radius 0.404 m)",
+            }],
+            aliases: &["pull", "push", "sculpt", "move point", "soft selection", "proportional editing", "lattice", "warp", "handle deform"],
+            complexity: "O(V) to snap points plus O(h x k log k) for k vertices within the radius of h handles and pins",
+            flags: DEFORM,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &HandlesParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        if p.handles.is_empty() {
+            return Err(OpError::invalid("/handles", "give at least one handle").with_hint("{\"at\": [0, 0.5, 0], \"by\": [0, 0.01, 0]}"));
+        }
+        if let Some(r) = p.radius {
+            crate::common::check_length("/radius", r, 1e-5, p3d_geo::prim::MAX_SIZE)?;
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &HandlesParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let world = tx.doc().world_affine(key).unwrap_or_default();
+        let to_local = world.inverse();
+        let mesh = tx.mesh(key, "/target")?;
+        let point = |q: &PointParam, path: &str| -> Result<Vec3, OpError> {
+            match q {
+                PointParam::Group(g) => group_center(mesh, g, path),
+                PointParam::At(c) => {
+                    let v = Vec3::new(c[0].0 as f32, c[1].0 as f32, c[2].0 as f32);
+                    Ok(if p.space == SpaceParam::World { to_local.transform_point3(v) } else { v })
+                }
+            }
+        };
+        let mut moves = Vec::with_capacity(p.handles.len());
+        for (i, h) in p.handles.iter().enumerate() {
+            let at = point(&h.at, &format!("/handles/{i}/at"))?;
+            let by = Vec3::new(h.by[0].0 as f32, h.by[1].0 as f32, h.by[2].0 as f32);
+            moves.push((at, if p.space == SpaceParam::World { to_local.transform_vector3(by) } else { by }));
+        }
+        let pins = p.pins.iter().enumerate().map(|(i, q)| point(q, &format!("/pins/{i}"))).collect::<Result<Vec<_>, _>>()?;
+        let radius = p.radius.map_or_else(|| mesh.bounds().map_or(1.0, |(lo, hi)| (hi - lo).length() * 0.4), |r| r.0 as f32);
+        let spec = p3d_geo::deform::HandleSpec { moves, pins, radius };
+        let r = p3d_geo::deform::handles(tx.mesh_mut(key, "/target")?, &spec).map_err(kernel)?;
+        Ok(finish(
+            tx,
+            key,
+            format!(
+                "{} handle{} moved {} vertices by up to {} (radius {})",
+                p.handles.len(),
+                if p.handles.len() == 1 { "" } else { "s" },
+                thousands(r.moved),
+                p3d_math::format_length(f64::from(r.largest)),
+                p3d_math::format_length(f64::from(radius))
             ),
         ))
     }

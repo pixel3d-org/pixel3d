@@ -124,6 +124,11 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<SpecArgs>(),
         },
         ToolInfo {
+            name: "deform",
+            description: "Sculpt by numbers: move named points (landmarks, shapes, groups) or coordinates by offsets with pins held; spec parts keep the handles across recompiles.",
+            schema: schema::<DeformArgs>(),
+        },
+        ToolInfo {
             name: "query",
             description: "Count and locate mesh elements picked by a selector (groups, normals, boundaries, boxes); optionally save them as a group.",
             schema: schema::<QueryArgs>(),
@@ -214,6 +219,7 @@ impl Agent {
             "expect" => parse_params(&args).and_then(|a| self.expect(&a)),
             "brief" => parse_params(&args).and_then(|a| self.brief(&a)),
             "spec" => parse_params(&args).and_then(|a| self.spec(&a)),
+            "deform" => parse_params(&args).and_then(|a| self.deform(&a)),
             "query" => parse_params(&args).and_then(|a| self.query(&a)),
             "analyze" => parse_params(&args).and_then(|a| self.analyze(&a)),
             "list_ops" => parse_params(&args).and_then(|a| self.list_ops(&a)),
@@ -630,6 +636,120 @@ impl Agent {
         Ok(ToolOutput::ok(self.finish(t), json!({ "revision": r.revision, "summary": out.summary })))
     }
 
+    fn deform(&mut self, a: &DeformArgs) -> Result<ToolOutput, OpError> {
+        if a.handles.is_empty() {
+            return Err(OpError::invalid("/handles", "give at least one handle").with_hint("{\"move\": \"tip\", \"by\": [0, 0.01, 0]}"));
+        }
+        let doc = self.doc();
+        let key = doc.resolve(&a.target).map_err(|e| OpError::from_scene(e, "/target"))?;
+        let o = doc.object(key).ok_or_else(|| OpError::internal("object vanished"))?;
+        // A spec part: the handles join its `deform` block.
+        let part = o.parent().and_then(|p| {
+            let rec = doc.spec(p)?;
+            rec.parts.get(o.name()).filter(|r| r.object == Some(o.id()))?;
+            Some((p, rec.source.clone(), o.name().to_owned()))
+        });
+        if let Some((root, source, name)) = part {
+            let old =
+                source.pointer(&format!("/parts/{name}/deform")).cloned().filter(|_| !a.replace).unwrap_or(json!({ "handles": [], "pins": [] }));
+            let mut handles = old.get("handles").and_then(Value::as_array).cloned().unwrap_or_default();
+            handles.extend(a.handles.iter().map(|h| json!({ "move": h.at, "by": h.by })));
+            let mut pins = old.get("pins").and_then(Value::as_array).cloned().unwrap_or_default();
+            pins.extend(a.pins.iter().cloned());
+            let mut deform = json!({ "handles": handles, "pins": pins });
+            if let Some(r) = a.radius.or_else(|| old.get("radius").and_then(|v| serde_json::from_value(v.clone()).ok())) {
+                deform["radius"] = json!(r);
+            }
+            let target = doc.path(root).unwrap_or_default();
+            return self.spec(&SpecArgs {
+                action: SpecAction::Patch,
+                target,
+                merge: Some(json!({ "parts": { name: { "deform": deform } } })),
+                ..SpecArgs::default()
+            });
+        }
+        let mut args =
+            json!({ "target": a.target, "handles": a.handles.iter().map(|h| json!({ "at": h.at, "by": h.by })).collect::<Vec<_>>(), "pins": a.pins });
+        if let Some(r) = a.radius {
+            args["radius"] = json!(r);
+        }
+        self.one_op("deform.handles", args)
+    }
+
+    fn bisect(&mut self, test: Option<&BisectTest>) -> Result<ToolOutput, OpError> {
+        let test = test.ok_or_else(|| {
+            OpError::invalid("/test", "bisect needs a test").with_hint(
+                "{\"expect\": \"E2\"}, {\"finding\": {\"code\": \"PENETRATION\"}} or {\"brief\": {\"name\": \"elf\", \"item\": \"ear length\"}}",
+            )
+        })?;
+        let doc = self.doc();
+        let (label, outcome) = match test {
+            BisectTest::Expect(name) => {
+                let e = doc.expectations().iter().find(|e| &e.name == name).cloned().ok_or_else(|| {
+                    let mut err = OpError::new(ErrorCode::NotFound, format!("no expectation `{name}`")).at("/test/expect");
+                    err.suggestions = p3d_scene::name::suggest(name, doc.expectations().iter().map(|e| e.name.as_str()), 3);
+                    err
+                })?;
+                (format!("{} {}", e.name, e.check.label()), self.session.bisect(|d| !checks::check(d, &e).pass))
+            }
+            BisectTest::Finding { code, part } => {
+                let label = match part {
+                    Some(p) => format!("{code} on {p}"),
+                    None => code.clone(),
+                };
+                let found = |d: &Document| {
+                    View::new(d, None).is_ok_and(|v| {
+                        diagnose(&v).iter().any(|f| f.code.eq_ignore_ascii_case(code) && part.as_ref().is_none_or(|p| f.part.contains(p.as_str())))
+                    })
+                };
+                (label, self.session.bisect(found))
+            }
+            BisectTest::Brief { name, item } => {
+                let failing = |d: &Document| {
+                    p3d_spec::coverage(d, name)
+                        .is_ok_and(|c| c.items.iter().any(|i| i.label.starts_with(item.as_str()) && i.status == p3d_spec::brief::Status::Fail))
+                };
+                (format!("brief {name} {item}"), self.session.bisect(failing))
+            }
+        };
+        let text = match &outcome {
+            p3d_engine::Bisected::NotNow => format!("bisect {label}: it passes now; nothing to look for\n"),
+            p3d_engine::Bisected::AlwaysBad { oldest } => {
+                format!("bisect {label}: it already failed at rev {oldest}, the oldest state in the history\n")
+            }
+            p3d_engine::Bisected::Found { label: tx, before, after, checks } => {
+                let mut t = format!(
+                    "bisect {label}: first fails at rev {} after `{tx}` (passes at rev {}; {checks} checks)\n",
+                    after.revision, before.revision
+                );
+                for root in after.spec_roots() {
+                    let (Some(new), Some(old)) = (after.spec(root), before.spec(root)) else { continue };
+                    let mut changes = Vec::new();
+                    json_diff(&old.source, &new.source, String::new(), &mut changes);
+                    if !changes.is_empty() {
+                        let name = after.path(root).unwrap_or_default();
+                        t.push_str(&format!("  spec {name} changed:\n"));
+                        for c in changes.iter().take(6) {
+                            t.push_str(&format!("    {c}\n"));
+                        }
+                        if changes.len() > 6 {
+                            t.push_str(&format!("    ... {} more\n", changes.len() - 6));
+                        }
+                    }
+                }
+                t
+            }
+        };
+        let data = match outcome {
+            p3d_engine::Bisected::Found { label, before, after, checks } => {
+                json!({ "found": true, "transaction": label, "good": before.revision, "bad": after.revision, "checks": checks })
+            }
+            p3d_engine::Bisected::AlwaysBad { oldest } => json!({ "found": false, "oldest": oldest }),
+            p3d_engine::Bisected::NotNow => json!({ "found": false, "passes": true }),
+        };
+        Ok(ToolOutput::ok(text, data))
+    }
+
     fn one_op(&mut self, op: &str, args: Value) -> Result<ToolOutput, OpError> {
         let r = self.execute(&[OpCall::new(op, args)], &BatchOptions::default()).map_err(|mut e| {
             e.path = e.path.map(|p| p.trim_start_matches("/ops/0/args").to_owned()).filter(|p| !p.is_empty());
@@ -846,6 +966,7 @@ impl Agent {
     fn history(&mut self, a: &HistoryArgs) -> Result<ToolOutput, OpError> {
         let steps = a.steps.unwrap_or(1).clamp(1, 1000);
         match a.action {
+            HistoryAction::Bisect => self.bisect(a.test.as_ref()),
             HistoryAction::List => {
                 let h = self.session.history();
                 let mut t = format!("rev {}; {} undo step{}", self.session.revision(), h.len(), if h.len() == 1 { "" } else { "s" });
@@ -897,4 +1018,39 @@ impl Agent {
 fn count_of(n: usize, kind: p3d_mesh::ElementKind) -> String {
     let plural = kind.as_str();
     if n == 1 { format!("1 {}", plural.trim_end_matches('s')) } else { format!("{} {plural}", thousands(n)) }
+}
+
+/// A short JSON value for reports.
+fn short(v: &Value) -> String {
+    let s = v.to_string();
+    if s.chars().count() > 48 { format!("{}...", s.chars().take(45).collect::<String>()) } else { s }
+}
+
+/// The JSON pointers where `b` differs from `a`, with both values.
+///
+/// Complexity: O(size of both values).
+fn json_diff(a: &Value, b: &Value, path: String, out: &mut Vec<String>) {
+    match (a, b) {
+        (Value::Object(x), Value::Object(y)) => {
+            let mut keys: Vec<&String> = x.keys().chain(y.keys()).collect();
+            keys.sort();
+            keys.dedup();
+            for k in keys {
+                let p = format!("{path}/{k}");
+                match (x.get(k), y.get(k)) {
+                    (Some(u), Some(v)) => json_diff(u, v, p, out),
+                    (None, Some(v)) => out.push(format!("{p} added: {}", short(v))),
+                    (Some(_), None) => out.push(format!("{p} removed")),
+                    (None, None) => {}
+                }
+            }
+        }
+        (Value::Array(x), Value::Array(y)) if x.len() == y.len() => {
+            for (i, (u, v)) in x.iter().zip(y).enumerate() {
+                json_diff(u, v, format!("{path}/{i}"), out);
+            }
+        }
+        _ if a != b => out.push(format!("{path}: {} -> {}", short(a), short(b))),
+        _ => {}
+    }
 }

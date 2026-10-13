@@ -103,6 +103,9 @@ pub struct Part {
     /// Edit layers: ops run on the part's mesh after its shape.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edits: Vec<EditCall>,
+    /// Handle deformation after the edits: sculpting by numbers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deform: Option<DeformSpec>,
     /// Landmarks: a category name (`"humanoid_head"`, or `"category"` for
     /// the spec's), or named surface coordinates of this part.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -232,6 +235,37 @@ impl Scale {
             Scale::Axes(a) => a,
         }
     }
+}
+
+/// Handles on a part (part space): points moved by offsets, pins held,
+/// the surface following within `radius`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeformSpec {
+    pub handles: Vec<DeformHandle>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pins: Vec<LocalPoint>,
+    /// Reach along the surface; 40% of the part's diagonal when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radius: Option<Length>,
+}
+
+/// One handle: a point of the part and its offset.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DeformHandle {
+    #[serde(rename = "move")]
+    pub at: LocalPoint,
+    pub by: [Length; 3],
+}
+
+/// A point of a part: part-space coordinates, or a name (a landmark of the
+/// part, one of its SDF shapes, or a face group of its mesh).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LocalPoint {
+    At([Length; 3]),
+    Name(String),
 }
 
 /// An op run on the part's mesh (an edit layer). The compiler sets

@@ -149,6 +149,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`deform.twist`](deform.twist.md) | Twists a shape around an axis, from no turn at its low end to `angle` at its high end. |
 | [`deform.taper`](deform.taper.md) | Scales a shape toward its axis progressively, from full size at its low end to `factor` at its high end. |
 | [`deform.displace`](deform.displace.md) | Moves vertices along their normals by seeded fractal noise (bumps, rocks, terrain, organic variation). |
+| [`deform.handles`](deform.handles.md) | Moves points by offsets and pins others; the surface follows smoothly (sculpting by numbers: pull the tip up 1 cm). |
 
 ## cleanup
 
