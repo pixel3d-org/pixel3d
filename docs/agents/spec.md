@@ -92,6 +92,10 @@ A spec (or its brief) can say how the asset should feel with a `dna` block (ADR 
 
 Every face records the spec node that made it: a blended ear's faces in the head mesh trace to `/parts/ear_l/sdf/0`, an inset's faces to `/parts/body/edits/0`. Face groups name them too: `cranium`, `jaw`, `ear_l.lobe`, `nose.shape_0`, `panel.inner`.
 
+## Example: a dwarven battle axe
+
+`docs/agents/examples/battle_axe.json` builds a double-bit axe in one `spec set`: a `silhouettes` head (crescent front outline with rune holes, a lens top outline so the blades thin to an edge), a bevelled socket block, an octagonal `lathe` haft, a top spike, collar bands of different sizes, a cord wrap (`pipe` along a helix) and a faceted pommel, all anchored on the haft, with `dwarven` DNA. Its answer already says what to do next: the brief's triangle budget fails and the head is denser than its screen size needs.
+
 ## Example: an elf head blockout
 
 ```json
