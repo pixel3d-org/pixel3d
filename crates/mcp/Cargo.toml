@@ -33,6 +33,7 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 insta = { workspace = true }
+p3d-geo = { workspace = true }
 p3d-testdata = { workspace = true }
 rmcp = { workspace = true, features = ["client", "transport-io"] }
 tokio = { workspace = true, features = ["rt", "sync", "io-std", "io-util", "macros"] }

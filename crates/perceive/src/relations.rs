@@ -183,11 +183,20 @@ pub fn relate(view: &View, i: usize, j: usize, tol: f32, near: f32, search: f32)
 /// Complexity: O(k log k + pairs x (log n + leaf pairs near the contact))
 /// for k parts, plus building each involved part's BVH once.
 pub fn relations(view: &View) -> Relations {
+    relations_among(view, |_| true)
+}
+
+/// [`relations`] among the parts `keep` accepts; the others are neither
+/// paired nor reported floating.
+///
+/// Complexity: as [`relations`].
+pub fn relations_among(view: &View, keep: impl Fn(usize) -> bool) -> Relations {
     let tol = view.contact_tolerance();
     let near = 0.05 * view.diagonal() + tol;
     let search = 0.25 * view.diagonal() + tol;
     let boxes: Vec<(Vec3, Vec3)> = view.parts.iter().map(|p| (p.lo, p.hi)).collect();
     let (candidates, truncated) = box_pairs(&boxes, search / 2.0, MAX_PAIRS);
+    let candidates = candidates.into_iter().filter(|&(i, j)| keep(i) && keep(j));
 
     let mut pairs = Vec::new();
     let mut nearest: Vec<Option<Near>> = vec![None; view.parts.len()];
@@ -204,9 +213,9 @@ pub fn relations(view: &View) -> Relations {
 
     let grounded: Vec<usize> = (0..view.parts.len()).filter(|&i| view.parts[i].lo.y.abs() <= tol).collect();
     let mut rel = Relations { tolerance: tol, pairs, floating: Vec::new(), grounded, truncated };
-    if view.parts.len() > 1 {
+    if (0..view.parts.len()).filter(|&i| keep(i)).count() > 1 {
         for (i, near) in nearest.into_iter().enumerate() {
-            if !rel.in_contact(i) && rel.grounded.binary_search(&i).is_err() {
+            if keep(i) && !rel.in_contact(i) && rel.grounded.binary_search(&i).is_err() {
                 rel.floating.push(Floating { part: i, nearest: near });
             }
         }

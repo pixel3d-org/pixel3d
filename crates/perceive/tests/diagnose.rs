@@ -17,7 +17,7 @@ fn expected(name: &str) -> Vec<(&'static str, Severity, &'static str, &'static s
         "degenerate_faces" => vec![("DEGENERATE_FACES", Warn, "panel", "right", None)],
         "duplicate_faces" => vec![("DUPLICATE_FACES", Warn, "box", "right", None), ("LOOSE_PIECES", Info, "box", "center", Some("scene.separate"))],
         "self_intersection" => vec![("SELF_INTERSECTION", Warn, "pair", "center", Some("scene.separate"))],
-        "thin_wall" => vec![("THIN_WALL", Warn, "shell", "bottom", None)],
+        "thin_wall" => vec![("THIN_WALL", Warn, "shell", "bottom", Some("edit.shrink_fatten"))],
         "floating_part" => vec![("FLOATING_PART", Warn, "lid", "bottom", Some("scene.set_transform"))],
         "penetration" => vec![("PENETRATION", Warn, "handle", "left", Some("scene.set_transform"))],
         "z_fighting" => vec![("Z_FIGHTING", Warn, "label", "center", Some("scene.set_transform"))],

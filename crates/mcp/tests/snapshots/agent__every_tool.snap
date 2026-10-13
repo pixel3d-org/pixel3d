@@ -56,7 +56,7 @@ problems: 0 errors, 1 warning, 0 info (FLOATING_PART lid; diagnose for fixes)
 
 >>> expect {"action":"add","expect":{"attached":{"part":"lid","to":"crate"}}}
 ok rev 2: added E1 attached(lid, crate): fails now (gap 12 mm > 1 mm)
-problems: 0 errors, 1 warning, 0 info (FLOATING_PART lid; diagnose for fixes)
+problems: 1 error, 1 warning, 0 info (EXPECTATION_FAILED lid, FLOATING_PART lid; diagnose for fixes)
 tests 0/1 pass; failing: E1 attached(lid, crate)
 
 >>> perceive {"aspect":"relations"}
@@ -93,19 +93,22 @@ lid (o:2): box 100% (then cylinder y 76%, cylinder x 0%)
   thickness min 40, typical 40; edges 12 hard, 0 soft, 0 flat (max 90 deg); mirror x yes y yes z yes
 
 >>> diagnose {}
-diagnose scene: 0 errors, 1 warning, 0 info
-F1 warn FLOATING_PART lid -> crate: touches nothing: 12 mm from crate
+diagnose scene: 1 error, 1 warning, 0 info
+F1 error EXPECTATION_FAILED lid: test E1 attached(lid, crate) fails: gap 12 mm > 1 mm
+    at (0, 632, 0) (center of lid); expectation E1 (attached(lid, crate))
+    fix: scene.set_transform {"position":[0.0,-0.012,0.0],"relative":true,"target":"crate/lid"} (move it 12 mm onto crate)  predicted: resolved
+F2 warn FLOATING_PART lid -> crate: touches nothing: 12 mm from crate
     at (300, 612, -300) (bottom of lid); last changed by prim.box (box_2)
     fix: scene.set_transform {"position":[0.0,-0.012,0.0],"relative":true,"target":"crate/lid"} (move it 12 mm onto crate)  predicted: resolved
 
 >>> diagnose {"explain":"F1"}
-diagnose scene (explain F1): 0 errors, 1 warning, 0 info
-F1 warn FLOATING_PART lid -> crate: touches nothing: 12 mm from crate
-    at (300, 612, -300) (bottom of lid); last changed by prim.box (box_2)
+diagnose scene (explain F1): 1 error, 0 warnings, 0 info
+F1 error EXPECTATION_FAILED lid: test E1 attached(lid, crate) fails: gap 12 mm > 1 mm
+    at (0, 632, 0) (center of lid); expectation E1 (attached(lid, crate))
     fix: scene.set_transform {"position":[0.0,-0.012,0.0],"relative":true,"target":"crate/lid"} (move it 12 mm onto crate)  predicted: resolved
 
 >>> diagnose {"fix":"F1"}
-fixed F1 FLOATING_PART lid: rev 3 (crate/lid (o:2): position 0 0.6 0, rotation 0 0 0 deg, scale 1 1 1)
+fixed F1 EXPECTATION_FAILED lid: rev 3 (crate/lid (o:2): position 0 0.6 0, rotation 0 0 0 deg, scale 1 1 1)
 problems: none
 tests 1/1 pass
 
@@ -141,14 +144,14 @@ tests 1/1 pass
 >>> history {}
 rev 4; 4 undo steps
 rev 4: save_1
-rev 3: fix F1 FLOATING_PART lid
+rev 3: fix F1 EXPECTATION_FAILED lid
 rev 2: add_1
 rev 1: box_1, box_2, box_3
 checkpoints: blockout
 
 >>> history {"action":"undo","steps":2}
-undid save_1, fix F1 FLOATING_PART lid; now rev 2
-problems: 0 errors, 1 warning, 0 info (FLOATING_PART lid; diagnose for fixes)
+undid save_1, fix F1 EXPECTATION_FAILED lid; now rev 2
+problems: 1 error, 1 warning, 0 info (EXPECTATION_FAILED lid, FLOATING_PART lid; diagnose for fixes)
 tests 0/1 pass; failing: E1 attached(lid, crate)
 
 >>> history {"action":"revert","name":"blockout"}

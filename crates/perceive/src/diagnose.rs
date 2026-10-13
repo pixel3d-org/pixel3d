@@ -1,8 +1,21 @@
 //! `diagnose`: problems reported like compiler errors (project spec 17.10).
 //! Each finding has a stable code, a severity, the part and a location, the
 //! measured value and its threshold, a likely cause, and fixes as ready-to-run
-//! op calls. The engine fills in each fix's predicted result by running it
-//! on a copy.
+//! op calls or spec patches. The engine fills in each fix's predicted result
+//! by running it on a copy.
+//!
+//! Mesh-level checks live here and in the submodules: geometry and
+//! relations, shading ([`shading`]), detail scale ([`detail`]), edge flow on
+//! parts tagged `deforming` ([`flow`]) and strands reports ([`strands`]).
+//! Checks that need the Model Spec's meaning (briefs, proportions, mirror
+//! pairs, landmarks) add their drafts in `p3d-spec` and rank them together
+//! with these through [`rank`].
+
+pub mod detail;
+pub mod flow;
+pub mod shading;
+pub mod source;
+pub mod strands;
 
 use glam::Vec3;
 use rustc_hash::FxHashMap;
@@ -10,10 +23,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use smallvec::SmallVec;
 
-use crate::Report;
-use crate::fmt::{mm, point, thousands, volume};
-use crate::relations::{RelationKind, Relations, relations};
+use crate::fmt::{approx_tokens, mm, point, thousands, volume};
+use crate::relations::{RelationKind, Relations, relations_among};
 use crate::view::{Part, View};
+use crate::{Report, TOKEN_BUDGET};
 
 /// Findings written out in the text before it is cut short.
 const MAX_TEXT_FINDINGS: usize = 12;
@@ -56,6 +69,12 @@ pub struct Fix {
     pub predicted: Option<String>,
 }
 
+impl Fix {
+    pub fn op(op: &str, args: Value, summary: impl Into<String>) -> Fix {
+        Fix { summary: summary.into(), op: op.into(), args, predicted: None }
+    }
+}
+
 /// One problem.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Finding {
@@ -70,19 +89,86 @@ pub struct Finding {
     /// World position and the part's side it is on (`top`, `left`, ...).
     pub at: Vec3,
     pub side: &'static str,
-    /// What was measured and the limit, in the units of the message.
+    /// The named landmark at the place (`head.ear_root_l`), when one is near.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub landmark: Option<String>,
+    /// What was measured and the limit, both in `unit`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub measured: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub threshold: Option<f32>,
+    /// Unit of `measured` and `threshold`: `mm`, `deg`, `px`, `%`,
+    /// `count` or `ratio`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit: Option<&'static str>,
     pub message: String,
-    /// Likely cause: the last op that changed the part.
+    /// Likely cause: the spec node that made the faces there, else the last
+    /// op that changed the part.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cause: Option<String>,
+    /// The cause as a JSON pointer into the part's spec, when it is one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause_path: Option<String>,
     pub fixes: Vec<Fix>,
     /// Why there is no fix yet, when `fixes` is empty.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
+}
+
+/// A finding before ranking and numbering ([`rank`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Draft {
+    pub code: &'static str,
+    pub severity: Severity,
+    /// Index of the part in the view.
+    pub part: usize,
+    pub other: Option<usize>,
+    pub at: Vec3,
+    pub landmark: Option<String>,
+    pub measured: Option<f32>,
+    pub threshold: Option<f32>,
+    pub unit: Option<&'static str>,
+    pub message: String,
+    /// Cause text; filled from provenance or history by [`rank`] when none.
+    pub cause: Option<String>,
+    pub cause_path: Option<String>,
+    pub fixes: Vec<Fix>,
+    pub hint: Option<String>,
+}
+
+impl Draft {
+    pub fn new(code: &'static str, severity: Severity, part: usize, at: Vec3, message: String) -> Draft {
+        Draft {
+            code,
+            severity,
+            part,
+            other: None,
+            at,
+            landmark: None,
+            measured: None,
+            threshold: None,
+            unit: None,
+            message,
+            cause: None,
+            cause_path: None,
+            fixes: Vec::new(),
+            hint: None,
+        }
+    }
+
+    /// Sets the measured value and the threshold, in `unit` (`mm`,
+    /// `deg`, `px`, `%`, `count` or `ratio`).
+    pub fn measure(mut self, measured: f32, threshold: f32, unit: &'static str) -> Draft {
+        self.measured = Some(measured);
+        self.threshold = Some(threshold);
+        self.unit = Some(unit);
+        self
+    }
+
+    /// Sets a counted measure against its limit.
+    pub fn count(self, n: usize, limit: usize) -> Draft {
+        self.measure(n as f32, limit as f32, "count")
+    }
 }
 
 /// The side of a part a world point lies on, by its largest relative offset
@@ -111,34 +197,27 @@ fn last_change(view: &View, part: &Part) -> Option<String> {
 }
 
 /// Meters rounded to 0.1 mm for fix arguments.
-fn round4(v: Vec3) -> [f64; 3] {
+pub fn round4(v: Vec3) -> [f64; 3] {
     v.to_array().map(|x| (f64::from(x) * 1e4).round() / 1e4)
+}
+
+/// Whether an object carries a tag.
+pub fn tagged(view: &View, part: &Part, tag: &str) -> bool {
+    view.doc.object(part.key).is_some_and(|o| o.tags.iter().any(|t| t == tag))
+}
+
+/// Whether a part is texture-only detail or hidden (decal joins compile
+/// hidden): shading, detail and edge-flow checks leave it alone.
+pub fn decal(view: &View, part: &Part) -> bool {
+    view.doc.object(part.key).is_some_and(|o| !o.visible || o.tags.iter().any(|t| t == "decal"))
 }
 
 /// A move of a part by a world-space offset, as a `scene.set_transform`
 /// call in its parent's space.
-fn move_fix(view: &View, part: &Part, delta: Vec3, summary: String) -> Fix {
+pub fn move_fix(view: &View, part: &Part, delta: Vec3, summary: String) -> Fix {
     let parent = view.doc.object(part.key).and_then(|o| o.parent());
     let local = parent.and_then(|p| view.doc.world_affine(p)).map_or(delta, |m| m.inverse().transform_vector3(delta));
-    Fix {
-        summary,
-        op: "scene.set_transform".into(),
-        args: json!({ "target": part.path, "position": round4(local), "relative": true }),
-        predicted: None,
-    }
-}
-
-struct Draft {
-    code: &'static str,
-    severity: Severity,
-    part: usize,
-    other: Option<usize>,
-    at: Vec3,
-    measured: Option<f32>,
-    threshold: Option<f32>,
-    message: String,
-    fixes: Vec<Fix>,
-    hint: Option<String>,
+    Fix::op("scene.set_transform", json!({ "target": part.path, "position": round4(local), "relative": true }), summary)
 }
 
 /// Geometry findings of one part.
@@ -151,19 +230,8 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
     let topo = part.topology();
     let flat = part.size().min_element() < 1e-3_f32.max(0.01 * part.size().max_element());
     // Strands (hair cards, clumps, shells) are open, crossing and thin by design.
-    let strands = view.doc.object(part.key).is_some_and(|o| o.tags.iter().any(|t| t == "strands"));
-    let draft = |code, severity, at, message: String| Draft {
-        code,
-        severity,
-        part: i,
-        other: None,
-        at,
-        measured: None,
-        threshold: None,
-        message,
-        fixes: Vec::new(),
-        hint: None,
-    };
+    let strands = tagged(view, part, "strands");
+    let draft = |code, severity, at, message: String| Draft::new(code, severity, i, at, message);
 
     // Inward-facing closed pieces.
     let parts = p3d_analyze::parts(m);
@@ -184,14 +252,9 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
                 if inverted.len() == 1 { "s" } else { "" },
                 volume(vol)
             ),
-        );
-        d.measured = Some(inverted.len() as f32);
-        d.fixes.push(Fix {
-            summary: "flip the inward pieces".into(),
-            op: "edit.recalc_normals".into(),
-            args: json!({ "target": part.path }),
-            predicted: None,
-        });
+        )
+        .count(inverted.len(), 0);
+        d.fixes.push(Fix::op("edit.recalc_normals", json!({ "target": part.path }), "flip the inward pieces"));
         out.push(d);
     }
 
@@ -213,15 +276,9 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
                     b.edges,
                     mm(b.length)
                 ),
-            );
-            d.measured = Some(loops.len() as f32);
-            d.threshold = Some(0.0);
-            d.fixes.push(Fix {
-                summary: "close every hole with a face".into(),
-                op: "edit.fill".into(),
-                args: json!({ "target": part.path }),
-                predicted: None,
-            });
+            )
+            .count(loops.len(), 0);
+            d.fixes.push(Fix::op("edit.fill", json!({ "target": part.path }), "close every hole with a face"));
             d.hint = Some("ignore if the part is meant to be open (cloth, cards, a container)".into());
             out.push(d);
         }
@@ -241,8 +298,8 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
                 what.push(format!("{} edge{} under 1 micrometer", topo.short_edges, plural(topo.short_edges)));
             }
             format!("{}: they break normals, UVs and bakes", what.join(" and "))
-        });
-        d.measured = Some(topo.degenerate_faces as f32);
+        })
+        .count(topo.degenerate_faces + topo.short_edges, 0);
         d.hint = Some("no automatic fix yet; merging their vertices (cleanup.auto) will remove them".into());
         out.push(d);
     }
@@ -267,8 +324,8 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
             Severity::Warn,
             part.world.transform_point3(m.face_centroid(f)),
             format!("{dups} face{} duplicate other faces exactly: they flicker and double the cost", if dups == 1 { "" } else { "s" }),
-        );
-        d.measured = Some(dups as f32);
+        )
+        .count(dups, 0);
         d.hint = Some("no automatic fix yet; remove the extra copy (cleanup.auto will)".into());
         out.push(d);
     }
@@ -298,29 +355,18 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
                 thousands(crossings as usize),
                 if pieces > 1 { format!(" ({pieces} loose pieces overlap)") } else { String::new() }
             ),
-        );
-        d.measured = Some(crossings as f32);
+        )
+        .count(crossings as usize, 0);
         if pieces > 1 {
-            d.fixes.push(Fix {
-                summary: "make each loose piece its own part".into(),
-                op: "scene.separate".into(),
-                args: json!({ "target": part.path, "by": "loose_parts" }),
-                predicted: None,
-            });
+            d.fixes.push(Fix::op("scene.separate", json!({ "target": part.path, "by": "loose_parts" }), "make each loose piece its own part"));
         } else {
             d.hint = Some("no automatic fix yet; reshape the folded area".into());
         }
         out.push(d);
     } else if pieces > 1 && !strands {
         // Several separate pieces in one part: fine, but each could be a part.
-        let mut d = draft("LOOSE_PIECES", Severity::Info, part.center(), format!("{pieces} separate pieces in one part"));
-        d.measured = Some(pieces as f32);
-        d.fixes.push(Fix {
-            summary: "make each piece its own part".into(),
-            op: "scene.separate".into(),
-            args: json!({ "target": part.path, "by": "loose_parts" }),
-            predicted: None,
-        });
+        let mut d = draft("LOOSE_PIECES", Severity::Info, part.center(), format!("{pieces} separate pieces in one part")).count(pieces, 1);
+        d.fixes.push(Fix::op("scene.separate", json!({ "target": part.path, "by": "loose_parts" }), "make each piece its own part"));
         out.push(d);
     }
 
@@ -344,10 +390,20 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
                 Severity::Warn,
                 at,
                 format!("wall only {} mm thick (limit {} mm): it z-fights and bakes badly", mm(t), mm(THIN_WALL)),
-            );
-            d.measured = Some(t);
-            d.threshold = Some(THIN_WALL);
-            d.hint = Some("no automatic fix yet; thicken the wall or remove the inner surface".into());
+            )
+            .measure(t * 1e3, THIN_WALL * 1e3, "mm");
+            // Fattening moves both sides of the wall apart (inner surfaces
+            // of hollow parts face the cavity).
+            let by = ((1.5 * THIN_WALL - t) / 2.0).max(1e-4);
+            let sp = source::spec_part(view.doc, part.key);
+            d.fixes.push(source::part_fix(
+                view,
+                i,
+                sp.as_ref(),
+                "edit.shrink_fatten",
+                json!({ "distance": (f64::from(by) * 1e5).round() / 1e5, "select": { "verts": {} } }),
+                &format!("fatten it {} mm so the wall is {} mm", mm(by), mm(t + 2.0 * by)),
+            ));
             out.push(d);
         }
     }
@@ -361,10 +417,6 @@ fn relation_findings(view: &View, rel: &Relations, out: &mut Vec<Draft>) {
     let tol = rel.tolerance;
     for f in &rel.floating {
         let part = &view.parts[f.part];
-        // Strands hover over their surface on purpose (lift and volume).
-        if view.doc.object(part.key).is_some_and(|o| o.tags.iter().any(|t| t == "strands")) {
-            continue;
-        }
         let (message, fixes, at, other, gap) = match &f.nearest {
             Some(n) => (
                 format!("touches nothing: {} mm from {}", mm(n.gap), view.parts[n.part].label),
@@ -375,18 +427,13 @@ fn relation_findings(view: &View, rel: &Relations, out: &mut Vec<Draft>) {
             ),
             None => (format!("touches nothing within {} mm", mm(0.25 * view.diagonal())), Vec::new(), part.center(), None, None),
         };
-        out.push(Draft {
-            code: "FLOATING_PART",
-            severity: Severity::Warn,
-            part: f.part,
-            other,
-            at,
-            measured: gap,
-            threshold: Some(tol),
-            message,
-            fixes,
-            hint: None,
-        });
+        let mut d = Draft::new("FLOATING_PART", Severity::Warn, f.part, at, message);
+        d.other = other;
+        d.measured = gap.map(|g| g * 1e3);
+        d.threshold = Some(tol * 1e3);
+        d.unit = Some("mm");
+        d.fixes = fixes;
+        out.push(d);
     }
     for r in &rel.pairs {
         match r.kind {
@@ -407,18 +454,17 @@ fn relation_findings(view: &View, rel: &Relations, out: &mut Vec<Draft>) {
                 }
                 let dir = (r.to - r.at).normalize_or_zero();
                 let by = r.dist - allowed / 2.0;
-                out.push(Draft {
-                    code: "PENETRATION",
-                    severity: Severity::Warn,
-                    part: s,
-                    other: Some(other),
-                    at: r.at,
-                    measured: Some(r.dist),
-                    threshold: Some(allowed),
-                    message: format!("sinks {} mm into {} (allowed {} mm)", mm(r.dist), view.parts[other].label, mm(allowed)),
-                    fixes: vec![move_fix(view, sinker, dir * by, format!("pull it out {} mm", mm(by)))],
-                    hint: None,
-                });
+                let mut d = Draft::new(
+                    "PENETRATION",
+                    Severity::Warn,
+                    s,
+                    r.at,
+                    format!("sinks {} mm into {} (allowed {} mm)", mm(r.dist), view.parts[other].label, mm(allowed)),
+                )
+                .measure(r.dist * 1e3, allowed * 1e3, "mm");
+                d.other = Some(other);
+                d.fixes.push(move_fix(view, sinker, dir * by, format!("pull it out {} mm", mm(by))));
+                out.push(d);
             }
             RelationKind::Touching => {
                 if let Some(d) = z_fighting(view, r.a, r.b) {
@@ -454,38 +500,60 @@ fn z_fighting(view: &View, a: usize, b: usize) -> Option<Draft> {
     // The middle of the flickering area.
     let at = sum / area;
     let shift = ps.bvh().normal(ps.bvh().closest(at, 1e-3).map_or(0, |c| c.tri));
-    Some(Draft {
-        code: "Z_FIGHTING",
-        severity: Severity::Warn,
-        part: small,
-        other: Some(big),
+    let mut d = Draft::new(
+        "Z_FIGHTING",
+        Severity::Warn,
+        small,
         at,
-        measured: Some(area / total.max(1e-12)),
-        threshold: Some(0.0),
-        message: format!("{:.0}% of its surface lies on same-facing faces of {}: they flicker", 100.0 * area / total.max(1e-12), pb.label),
-        fixes: vec![move_fix(view, ps, shift * 5e-4, "move it 0.5 mm off the shared plane".into())],
-        hint: None,
-    })
+        format!("{:.0}% of its surface lies on same-facing faces of {}: they flicker", 100.0 * area / total.max(1e-12), pb.label),
+    )
+    .measure(100.0 * area / total.max(1e-12), 0.0, "%");
+    d.other = Some(big);
+    d.fixes.push(move_fix(view, ps, shift * 5e-4, "move it 0.5 mm off the shared plane".into()));
+    Some(d)
 }
 
-/// Every finding in a view, ranked by severity, then part order, then code,
-/// and numbered `F1`, `F2`, ...
+/// Every mesh-level draft of a view: geometry, relations, shading, detail
+/// scale, edge flow and strands, unranked.
 ///
-/// Complexity: the sum of the geometry checks over the parts plus
-/// [`relations`].
-pub fn diagnose(view: &View) -> Vec<Finding> {
-    let mut drafts = Vec::new();
+/// Complexity: the sum of the per-part checks (O(n log n) each in its
+/// triangles) plus [`relations_among`] the parts that are not strands.
+pub fn drafts(view: &View) -> Vec<Draft> {
+    let mut out = Vec::new();
     for i in 0..view.parts.len() {
-        geometry(view, i, &mut drafts);
+        geometry(view, i, &mut out);
+        shading::check(view, i, &mut out);
+        flow::check(view, i, &mut out);
+        strands::check(view, i, &mut out);
     }
-    let rel = relations(view);
-    relation_findings(view, &rel, &mut drafts);
+    detail::check(view, &mut out);
+    // Strands sit on their surface by design; their own checks cover how.
+    let rel = relations_among(view, |i| !tagged(view, &view.parts[i], "strands"));
+    relation_findings(view, &rel, &mut out);
+    out
+}
+
+/// Ranks drafts by severity, then part order, then code, numbers them `F1`,
+/// `F2`, ... and fills in sides and causes: the spec node that made the
+/// faces at the place when the part is compiled from a spec, else the last
+/// op that changed it.
+///
+/// Complexity: O(d log d) for d drafts, plus one nearest-face query and
+/// O(faces) provenance lookup per draft without a cause.
+pub fn rank(view: &View, mut drafts: Vec<Draft>) -> Vec<Finding> {
     drafts.sort_by(|x, y| (x.severity, x.part, x.code, x.other).cmp(&(y.severity, y.part, y.code, y.other)));
     drafts
         .into_iter()
         .enumerate()
         .map(|(k, d)| {
             let part = &view.parts[d.part];
+            let (cause, cause_path) = match d.cause {
+                Some(c) => (Some(c), d.cause_path),
+                None => match source::provenance_at(view, d.part, d.at) {
+                    Some((root, entry)) => (Some(format!("{root}{} made these faces ({})", entry.path, entry.op)), Some(entry.path)),
+                    None => (last_change(view, part), d.cause_path),
+                },
+            };
             Finding {
                 id: format!("F{}", k + 1),
                 code: d.code,
@@ -494,10 +562,13 @@ pub fn diagnose(view: &View) -> Vec<Finding> {
                 other: d.other.map(|o| view.parts[o].label.clone()),
                 at: d.at,
                 side: side_of(part, d.at),
+                landmark: d.landmark,
                 measured: d.measured,
                 threshold: d.threshold,
+                unit: d.unit,
                 message: d.message,
-                cause: last_change(view, part),
+                cause,
+                cause_path,
                 fixes: d.fixes,
                 hint: d.hint,
             }
@@ -505,7 +576,44 @@ pub fn diagnose(view: &View) -> Vec<Finding> {
         .collect()
 }
 
-/// One block per finding, like a compiler's output.
+/// Every finding in a view, ranked by severity, then part order, then code,
+/// and numbered `F1`, `F2`, ...
+///
+/// Complexity: [`drafts`] plus [`rank`].
+pub fn diagnose(view: &View) -> Vec<Finding> {
+    rank(view, drafts(view))
+}
+
+/// One finding as text, like a compiler's output.
+///
+/// Complexity: O(size of its fixes).
+fn finding_text(f: &Finding) -> String {
+    let other = f.other.as_ref().map_or(String::new(), |o| format!(" -> {o}"));
+    let mut t = format!("{} {} {} {}{other}: {}\n", f.id, f.severity.as_str(), f.code, f.part, f.message);
+    let near = f.landmark.as_ref().map_or(String::new(), |l| format!(", near {l}"));
+    t.push_str(&format!("    at {} ({} of {}{near})", point(f.at), f.side, f.part));
+    if let Some(c) = &f.cause {
+        t.push_str(&format!("; {c}"));
+    }
+    t.push('\n');
+    for fix in &f.fixes {
+        let args = serde_json::to_string(&fix.args).unwrap_or_default();
+        t.push_str(&format!("    fix: {} {args} ({})", fix.op, fix.summary));
+        if let Some(p) = &fix.predicted {
+            t.push_str(&format!("  predicted: {p}"));
+        }
+        t.push('\n');
+    }
+    if let Some(h) = &f.hint {
+        t.push_str(&format!("    note: {h}\n"));
+    }
+    t
+}
+
+/// One block per finding, like a compiler's output, within the token
+/// budget: findings that no longer fit are counted at the end.
+///
+/// Complexity: O(findings shown x their text).
 pub fn findings_text(title: &str, findings: &[Finding]) -> String {
     let count = |s: Severity| findings.iter().filter(|f| f.severity == s).count();
     let (e, w, i) = (count(Severity::Error), count(Severity::Warn), count(Severity::Info));
@@ -513,33 +621,36 @@ pub fn findings_text(title: &str, findings: &[Finding]) -> String {
     if findings.is_empty() {
         t.push_str("no problems found\n");
     }
+    // Room for the closing line.
+    let budget = TOKEN_BUDGET.saturating_sub(30);
+    let mut used = approx_tokens(&t);
+    let mut shown = 0;
     for f in findings.iter().take(MAX_TEXT_FINDINGS) {
-        let other = f.other.as_ref().map_or(String::new(), |o| format!(" -> {o}"));
-        t.push_str(&format!("{} {} {} {}{other}: {}\n", f.id, f.severity.as_str(), f.code, f.part, f.message));
-        t.push_str(&format!("    at {} ({} of {})", point(f.at), f.side, f.part));
-        if let Some(c) = &f.cause {
-            t.push_str(&format!("; {c}"));
+        let block = finding_text(f);
+        let cost = approx_tokens(&block);
+        // The first finding always shows; later ones only while they fit.
+        if shown > 0 && used + cost > budget {
+            break;
         }
-        t.push('\n');
-        for fix in &f.fixes {
-            let args = serde_json::to_string(&fix.args).unwrap_or_default();
-            t.push_str(&format!("    fix: {} {args} ({})", fix.op, fix.summary));
-            if let Some(p) = &fix.predicted {
-                t.push_str(&format!("  predicted: {p}"));
-            }
-            t.push('\n');
-        }
-        if let Some(h) = &f.hint {
-            t.push_str(&format!("    note: {h}\n"));
-        }
+        used += cost;
+        t.push_str(&block);
+        shown += 1;
     }
-    if findings.len() > MAX_TEXT_FINDINGS {
-        t.push_str(&format!("+{} more findings (diagnose with a target narrows the view)\n", findings.len() - MAX_TEXT_FINDINGS));
+    if findings.len() > shown {
+        let rest: Vec<String> = findings[shown..].iter().take(6).map(|f| format!("{} {} {}", f.id, f.code, f.part)).collect();
+        t.push_str(&format!(
+            "+{} more: {}{} (diagnose with a target or explain narrows the view)\n",
+            findings.len() - shown,
+            rest.join(", "),
+            if findings.len() - shown > 6 { ", ..." } else { "" }
+        ));
     }
     t
 }
 
 /// The `diagnose` report of a view (fixes without predictions).
+///
+/// Complexity: [`diagnose`].
 pub fn report(view: &View) -> Report {
     let f = diagnose(view);
     Report::new("diagnose", findings_text(&view.title(), &f), &f)

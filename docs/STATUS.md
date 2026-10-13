@@ -121,14 +121,14 @@ Acceptance:
 - [x] `features` v1: `ear`, `nose`, `eye`, `head_base`, `hand`, `horn`, `bolt`, `rivet`, `vent_grille`, `panel_inset`, `molding` (ADR 0012), with `gen.feature` and spec `feature` parts
 - [x] `strands`: hair, fur, eyebrows, grass, cables as cards, clumps and shells (ADR 0013; cables and ropes are the `cable` feature (catenary sag, twisted plies); kernel `crates/strands` done: loop, group or whole-surface regions, 8 styles, cards with cap, layers and flyaways, lens clumps, shells, coverage report; op `gen.strands` with landmark loops and coverage in its summary, diagnostics skip open, crossing, thin and floating checks on `strands` objects; spec `strands` parts grown on `params.on` with landmark loops; draping styles hug the scalp and fall past it)
 - [ ] Vegetation (ADR 0009): `tree` feature and `gen.tree` (species presets, crown hull, branch levels, roots), styles realistic, stylized painted and solid low poly; foliage as `clumps`, `cards` (cluster and single-leaf cards with leaf angle, repetition and coverage parameters) or `shell`, crown normal transfer, wind data per engine, `flower` and `grass_cards`, `vegetation` perception aspect and expectations
-- [ ] Full diagnostics: intent, edge flow, shading, detail scale, with predicted fixes
+- [x] Full diagnostics: intent, edge flow, shading, detail scale, with predicted fixes (ADR 0015; mesh checks in `crates/perceive/src/diagnose/` (shading, edge flow on `deforming` parts, detail scale, strands), intent and landmark checks in `crates/spec/src/diagnose.rs`; 15 new codes, every finding with a unit, landmark and spec cause path; fixes on spec parts are spec patches or edit layers, predicted best first; codes in `docs/agents/debugging.md`; elf head, 101k triangles: 0.3 s; passes linear in `cargo xtask bench-scale --kernel diagnose`)
 - [ ] Visual DNA archetypes (ADR 0011): skeletons for weapon centerlines, humanoid races with anatomy kits, wings (feathered, membrane), vegetation; grooming genes on strands (braids, beads, clumps); ornament along paths; the full art-direction critique set
 - [x] MCP tool `features`
 
 Acceptance:
 
 - [x] T11 geometry built in at most 6 agent calls with no image calls (`docs/agents/examples/feature_head.json`: brief plus one spec call, brief 8/8)
-- [ ] The diagnostics corpus passes
+- [x] The diagnostics corpus passes (`crates/mcp/tests/diagnostics_corpus.rs`: 21 broken specs and meshes through the agent tools (floating ear, penetrating hair, asymmetric mirror, missing joint and face loops, micro detail, wrong proportions, bald spot, one case per new code, the geometry problems); each asserts the code on the part, the landmark or position, the cause path, the token budget, that `explain` predicts the top fix resolves it and that `diagnose fix` makes it go away; 17 s)
 - [x] Feature templates keep clean topology across their parameter ranges (property tests)
 
 ## Phase 4: UV
