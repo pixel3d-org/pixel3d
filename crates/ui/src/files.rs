@@ -51,13 +51,23 @@ impl FileRoots {
     ///
     /// Complexity: O(picked folders).
     pub fn allow_picked_file(&mut self, file: &Path) -> bool {
-        match folder_of(file) {
-            Some(dir) if !self.picked.contains(&dir) => {
-                self.picked.push(dir);
-                true
-            }
-            _ => false,
+        folder_of(file).is_some_and(|dir| self.push(dir))
+    }
+
+    /// Allows a folder the user named (`pixel3d --allow-dir`). Returns
+    /// whether it was new; a folder that does not exist is not added.
+    ///
+    /// Complexity: O(picked folders).
+    pub fn allow_folder(&mut self, dir: &Path) -> bool {
+        dir.is_dir() && dir.canonicalize().is_ok_and(|d| self.push(d))
+    }
+
+    fn push(&mut self, dir: PathBuf) -> bool {
+        if self.picked.contains(&dir) {
+            return false;
         }
+        self.picked.push(dir);
+        true
     }
 
     /// Every allowed folder: the project folder first (relative paths start
@@ -111,6 +121,8 @@ pub(crate) mod tests {
         assert!(r.roots().is_empty() && r.access().roots().is_empty(), "nothing is allowed at first");
         assert!(r.allow_picked_file(&b.join("x.obj")));
         assert!(!r.allow_picked_file(&b.join("y.obj")), "a folder counts once");
+        assert!(!r.allow_folder(&b), "named or picked, once");
+        assert!(!r.allow_folder(&b.join("missing")), "a folder that does not exist is not added");
         assert!(r.set_project_file(Some(&a.join("scene.p3d"))));
         assert_eq!(r.roots(), vec![a.clone(), b.clone()], "the project folder comes first");
         assert!(r.set_project_file(None));

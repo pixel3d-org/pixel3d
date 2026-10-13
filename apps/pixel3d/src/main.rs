@@ -22,6 +22,9 @@ options:
       --screenshot <png>   save a screenshot of the window, then quit
       --light              use the light theme for this run
       --control <port>     let agents and tests drive the app (127.0.0.1, 0 picks a port)
+      --allow-dir <folder> let file ops (import) use this folder too (repeatable); they
+                           may always use the open project's folder and the folders
+                           files were picked from in a dialog or dropped from
       --fresh              start with default preferences and do not save them
       --command <line>     run a command after start (repeatable), e.g. 'ui.mode mode=face'
       --hover <x,y>        with --screenshot: rest the pointer there (points) first
@@ -42,6 +45,7 @@ struct Args {
     click: bool,
     control: Option<u16>,
     fresh: bool,
+    allow_dirs: Vec<PathBuf>,
 }
 
 struct App {
@@ -179,6 +183,17 @@ fn main() -> ExitCode {
                     return ExitCode::FAILURE;
                 }
             },
+            "--allow-dir" => match it.next().map(PathBuf::from) {
+                Some(d) if d.is_dir() => args.allow_dirs.push(d),
+                Some(d) => {
+                    eprintln!("error: --allow-dir: {} is not a folder", d.display());
+                    return ExitCode::FAILURE;
+                }
+                None => {
+                    eprintln!("error: --allow-dir needs a folder\n\n{USAGE}");
+                    return ExitCode::FAILURE;
+                }
+            },
             "--click" => args.click = true,
             "--fresh" => args.fresh = true,
             "--control" => match it.next().and_then(|s| s.parse().ok()) {
@@ -266,6 +281,11 @@ fn run(args: Args) -> anyhow::Result<()> {
             app.integrated_titlebar = cfg!(target_os = "macos");
             if let Some(rs) = &cc.wgpu_render_state {
                 app.set_wgpu(rs);
+            }
+            for d in &args.allow_dirs {
+                if let Err(e) = app.allow_folder(d) {
+                    tracing::warn!(error = %e, "--allow-dir");
+                }
             }
             // As if dropped on the window: a scene opens, models are imported.
             app.drop_files(&args.files);

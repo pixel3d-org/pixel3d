@@ -804,6 +804,18 @@ impl PixelApp {
         }
     }
 
+    /// Allows a folder the user named when starting the app
+    /// (`pixel3d --allow-dir`) for file ops, for the rest of the run.
+    pub fn allow_folder(&mut self, dir: &std::path::Path) -> Result<(), String> {
+        if !dir.is_dir() {
+            return Err(format!("{} {}", dir.display(), t("is not a folder")));
+        }
+        if self.files.allow_folder(dir) {
+            self.sync_file_access();
+        }
+        Ok(())
+    }
+
     /// The open document's file changed: its folder is the project folder.
     fn set_project_file(&mut self, file: Option<&std::path::Path>) {
         if self.files.set_project_file(file) {
