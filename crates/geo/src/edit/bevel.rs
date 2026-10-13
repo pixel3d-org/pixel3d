@@ -52,6 +52,51 @@ pub struct BevelResult {
 /// Largest number of bevel segments.
 pub const MAX_BEVEL_SEGMENTS: u32 = 64;
 
+/// Faces that differ by less than this (degrees) count as one flat region.
+const FLAT_DEG: f32 = 0.5;
+
+/// Flat runs around a vertex: two beveled edges (ring indices `a` and `b`,
+/// following the rotation) with only plain edges between them and every
+/// sector between them in one plane, such as a quad split by a diagonal or
+/// a face split by a boolean. Their corners all move to the one point
+/// where the two offset lines meet, as if the plain edges were not there.
+/// Each run also returns the turn from `a` to `b` (under 180 degrees).
+///
+/// Complexity: O(valence).
+fn flat_runs(mesh: &Mesh, v: u32, ring: &[u32], is_bev: &impl Fn(u32) -> bool) -> Vec<(usize, usize, f32)> {
+    let n = ring.len();
+    let pos = |x: u32| mesh.positions[x as usize];
+    let cos = FLAT_DEG.to_radians().cos();
+    let mut out = Vec::new();
+    for a in (0..n).filter(|&a| is_bev(ring[a])) {
+        let Some(f0) = mesh.face(ring[a]) else { continue };
+        let n0 = mesh.face_normal(f0);
+        let mut turn = 0.0;
+        let mut k = a;
+        let end = loop {
+            let (hp, hq) = (ring[k], ring[(k + 1) % n]);
+            match mesh.face(hp) {
+                Some(f) if mesh.face_normal(f).dot(n0) >= cos => {}
+                _ => break None,
+            }
+            turn += dir(pos(v), pos(mesh.dest(hp))).angle_between(dir(pos(v), pos(mesh.dest(hq))));
+            k = (k + 1) % n;
+            if k == a {
+                break None;
+            }
+            if is_bev(ring[k]) {
+                break Some(k);
+            }
+        };
+        let Some(b) = end else { continue };
+        // One sector is the ordinary case; a turn of 180 degrees or more has no inside corner.
+        if (b + n - a) % n >= 2 && turn < std::f32::consts::PI - 1e-2 {
+            out.push((a, b, turn));
+        }
+    }
+    out
+}
+
 /// Unit direction from `a` to `b` (zero when they coincide).
 fn dir(a: Vec3, b: Vec3) -> Vec3 {
     (b - a).normalize_or_zero()
@@ -116,8 +161,21 @@ pub fn bevel(mesh: &mut Mesh, edges: &[u32], spec: &BevelSpec) -> Result<BevelRe
     for &v in &verts {
         let ring: Vec<u32> = mesh.vert_outgoing(v).collect();
         let n = ring.len();
+        let mut in_run = vec![false; n];
+        for (a, b, turn) in flat_runs(mesh, v, &ring, &is_bev) {
+            let f = 1.0 / (turn / 2.0).tan();
+            for h in [ring[a], ring[b]] {
+                let k = along.entry((h >> 1, v)).or_insert(0.0);
+                *k = k.max(f);
+            }
+            let mut k = a;
+            while k != b {
+                in_run[k] = true;
+                k = (k + 1) % n;
+            }
+        }
         for i in 0..n {
-            if mesh.face(ring[i]).is_none() {
+            if mesh.face(ring[i]).is_none() || in_run[i] {
                 continue;
             }
             let (hp, hq) = (ring[i], ring[(i + 1) % n]);
@@ -175,12 +233,30 @@ pub fn bevel(mesh: &mut Mesh, edges: &[u32], spec: &BevelSpec) -> Result<BevelRe
     let mut corner_new: FxHashMap<u32, u32> = FxHashMap::default();
     let mut slide_req: FxHashMap<(u32, u32), Vec<Vec3>> = FxHashMap::default();
     let mut slide_of_corner: Vec<(u32, (u32, u32))> = Vec::new();
+    // Plain edges inside flat runs and the run corner their ends move to.
+    let mut transparent: FxHashSet<u32> = FxHashSet::default();
+    let mut run_slide: Vec<((u32, u32), u32)> = Vec::new();
     for &v in &verts {
         let ring: Vec<u32> = mesh.vert_outgoing(v).collect();
         let n = ring.len();
+        let mut in_run = vec![false; n];
+        for (a, b, turn) in flat_runs(mesh, v, &ring, &is_bev) {
+            let (ua, ub) = (dir(pos(v), pos(mesh.dest(ring[a]))), dir(pos(v), pos(mesh.dest(ring[b]))));
+            let c = p.new_vert(pos(v) + (ua + ub).normalize_or_zero() * (width / (turn / 2.0).sin()), Some(v));
+            let mut k = a;
+            while k != b {
+                in_run[k] = true;
+                corner_new.insert(ring[k], c);
+                if k != a {
+                    transparent.insert(ring[k]);
+                    run_slide.push(((ring[k] >> 1, v), c));
+                }
+                k = (k + 1) % n;
+            }
+        }
         for i in 0..n {
             let (hp, hq) = (ring[i], ring[(i + 1) % n]);
-            if mesh.face(hp).is_none() {
+            if mesh.face(hp).is_none() || in_run[i] {
                 continue;
             }
             let (up, uq) = (dir(pos(v), pos(mesh.dest(hp))), dir(pos(v), pos(mesh.dest(hq))));
@@ -214,19 +290,26 @@ pub fn bevel(mesh: &mut Mesh, edges: &[u32], spec: &BevelSpec) -> Result<BevelRe
     for (h, k) in slide_of_corner {
         corner_new.insert(h, slide[&k]);
     }
+    slide.extend(run_slide);
     let moved = |h: u32| corner_new.get(&h).copied().unwrap_or_else(|| mesh.origin(h));
 
     // ---- profile chains, shared by strips that continue through a vertex ----
     let s = spec.segments as usize;
     let mut chains: FxHashMap<(u32, u32, u32), Vec<u32>> = FxHashMap::default();
-    let mut chain = |p: &mut Patch, v: u32, a: u32, b: u32| -> Vec<u32> {
+    // The profile of beveled edge `e` at its end `v` bends toward the point of
+    // the edge level with the chain's ends (the old vertex in the middle of
+    // an edge loop, a point down the edge where strips end at a corner).
+    let mut chain = |p: &mut Patch, v: u32, e: u32, a: u32, b: u32| -> Vec<u32> {
         let (lo, hi) = (a.min(b), a.max(b));
         let mids = chains
             .entry((v, lo, hi))
             .or_insert_with(|| {
                 let at = |x: u32| p.new_vert_position(x).unwrap_or_else(|| mesh.positions[x as usize]);
-                let (l, r, c) = (at(lo), at(hi), pos(v));
+                let (l, r) = (at(lo), at(hi));
                 let m = (l + r) * 0.5;
+                let [e0, e1] = mesh.edge_verts(e);
+                let d = dir(pos(e0), pos(e1));
+                let c = pos(v) + d * d.dot(m - pos(v));
                 let k = m + (c - m) * (2.0 * spec.profile);
                 (1..s)
                     .map(|j| {
@@ -234,7 +317,7 @@ pub fn bevel(mesh: &mut Mesh, edges: &[u32], spec: &BevelSpec) -> Result<BevelRe
                         let q = l * (1.0 - t) * (1.0 - t) + k * (2.0 * t * (1.0 - t)) + r * (t * t);
                         // On flat ground a round profile passes through the old
                         // vertex: reuse it instead of stacking a copy on it.
-                        if q.distance(c) <= 1e-6 * width { v } else { p.new_vert(q, Some(v)) }
+                        if q.distance(pos(v)) <= 1e-6 * width { v } else { p.new_vert(q, Some(v)) }
                     })
                     .collect()
             })
@@ -299,8 +382,8 @@ pub fn bevel(mesh: &mut Mesh, edges: &[u32], spec: &BevelSpec) -> Result<BevelRe
         // Side 1 runs along face f1 (holding h = v -> w), side 2 along the other face.
         let (c1v, c2v) = (moved(h), moved(mesh.next(h ^ 1)));
         let (c1w, c2w) = (moved(mesh.next(h)), moved(h ^ 1));
-        let cv = chain(&mut p, v, c1v, c2v);
-        let cw = chain(&mut p, w, c1w, c2w);
+        let cv = chain(&mut p, v, e, c1v, c2v);
+        let cw = chain(&mut p, w, e, c1w, c2w);
         for k in 0..s {
             let quad = [cw[k], cv[k], cv[k + 1], cw[k + 1]];
             let poly: Vec<u32> = (0..4).filter(|&i| quad[i] != quad[(i + 3) % 4]).map(|i| quad[i]).collect();
@@ -337,8 +420,10 @@ pub fn bevel(mesh: &mut Mesh, edges: &[u32], spec: &BevelSpec) -> Result<BevelRe
         }
         let like = mesh.vert_faces(v).next().map_or(0, |f| mesh.face_material(f));
         // Every edge beveled and an even profile: a quad grid per corner sector.
-        if !open && s >= 2 && s.is_multiple_of(2) && n >= 3 && ring.iter().all(|&h| is_bev(h)) {
-            let chains: Vec<Vec<u32>> = (0..n).map(|i| chain(&mut p, v, sector((i + n - 1) % n), sector(i))).collect();
+        // Plain edges inside flat runs do not count: their faces share one corner.
+        let bevels: Vec<usize> = (0..n).filter(|&i| is_bev(ring[i])).collect();
+        if !open && s >= 2 && s.is_multiple_of(2) && bevels.len() >= 3 && ring.iter().all(|&h| is_bev(h) || transparent.contains(&h)) {
+            let chains: Vec<Vec<u32>> = bevels.iter().map(|&i| chain(&mut p, v, ring[i] >> 1, sector((i + n - 1) % n), sector(i))).collect();
             made.extend(corner_grid(&mut p, &chains, pos(v), spec.profile, like, Some(v)));
             continue;
         }
@@ -348,7 +433,7 @@ pub fn bevel(mesh: &mut Mesh, edges: &[u32], spec: &BevelSpec) -> Result<BevelRe
                 beveled += 1;
                 let before = sector((i + n - 1) % n);
                 let after = sector(i);
-                walk.extend(chain(&mut p, v, before, after));
+                walk.extend(chain(&mut p, v, h >> 1, before, after));
             } else {
                 walk.push(slide.get(&(h >> 1, v)).copied().unwrap_or(v));
             }
@@ -393,7 +478,10 @@ fn corner_grid(p: &mut Patch, chains: &[Vec<u32>], v: Vec3, profile: f32, materi
     let at = |p: &Patch, x: u32| p.new_vert_position(x).unwrap_or(v);
     let mids: Vec<u32> = chains.iter().map(|c| c[h]).collect();
     let mean = mids.iter().map(|&x| at(p, x)).sum::<Vec3>() / k as f32;
-    let center_pos = mean + (v - mean) * profile * 0.6;
+    // 0.31 puts the center of a round (0.5) square corner on its sphere:
+    // the chain middles average w / 2 from the corner, the sphere point
+    // w (1 - 1 / sqrt 3).
+    let center_pos = mean + (v - mean) * profile * 0.31;
     let center = p.new_vert(center_pos, like_vert);
     // Spoke j: from the middle of chain j (t = 0) to the center (t = h).
     let spokes: Vec<Vec<u32>> = mids
@@ -495,6 +583,62 @@ mod tests {
             assert_eq!(r.faces.len(), 12 * s as usize + 8 * 3 * h * h);
             assert!(m.verts().all(|v| m.valence(v) <= 4), "no poles above valence 4");
         }
+    }
+
+    #[test]
+    fn round_corners_follow_the_rounded_box() {
+        // A round bevel of width w on a cube is close to the cube shrunk by w
+        // and grown by a ball of radius w: no dents where three strips meet
+        // (the profiles at a corner bend toward the edge, not the old corner).
+        for s in [2, 4] {
+            let mut m = unit_box();
+            let all: Vec<u32> = m.edges().collect();
+            let w = 0.1;
+            bevel(&mut m, &all, &BevelSpec { width: w, segments: s, ..BevelSpec::default() }).unwrap();
+            let (lo, hi) = m.bounds().unwrap();
+            let inner_lo = lo + Vec3::splat(w);
+            let inner_hi = hi - Vec3::splat(w);
+            for v in m.verts() {
+                let p = m.positions[v as usize];
+                let d = p.distance(p.clamp(inner_lo, inner_hi));
+                assert!((d - w).abs() < 0.1 * w, "{s} segments: {p:?} is {d} from the inner box");
+            }
+        }
+    }
+
+    #[test]
+    fn faces_split_by_plain_edges_bevel_like_whole_ones() {
+        // Diagonals in the faces (as triangulation or a boolean leaves) must
+        // not change the result: every corner still gets a quad grid, and
+        // the shape is the one the whole box gives.
+        let volume = |m: &Mesh| -> f32 {
+            m.faces()
+                .flat_map(|f| m.face_triangles(f))
+                .map(|t| {
+                    let [a, b, c] = t.map(|h| m.positions[m.origin(h) as usize]);
+                    a.dot(b.cross(c)) / 6.0
+                })
+                .sum()
+        };
+        let mut whole = unit_box();
+        let all: Vec<u32> = whole.edges().collect();
+        bevel(&mut whole, &all, &BevelSpec { width: 0.1, segments: 2, ..BevelSpec::default() }).unwrap();
+        let mut split = unit_box();
+        let faces: Vec<u32> = split.faces().collect();
+        crate::edit::triangulate(&mut split, &faces[..3]).unwrap();
+        let sharp: Vec<u32> = split
+            .edges()
+            .filter(|&e| match split.edge_faces(e) {
+                [Some(a), Some(b)] => split.face_normal(a).dot(split.face_normal(b)) < 0.5,
+                _ => false,
+            })
+            .collect();
+        assert_eq!(sharp.len(), 12);
+        let r = bevel(&mut split, &sharp, &BevelSpec { width: 0.1, segments: 2, ..BevelSpec::default() }).unwrap();
+        split.validate().unwrap();
+        assert!(r.faces.iter().all(|&f| split.face_len(f) == 4), "bevel faces are quads");
+        assert_eq!(r.faces.len(), 12 * 2 + 8 * 3);
+        assert!((volume(&split) - volume(&whole)).abs() < 1e-5, "{} vs {}", volume(&split), volume(&whole));
     }
 
     #[test]
