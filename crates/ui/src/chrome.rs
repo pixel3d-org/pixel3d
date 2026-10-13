@@ -795,7 +795,9 @@ pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
         if let Some(msg) = app.status_message() {
             let width = (rx - x).max(0.0);
             if width > 20.0 {
-                let mut job = egui::text::LayoutJob::simple_singleline(msg.to_owned(), theme::small(), tk.warn);
+                // Multi-line messages (an op's summary) read as one line.
+                let line = msg.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join("; ");
+                let mut job = egui::text::LayoutJob::simple_singleline(line, theme::small(), tk.warn);
                 job.wrap = egui::text::TextWrapping { max_width: width, max_rows: 1, break_anywhere: true, overflow_character: Some('\u{2026}') };
                 let g = p.layout_job(job);
                 p.galley(pos2(x, y - g.size().y / 2.0), g, tk.warn);
