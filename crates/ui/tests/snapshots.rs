@@ -307,3 +307,31 @@ fn history_bisect_card() {
     h.run_steps(10);
     snapshot(&mut h, "bisect_light");
 }
+
+/// The Features panel open below the Outliner with the ear template
+/// selected and inserted; its landmarks show in the viewport.
+fn features_app(theme: ThemePref) -> Harness<'static, PixelApp> {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = theme;
+    a.run("ui.dock", json!({ "operation": "close", "panel": "health" })).unwrap();
+    a.run("ui.dock", json!({ "operation": "close", "panel": "properties" })).unwrap();
+    a.run("features.insert", json!({ "feature": "ear", "params": { "variant": "elf" }, "open": true })).unwrap();
+    a.run("view.feature_landmarks", json!({ "on": true })).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("view.frame", Value::Null).unwrap();
+    h.run_steps(20);
+    h
+}
+
+#[test]
+fn features_panel_dark() {
+    let mut h = features_app(ThemePref::Dark);
+    snapshot(&mut h, "features_dark");
+}
+
+#[test]
+fn features_panel_light() {
+    let mut h = features_app(ThemePref::Light);
+    snapshot(&mut h, "features_light");
+}

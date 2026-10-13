@@ -17,6 +17,7 @@ pub mod control;
 pub mod curves;
 pub mod docking;
 pub mod elements;
+pub mod features;
 pub mod files;
 pub mod gizmo;
 pub mod handles;
@@ -303,6 +304,8 @@ pub struct PixelApp {
     pub handles: handles::HandleTool,
     /// The History panel's bisect card.
     pub bisect: bisect::BisectState,
+    /// The Features panel (feature templates).
+    pub features: features::FeatureBrowser,
     /// The run card of a long op (remesh) and its background run.
     pub job_card: jobcard::JobCard,
     /// Poles of the shown meshes, for the pole overlay.
@@ -379,6 +382,7 @@ impl PixelApp {
             outline: outline::OutlineEditor::default(),
             handles: handles::HandleTool::default(),
             bisect: bisect::BisectState::default(),
+            features: features::FeatureBrowser::default(),
             job_card: jobcard::JobCard::default(),
             poles: poles::PoleCache::default(),
             coalesce: None,
@@ -878,6 +882,7 @@ impl PixelApp {
         self.outline = outline::OutlineEditor::default();
         self.handles = handles::HandleTool::default();
         self.bisect = bisect::BisectState::default();
+        self.features.inserted = None;
         self.job_card = jobcard::JobCard::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
@@ -1033,6 +1038,12 @@ impl PixelApp {
             outline_cmd if outline_cmd.starts_with("outline.") => self.outline_command(outline_cmd, params),
             // The Handles tool: place, pin and pull points; its radius.
             handles_cmd if handles_cmd.starts_with("handles.") => self.handles_command(handles_cmd, params),
+            // The Features panel: search, pick, set and insert feature templates.
+            features_cmd if features_cmd.starts_with("features.") => self.features_command(features_cmd, params),
+            "view.feature_landmarks" => {
+                self.ui.view.feature_landmarks = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.feature_landmarks);
+                Ok(json!({ "featureLandmarks": self.ui.view.feature_landmarks }))
+            }
             // Bisect the history for the change that broke a test; go back before it.
             "history.bisect" | "history.jump" => self.bisect_command(id, params),
             "history.bisect_card" => {
@@ -1848,6 +1859,7 @@ impl PixelApp {
                 spec::provenance_tip(self, ui);
                 outline::overlay(self, ui);
                 handles::overlay(self, ui);
+                features::overlay(self, ui);
                 poles::overlay(self, ui);
                 let gizmo_rect = self.viewport.rect;
                 gizmo::show(self, ui, gizmo_rect);
@@ -1867,6 +1879,7 @@ impl PixelApp {
                     docking::Panel::Timeline => panels::timeline(self, ui),
                     docking::Panel::Bake => panels::bake(self, ui),
                     docking::Panel::Export => panels::export(self, ui),
+                    docking::Panel::Features => features::show(self, ui),
                 });
             }
         });

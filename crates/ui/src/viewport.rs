@@ -50,6 +50,8 @@ pub struct ViewSettings {
     pub poles: bool,
     /// Labelled landmark points of the selected spec part (with normal ticks).
     pub landmarks: bool,
+    /// Feature landmarks (`lm.<name>` groups) of the selected objects.
+    pub feature_landmarks: bool,
 }
 
 impl Default for ViewSettings {
@@ -66,6 +68,7 @@ impl Default for ViewSettings {
             xray_alpha: 0.5,
             poles: false,
             landmarks: false,
+            feature_landmarks: false,
         }
     }
 }
