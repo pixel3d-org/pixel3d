@@ -21,6 +21,14 @@ fn scale(c: &mut Criterion) {
         g.bench_with_input(BenchmarkId::from_parameter(t), &spec, |b, spec| b.iter(|| quad_remesh(black_box(&sphere), spec)));
     }
     g.finish();
+    let mut g = c.benchmark_group("scale_remesh_isotropic");
+    for &t in &scale_sizes(4_000, 100_000) {
+        // An equilateral triangle of side e covers about 0.433 e^2.
+        let edge = (std::f32::consts::PI / (0.433 * t as f32)).sqrt();
+        let spec = p3d_remesh::IsotropicSpec { edge, ..p3d_remesh::IsotropicSpec::default() };
+        g.bench_with_input(BenchmarkId::from_parameter(t), &spec, |b, spec| b.iter(|| p3d_remesh::isotropic(black_box(&sphere), spec)));
+    }
+    g.finish();
 }
 
 criterion_group! {
