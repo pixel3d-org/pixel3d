@@ -235,6 +235,13 @@ export type LengthRange = {
   min?: Length | null;
 };
 
+/** Edge loops around a point. */
+export type LoopParam = {
+  at: PointParam;
+  /** Outer radius of the loops; an eighth of the mesh's largest side when omitted. */
+  radius?: Length | null;
+};
+
 /** How `edit.merge` groups vertices. */
 export type MergeModeParam = "center" | "collapse";
 
@@ -1236,13 +1243,31 @@ export type GenShellParams = {
 
 /** `remesh.quad`: Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field. */
 export type RemeshQuadParams = {
+  /** Flow along an object axis (limbs, blades, tails). */
+  align?: AxisParam | null;
   /** Target edge length; about a fortieth of the largest side when omitted. */
   edge?: Length | null;
   /** Smoothing sweeps of the direction and position fields per level (more is smoother and slower). */
   iterations?: number;
+  /** Edge loops circling points (eyes, mouth, joints): `{"at": "eye_socket", "radius": "3cm"}`; `at` is world coordinates or a group's center. */
+  loops?: LoopParam[];
   /** Relaxation sweeps onto the original surface. */
   relax?: number;
   /** Mesh object (name, path or id); it must be closed. */
+  target: string;
+};
+
+/** `remesh.isotropic`: Rebuilds a mesh as even triangles about `edge` long (valence near 6), keeping boundaries and sharp features. */
+export type RemeshIsotropicParams = {
+  /** Target edge length; about a fortieth of the largest side when omitted. */
+  edge?: Length | null;
+  /** Edges bent more than this are features and keep their place. */
+  feature_angle?: Angle;
+  /** Rounds of split, collapse, flip, relax and project. */
+  iterations?: number;
+  /** Join triangle pairs into quads afterwards (quad-dominant). */
+  quads?: boolean;
+  /** Mesh object (name, path or id). */
   target: string;
 };
 
@@ -1906,6 +1931,7 @@ export interface OpParams {
   "sdf.silhouettes": SdfSilhouettesParams;
   "gen.shell": GenShellParams;
   "remesh.quad": RemeshQuadParams;
+  "remesh.isotropic": RemeshIsotropicParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

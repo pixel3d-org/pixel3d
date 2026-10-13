@@ -375,3 +375,52 @@ fn weld_joins_stitch_a_part_into_its_parent() {
     assert!(rec.provenance.entries.iter().any(|e| e.path == "/parts/horn/primitive"), "{:?}", rec.provenance.entries);
     assert_eq!(rec.provenance.face_count(), m.face_count());
 }
+
+/// Mean |sin 2t| between edges and the radial direction around `center`
+/// (0 when edges run along loops and spokes).
+fn misalignment(m: &p3d_mesh::Mesh, w: glam::Affine3A, center: Vec3, radius: f32) -> f32 {
+    let (mut sum, mut n) = (0.0f32, 0usize);
+    for e in m.edges() {
+        let [a, b] = m.edge_verts(e);
+        let (pa, pb) = (w.transform_point3(m.positions[a as usize]), w.transform_point3(m.positions[b as usize]));
+        let mid = (pa + pb) * 0.5;
+        let r = mid.distance(center);
+        if !(0.5 * radius..0.95 * radius).contains(&r) {
+            continue;
+        }
+        let radial = (mid - center).normalize();
+        let dir = (pb - pa).normalize();
+        // Project out the surface normal roughly: the view direction toward +z dominates on a face.
+        let t = dir.dot(radial).clamp(-1.0, 1.0).acos();
+        sum += (2.0 * t).sin().abs();
+        n += 1;
+    }
+    sum / n.max(1) as f32
+}
+
+#[test]
+fn head_remeshes_loop_around_the_eyes_by_category() {
+    let build = |loops: Option<Value>| {
+        let mut tx = Tx::new(Document::new());
+        let mut remesh = json!({ "op": "remesh.quad", "args": { "edge": "3mm" } });
+        if let Some(l) = loops {
+            remesh["args"]["loops"] = l;
+        }
+        ok(
+            &mut tx,
+            "spec.set",
+            json!({ "name": "h", "spec": { "category": "humanoid_head", "parts": { "head": {
+                "sdf": [{ "ellipsoid": { "at": [0, 0.13, 0], "radii": [0.075, 0.105, 0.09] } }],
+                "detail": "4mm", "landmarks": "category", "edits": [remesh]
+            } } } }),
+        );
+        let k = key(&tx, "h/head");
+        let eye = p3d_spec::part_landmarks(tx.doc(), key(&tx, "h"), "head").unwrap().into_iter().find(|l| l.name == "eye_l").unwrap().point;
+        let m = tx.doc().object_mesh(k).unwrap().clone();
+        (misalignment(&m, tx.doc().world_affine(k).unwrap(), eye, 0.21 * 0.15), m)
+    };
+    let (guided, m) = build(None);
+    let (free, _) = build(Some(json!([])));
+    assert!(m.faces().all(|f| m.face_len(f) == 4), "quads");
+    assert!(guided < free * 0.8, "loops around the eye: {guided} vs {free}");
+}

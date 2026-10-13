@@ -250,16 +250,49 @@ fn random_tangent(n: Vec3, state: &mut u64) -> Vec3 {
     a * ang.cos() + b * ang.sin()
 }
 
-/// The orientation field on every level: random at the coarsest level, then
-/// `iterations` sweeps per level, each level started from its parents.
+/// A design rule for the direction field (category topology rules,
+/// project spec 17.9).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Guide {
+    /// Edge loops circling `center` (eyes, mouth): the field follows
+    /// circles in the ring from 0.4 to 1 times `radius`, leaving the middle
+    /// free for the poles the loops need.
+    Ring { center: Vec3, radius: f32 },
+    /// Flow along a direction (a limb, the length of a part): the field
+    /// starts aligned with it instead of at random.
+    Axis(Vec3),
+}
+
+/// The fixed direction of a sample under the ring guides, if any.
+#[inline]
+fn guided(guides: &[Guide], x: Vec3, n: Vec3) -> Option<Vec3> {
+    guides.iter().find_map(|g| match *g {
+        Guide::Ring { center, radius } => {
+            let d = x - center;
+            let r = d.length();
+            (r >= 0.4 * radius && r <= radius).then(|| n.cross(d).try_normalize()).flatten()
+        }
+        Guide::Axis(_) => None,
+    })
+}
+
+/// The orientation field on every level: random (or along an axis guide)
+/// at the coarsest level, then `iterations` sweeps per level, each level
+/// started from its parents; samples under ring guides are held.
 ///
-/// Complexity: O(E x iterations) per level, so O(E x iterations) overall.
-pub fn orientation_field(levels: &[Level], iterations: u32, seed: u64) -> Vec<Vec<Vec3>> {
+/// Complexity: O(E x iterations) per level, so O(E x iterations) overall,
+/// plus O(V x guides) for the guides.
+pub fn orientation_field(levels: &[Level], iterations: u32, seed: u64, guides: &[Guide]) -> Vec<Vec<Vec3>> {
     let mut state = seed ^ 0x5EE_D0FF_1E1D;
     let mut out: Vec<Vec<Vec3>> = levels.iter().map(|l| vec![Vec3::ZERO; l.len()]).collect();
     let top = levels.len() - 1;
+    let axis = guides.iter().find_map(|g| match g {
+        Guide::Axis(d) => d.try_normalize(),
+        Guide::Ring { .. } => None,
+    });
     for (i, q) in out[top].iter_mut().enumerate() {
-        *q = random_tangent(levels[top].n[i], &mut state);
+        let n = levels[top].n[i];
+        *q = axis.and_then(|a| (a - n * n.dot(a)).try_normalize()).unwrap_or_else(|| random_tangent(n, &mut state));
     }
     for li in (0..levels.len()).rev() {
         if li < top {
@@ -272,13 +305,22 @@ pub fn orientation_field(levels: &[Level], iterations: u32, seed: u64) -> Vec<Ve
             }
         }
         let l = &levels[li];
+        let fixed: Vec<Option<Vec3>> = if guides.is_empty() { Vec::new() } else { (0..l.len()).map(|i| guided(guides, l.x[i], l.n[i])).collect() };
         let q = &mut out[li];
+        for (i, f) in fixed.iter().enumerate() {
+            if let Some(d) = f {
+                q[i] = *d;
+            }
+        }
         for _ in 0..iterations {
             for class in &l.colors {
                 let fresh: Vec<Vec3> = class
                     .par_iter()
                     .map(|&i| {
                         let i = i as usize;
+                        if let Some(Some(d)) = fixed.get(i) {
+                            return *d;
+                        }
                         let ni = l.n[i];
                         let mut sum = q[i];
                         let mut weight = 0.0f32;

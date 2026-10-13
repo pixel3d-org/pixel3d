@@ -82,6 +82,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | Op | Summary |
 |---|---|
 | [`remesh.quad`](remesh.quad.md) | Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field. |
+| [`remesh.isotropic`](remesh.isotropic.md) | Rebuilds a mesh as even triangles about `edge` long (valence near 6), keeping boundaries and sharp features. |
 
 ## select
 

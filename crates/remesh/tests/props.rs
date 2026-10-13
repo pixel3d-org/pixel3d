@@ -21,7 +21,7 @@ fn solid(kind: u8, size: f64) -> Mesh {
 }
 
 proptest! {
-    #![proptest_config(ProptestConfig::with_cases(48))]
+    #![proptest_config(ProptestConfig::with_cases(if cfg!(debug_assertions) { 12 } else { 48 }))]
 
     #[test]
     fn closed_shapes_remesh_into_closed_quads(kind in 0u8..4, size in 0.3f64..2.0, ratio in 12.0f32..30.0, seed in 0u64..1000) {
@@ -41,6 +41,23 @@ proptest! {
         }).sum::<f32>() / m.edges().count() as f32;
         prop_assert!(mean > edge * 0.5 && mean < edge * 1.6, "mean edge {} for {}", mean, edge);
         let again = quad_remesh(&input, &spec).unwrap().0;
+        prop_assert_eq!(&again.positions, &m.positions);
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(if cfg!(debug_assertions) { 12 } else { 48 }))]
+
+    #[test]
+    fn isotropic_remeshes_stay_valid_and_closed(kind in 0u8..4, size in 0.3f64..2.0, ratio in 10.0f32..40.0) {
+        let input = solid(kind, size);
+        prop_assume!(input.face_count() > 0);
+        let edge = size as f32 / ratio;
+        let m = p3d_remesh::isotropic(&input, &p3d_remesh::IsotropicSpec { edge, ..p3d_remesh::IsotropicSpec::default() }).unwrap();
+        prop_assert_eq!(m.validate(), Ok(()));
+        prop_assert!(m.edges().all(|e| !m.is_boundary_edge(e)));
+        prop_assert!(m.faces().all(|f| m.face_len(f) == 3));
+        let again = p3d_remesh::isotropic(&input, &p3d_remesh::IsotropicSpec { edge, ..p3d_remesh::IsotropicSpec::default() }).unwrap();
         prop_assert_eq!(&again.positions, &m.positions);
     }
 }

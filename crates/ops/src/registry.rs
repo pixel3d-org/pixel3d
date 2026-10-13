@@ -79,6 +79,7 @@ impl Registry {
             Arc::new(Typed::<outline::SdfSilhouettes>::new()),
             Arc::new(Typed::<outline::GenShell>::new()),
             Arc::new(Typed::<remesh::QuadRemesh>::new()),
+            Arc::new(Typed::<remesh::IsotropicRemesh>::new()),
             Arc::new(Typed::<prim::Plane>::new()),
             Arc::new(Typed::<select::Save>::new()),
             Arc::new(Typed::<select::Grow>::new()),
