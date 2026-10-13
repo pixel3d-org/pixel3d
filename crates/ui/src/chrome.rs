@@ -1067,6 +1067,14 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
             }
         }
     }
+    // Over the outline canvas with a point selected, Delete deletes the point.
+    if app.outline.canvas_hovered && app.outline.selected.is_some() && !app.ui.mode.is_edit() {
+        for key in [Key::Delete, Key::Backspace] {
+            if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key)) {
+                let _ = app.run("outline.delete_point", Value::Null);
+            }
+        }
+    }
     // Edit Mode keys come first (E extrudes there, as in Blender).
     if app.ui.mode.is_edit() {
         let edit: &[(KeyboardShortcut, &str)] = &[

@@ -32,6 +32,8 @@ pub enum Tab {
     Shapes,
     /// The Model Spec of a spec root or part object (its editor).
     Spec,
+    /// The outlines of a shell or silhouettes object (their editor).
+    Outline,
 }
 
 impl Tab {
@@ -43,6 +45,7 @@ impl Tab {
             Tab::Mesh => Icon::Mesh,
             Tab::Shapes => Icon::Shapes,
             Tab::Spec => Icon::Spec,
+            Tab::Outline => Icon::Outline,
         }
     }
 
@@ -54,6 +57,7 @@ impl Tab {
             Tab::Mesh => t("Mesh data"),
             Tab::Shapes => t("Shapes (SDF)"),
             Tab::Spec => t("Model Spec"),
+            Tab::Outline => t("Outline"),
         }
     }
 }
@@ -73,13 +77,14 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
     let strip = Rect::from_min_size(full.min, vec2(TAB_STRIP, full.height()));
     let active = app.active_object();
     let has_mesh = active.is_some_and(|k| app.doc().object_mesh(k).is_some());
-    let tabs: Vec<Tab> = [Tab::Tool, Tab::Scene, Tab::Object, Tab::Mesh, Tab::Shapes, Tab::Spec]
+    let tabs: Vec<Tab> = [Tab::Tool, Tab::Scene, Tab::Object, Tab::Mesh, Tab::Shapes, Tab::Outline, Tab::Spec]
         .into_iter()
         .filter(|t| match t {
             Tab::Object => active.is_some(),
             Tab::Mesh => has_mesh,
             Tab::Shapes => app.sdf.object.is_some() && app.sdf.object == active && app.sdf.part.is_none(),
             Tab::Spec => app.spec.is_open(),
+            Tab::Outline => app.outline.is_open() && app.outline.part.is_none() && app.outline.object == active,
             _ => true,
         })
         .collect();
@@ -106,6 +111,7 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
                 (Tab::Mesh, Some(k)) => mesh_tab(app, ui, k),
                 (Tab::Shapes, Some(_)) => crate::sdf::panel::show(app, ui),
                 (Tab::Spec, Some(_)) => crate::spec::panel::show(app, ui),
+                (Tab::Outline, Some(_)) => crate::outline::panel::show(app, ui),
                 _ => scene_tab(app, ui),
             }
         });

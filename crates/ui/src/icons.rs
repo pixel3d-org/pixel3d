@@ -138,6 +138,9 @@ icons! {
     Poles => d::POLES, false;
     Spec => d::SPEC, false;
     Landmark => d::MAP_PIN, false;
+    Outline => d::BEZIER, false;
+    Leaf => d::LEAF, false;
+    Blueprint => d::BLUEPRINT, false;
 }
 
 /// The flattened outlines of an icon, parsed on first use.

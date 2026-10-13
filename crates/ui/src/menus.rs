@@ -253,6 +253,11 @@ pub fn menus() -> Vec<Menu> {
                 // Blended shapes to sculpt in the Shapes tab.
                 icon(Icon::Shapes, with("SDF shape", "shapes.new", crate::sdf::starter)),
                 None,
+                header("Outline"),
+                icon(Icon::Leaf, with("Leaf shell", "outline.new", || json!({ "starter": "leaf" }))),
+                icon(Icon::Leaf, with("Ear shell", "outline.new", || json!({ "starter": "ear" }))),
+                icon(Icon::Blueprint, with("Axe head silhouettes", "outline.new", || json!({ "starter": "axe_head" }))),
+                None,
                 header("Model Spec"),
                 icon(Icon::Spec, with("Lamp spec", "spec.starter", || json!({ "name": "lamp" }))),
                 icon(Icon::Spec, with("Elf head spec", "spec.starter", || json!({ "name": "elf_head" }))),

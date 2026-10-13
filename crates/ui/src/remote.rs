@@ -334,6 +334,7 @@ impl PixelApp {
             "allowedFolders": self.session.file_access().roots().iter().map(|r| r.display().to_string()).collect::<Vec<_>>(),
             "shapes": self.sdf_state(),
             "spec": self.spec_state(),
+            "outline": self.outline_state(),
             "jobCard": self.job_card_state(),
             "palette": self.palette.is_some(),
             "status": self.status_message(),

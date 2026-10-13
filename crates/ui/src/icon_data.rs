@@ -288,3 +288,14 @@ pub const SPEC: &[&str] =
 /// A map pin: a landmark on a surface.
 pub const MAP_PIN: &[&str] =
     &["M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0", "M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z"];
+
+/// A curve between two points with a handle: an outline drawn with Bézier
+/// curves.
+pub const BEZIER: &[&str] =
+    &["M5 19c2 -8 6 -12 14 -14", "M3 17h4v4h-4z", "M17 3h4v4h-4z", "M5 19l7 -10", "M12 9m-1.5 0a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0"];
+
+/// A leaf: a curved sheet from one outline.
+pub const LEAF: &[&str] = &["M5 20c0 -8 4 -14 14 -15c1 10 -5 14 -14 15z", "M5 20l8 -9"];
+
+/// A front outline beside a side outline: a blueprint.
+pub const BLUEPRINT: &[&str] = &["M3 12c0 -4 3 -7 7 -7v14c-4 0 -7 -3 -7 -7z", "M14 5h4v14h-4z", "M20 5v14"];
