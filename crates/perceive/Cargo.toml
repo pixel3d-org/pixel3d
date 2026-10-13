@@ -30,3 +30,7 @@ p3d-testdata = { workspace = true }
 [[bench]]
 name = "aspects"
 harness = false
+
+[[bench]]
+name = "scale"
+harness = false

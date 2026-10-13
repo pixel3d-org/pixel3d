@@ -10,10 +10,17 @@ use p3d_engine::Session;
 use p3d_mcp::Agent;
 use serde_json::{Value, json};
 
-/// Replays a reference session and returns the agent and the number of calls.
+/// Replays a reference session in its asset class (detail is judged at the
+/// class's view distance) and returns the agent and the number of calls.
 fn replay(source: &str) -> (Agent, usize) {
     let session: Value = serde_json::from_str(source).unwrap();
-    let mut agent = Agent::new(Session::new());
+    let mut s = Session::new();
+    if let Some(class) = session.get("asset_class") {
+        let mut doc = p3d_scene::Document::new();
+        doc.settings.asset_class = serde_json::from_value(class.clone()).unwrap();
+        s.load(doc);
+    }
+    let mut agent = Agent::new(s);
     let calls = session["calls"].as_array().unwrap();
     for (i, call) in calls.iter().enumerate() {
         let tool = call["tool"].as_str().unwrap();
