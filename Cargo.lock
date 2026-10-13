@@ -3285,6 +3285,7 @@ dependencies = [
  "p3d-scene",
  "p3d-sdf",
  "p3d-strands",
+ "p3d-vegetation",
  "schemars",
  "serde",
  "serde_json",

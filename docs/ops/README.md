@@ -70,6 +70,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`gen.shell`](gen.shell.md) | Builds a curved sheet from one outline (cup, bend, twist), as a card or a closed shell: ears, leaves, petals, wings, fins. |
 | [`gen.feature`](gen.feature.md) | Builds a feature template (head base, hand, ear, eye, nose, horn, cable, bolt, rivet, vent grille, panel inset, molding) from semantic parameters. |
 | [`gen.strands`](gen.strands.md) | Grows hair, fur, eyebrows, beards or grass on an object's surface as alpha cards, stylized clumps or fur shells, from about ten parameters. |
+| [`gen.tree`](gen.tree.md) | Grows a tree from a species preset (broadleaf, conifer, palm, birch, stylized) toward a crown hull, with buttress roots, swept wood and leaf cards, clumps or a crown shell. |
 
 ## sdf
 
