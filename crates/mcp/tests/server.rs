@@ -59,10 +59,11 @@ async fn tools_resources_and_calls() {
 
 /// A stand-in for the desktop app: a control server whose "UI thread"
 /// answers `mcp.call` on its own session, as the app does.
-fn fake_app() -> (std::net::SocketAddr, std::sync::Arc<std::sync::atomic::AtomicBool>, std::thread::JoinHandle<Session>) {
+fn fake_app() -> (std::net::SocketAddr, String, std::sync::Arc<std::sync::atomic::AtomicBool>, std::thread::JoinHandle<Session>) {
     use std::sync::atomic::{AtomicBool, Ordering};
     let server = p3d_control::Server::start(0).unwrap();
     let addr = server.addr();
+    let token = server.token().to_owned();
     let stop = std::sync::Arc::new(AtomicBool::new(false));
     let stop2 = std::sync::Arc::clone(&stop);
     let app = std::thread::spawn(move || {
@@ -93,15 +94,15 @@ fn fake_app() -> (std::net::SocketAddr, std::sync::Arc<std::sync::atomic::Atomic
         }
         session
     });
-    (addr, stop, app)
+    (addr, token, stop, app)
 }
 
 #[tokio::test(flavor = "current_thread")]
 async fn connected_tools_act_on_the_app() {
-    let (addr, stop, app) = fake_app();
+    let (addr, token, stop, app) = fake_app();
     let (server_io, client_io) = tokio::io::duplex(1 << 16);
     let server = tokio::spawn(async move {
-        let running = Server::connect(addr).unwrap().serve(server_io).await.unwrap();
+        let running = Server::connect_with_token(addr, &token).unwrap().serve(server_io).await.unwrap();
         running.waiting().await.unwrap();
     });
     let client = ().serve(client_io).await.unwrap();

@@ -99,6 +99,10 @@ impl PixelApp {
         }
         let server = Server::start(port).map_err(|e| e.to_string())?;
         let addr = server.addr();
+        // `pixel3d-cli mcp --connect` reads the token from this user-only
+        // file; unit tests hand the token over directly instead.
+        #[cfg(not(test))]
+        server.publish().map_err(|e| format!("cannot publish the agent access token: {e}"))?;
         self.remote.server = Some(server);
         self.remote.waker_set = false;
         self.set_status(format!("{} {addr}", t("Agents can connect at")));
@@ -325,9 +329,10 @@ mod tests {
     fn agents_drive_the_app_through_the_server() {
         let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
         let addr = app.start_control(0).unwrap();
+        let token = app.remote.server.as_ref().map(|s| s.token().to_owned()).unwrap();
         let ctx = egui::Context::default();
         let client = std::thread::spawn(move || {
-            let mut c = Client::connect(addr).unwrap();
+            let mut c = Client::connect(addr, &token).unwrap();
             let made = c.call("ui.command", json!({ "id": "prim.box", "params": { "name": "crate" } })).unwrap();
             let state = c.call("ui.inspect", Value::Null).unwrap();
             let key = c.call("ui.key", json!({ "key": "Tab" })).unwrap();
@@ -356,9 +361,10 @@ mod tests {
     fn mcp_tools_run_on_the_app_scene() {
         let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
         let addr = app.start_control(0).unwrap();
+        let token = app.remote.server.as_ref().map(|s| s.token().to_owned()).unwrap();
         let ctx = egui::Context::default();
         let client = std::thread::spawn(move || {
-            let mut c = Client::connect(addr).unwrap();
+            let mut c = Client::connect(addr, &token).unwrap();
             let run = json!({ "tool": "run", "args": { "ops": [{ "op": "prim.box", "args": { "name": "crate" } }] } });
             let made = c.call("mcp.call", run).unwrap();
             let seen = c.call("mcp.call", json!({ "tool": "scene_overview" })).unwrap();

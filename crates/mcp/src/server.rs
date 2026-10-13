@@ -70,7 +70,18 @@ impl Server {
     /// Forwards every tool to the desktop app listening at `addr` and adds
     /// the `ui_*` tools. Fails when nothing listens there.
     pub fn connect(addr: SocketAddr) -> Result<Server, ServeError> {
-        let mut remote = Remote::connect(addr).map_err(|e| ServeError::Connect { addr, reason: e.to_string() })?;
+        let remote = Remote::connect(addr).map_err(|e| ServeError::Connect { addr, reason: e.to_string() })?;
+        Self::connected(remote)
+    }
+
+    /// Like [`Server::connect`] with a known access token instead of the
+    /// one the app published (hosts that run their own control server).
+    pub fn connect_with_token(addr: SocketAddr, token: &str) -> Result<Server, ServeError> {
+        let remote = Remote::connect_with_token(addr, token).map_err(|e| ServeError::Connect { addr, reason: e.to_string() })?;
+        Self::connected(remote)
+    }
+
+    fn connected(mut remote: Remote) -> Result<Server, ServeError> {
         let mut list = tools();
         list.extend(ui_tools());
         Self::start("pixel3d-connect", list, true, move |tool, args| remote.call(tool, args))

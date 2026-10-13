@@ -12,12 +12,17 @@ use std::time::{Duration, Instant};
 use p3d_control::Client;
 use serde_json::{Value, json};
 
-struct App(Child);
+/// The app process and its control port; killed (and its access token
+/// file removed, which a killed app cannot do itself) when dropped.
+struct App(Child, u16);
 
 impl Drop for App {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
+        if let Some(token) = p3d_control::token_path(self.1) {
+            let _ = std::fs::remove_file(token);
+        }
     }
 }
 
@@ -46,9 +51,9 @@ fn pos_x(c: &mut Client) -> f64 {
 #[ignore = "needs a display and a GPU"]
 fn open_edit_with_the_gizmo_undo_and_save() {
     let port = free_port();
-    let _app = App(Command::new(env!("CARGO_BIN_EXE_pixel3d")).args(["--fresh", "--sample", "--control", &port.to_string()]).spawn().unwrap());
+    let _app = App(Command::new(env!("CARGO_BIN_EXE_pixel3d")).args(["--fresh", "--sample", "--control", &port.to_string()]).spawn().unwrap(), port);
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    let mut c = wait_for(60, || Client::connect(addr).ok());
+    let mut c = wait_for(60, || Client::connect_published(addr).ok());
     // Wait for the first frames: the viewport has a size.
     wait_for(60, || c.call("ui.inspect", Value::Null).ok().filter(|s| s["viewport"][2].as_f64().unwrap_or(0.0) > 10.0));
 

@@ -80,14 +80,30 @@ pub fn answer(agent: &mut Agent, session: &mut Session, params: &Value) -> Resul
 #[derive(Debug)]
 pub struct Remote {
     addr: SocketAddr,
+    /// A fixed token (tests); otherwise the one the app published, read
+    /// again on every reconnect since a restarted app has a new one.
+    token: Option<String>,
     client: Option<Client>,
     shots: u64,
 }
 
 impl Remote {
-    /// Connects now, so a wrong address fails at startup.
+    /// Connects now with the token the app published, so a wrong address
+    /// or a closed app fails at startup.
     pub fn connect(addr: SocketAddr) -> Result<Remote, ControlError> {
-        Ok(Remote { addr, client: Some(Client::connect(addr)?), shots: 0 })
+        Ok(Remote { addr, token: None, client: Some(Client::connect_published(addr)?), shots: 0 })
+    }
+
+    /// Connects with a known token (for hosts that start their own server).
+    pub fn connect_with_token(addr: SocketAddr, token: &str) -> Result<Remote, ControlError> {
+        Ok(Remote { addr, token: Some(token.to_owned()), client: Some(Client::connect(addr, token)?), shots: 0 })
+    }
+
+    fn open(&self) -> Result<Client, ControlError> {
+        match &self.token {
+            Some(t) => Client::connect(self.addr, t),
+            None => Client::connect_published(self.addr),
+        }
     }
 
     pub fn addr(&self) -> SocketAddr {
@@ -164,7 +180,7 @@ impl Remote {
         };
         let mut client = match self.client.take() {
             Some(c) => c,
-            None => Client::connect(addr).map_err(|e| lost(&e))?,
+            None => self.open().map_err(|e| lost(&e))?,
         };
         match client.call(method, params) {
             Ok(v) => {
