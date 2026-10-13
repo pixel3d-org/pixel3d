@@ -100,7 +100,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "perceive",
-            description: "Understand the model without images: structure, shape, silhouette, section, relations, probe or diff, as compact text.",
+            description: "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions or brief, as compact text.",
             schema: schema::<PerceiveArgs>(),
         },
         ToolInfo {
@@ -365,6 +365,25 @@ impl Agent {
         let target = a.target.as_deref();
         let report = match a.aspect {
             Aspect::Diff => return self.diff(a.from.as_deref(), None, target),
+            Aspect::Proportions => {
+                let root = doc.resolve(target.unwrap_or("")).map_err(|e| OpError::from_scene(e, "/target"))?;
+                let (text, data) = p3d_spec::proportions(&doc, root)?;
+                return Ok(ToolOutput::ok(text, data));
+            }
+            Aspect::Brief => {
+                // The brief of the target's spec, else the only brief.
+                let from_spec = target
+                    .and_then(|t| doc.resolve(t).ok())
+                    .and_then(|k| doc.spec(k))
+                    .and_then(|r| p3d_spec::parse(&r.source).ok())
+                    .and_then(|s| s.brief);
+                let names: Vec<String> = doc.briefs().map(|(n, _)| n.to_owned()).collect();
+                let name = from_spec.or_else(|| (names.len() == 1).then(|| names[0].clone())).ok_or_else(|| {
+                    let hint = if names.is_empty() { "brief set creates one".to_owned() } else { format!("briefs: {}", names.join(", ")) };
+                    OpError::invalid("/target", "say which spec: its brief is measured").with_hint(&hint)
+                })?;
+                return self.brief(&BriefArgs { action: BriefAction::Coverage, name, brief: None });
+            }
             aspect => {
                 let view = View::new(&doc, target).map_err(op_error)?;
                 match aspect {
@@ -401,7 +420,8 @@ impl Agent {
                             o
                         })?
                     }
-                    Aspect::Diff => return Err(OpError::internal("unreachable")),
+                    Aspect::Visibility => p3d_perceive::visibility::report(&view),
+                    Aspect::Diff | Aspect::Proportions | Aspect::Brief => return Err(OpError::internal("unreachable")),
                 }
             }
         };

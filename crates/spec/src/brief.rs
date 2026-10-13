@@ -192,7 +192,7 @@ pub struct BriefItem {
 /// for stylized.
 type Proportions = &'static [(&'static str, (f64, f64), (f64, f64))];
 
-fn proportions(category: &str) -> Proportions {
+fn proportion_table(category: &str) -> Proportions {
     match category {
         // Width and depth over height of the skull (ears excluded), and the
         // eye line as a fraction of the height from the chin.
@@ -239,7 +239,7 @@ pub fn expand(b: &Brief) -> Vec<BriefItem> {
     }
     out.push(BriefItem { label: "parts attached to what they sit on".into(), kind: ItemKind::Attached });
     let stylized = b.style.as_deref() == Some("stylized");
-    for &(name, real, styl) in proportions(category) {
+    for &(name, real, styl) in proportion_table(category) {
         let (min, max) = if stylized { styl } else { real };
         out.push(BriefItem { label: format!("{name} {min} to {max}"), kind: ItemKind::Proportion { name, min, max } });
     }
@@ -579,6 +579,15 @@ pub fn coverage(doc: &Document, name: &str) -> Result<Coverage, OpError> {
     Ok(Coverage { brief: name.to_owned(), spec: doc.path(root), items })
 }
 
+/// The brief's asset class, if it names one.
+fn asset_class(b: &Brief) -> Result<Option<p3d_scene::AssetClass>, OpError> {
+    let Some(c) = &b.asset_class else { return Ok(None) };
+    serde_json::from_value(Value::String(c.clone())).map(Some).map_err(|_| {
+        OpError::invalid("/brief/asset_class", format!("`{c}` is not an asset class"))
+            .with_hint("prop_small, prop_medium, prop_large, hero_prop, weapon_fp, character or environment_modular")
+    })
+}
+
 // ---- brief.set -----------------------------------------------------------------
 
 /// Parameters of `brief.set`.
@@ -622,12 +631,17 @@ impl Op for BriefSet {
 
     fn validate(_doc: &Document, p: &BriefSetParams) -> Result<(), OpError> {
         p3d_scene::name::check_name(&p.name).map_err(|e| OpError::invalid("/name", e.to_string()))?;
-        parse_brief(&p.brief).map(|_| ()).map_err(|e| OpError::invalid(&format!("/brief{}", e.path), e.message))
+        let b = parse_brief(&p.brief).map_err(|e| OpError::invalid(&format!("/brief{}", e.path), e.message))?;
+        asset_class(&b).map(|_| ())
     }
 
     fn apply(tx: &mut Tx, p: &BriefSetParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
         let brief = parse_brief(&p.brief).map_err(|e| OpError::invalid(&format!("/brief{}", e.path), e.message))?;
         tx.doc_mut().set_brief(&p.name, p.brief.clone());
+        // The brief's asset class sets the document's budgets and view distance.
+        if let Some(class) = asset_class(&brief)? {
+            tx.doc_mut().settings.asset_class = class;
+        }
         let items = expand(&brief);
         let pending = items.iter().filter(|i| matches!(i.kind, ItemKind::Pending { .. })).count();
         let labels: Vec<&str> = items.iter().filter(|i| !matches!(i.kind, ItemKind::Pending { .. })).map(|i| i.label.as_str()).collect();
@@ -637,4 +651,60 @@ impl Op for BriefSet {
         }
         Ok(OpOutput::summary(s))
     }
+}
+
+/// The `proportions` perception aspect of a spec root: its category's
+/// ratios against the style's reference range (style and category from the
+/// brief it answers, else the spec's own), then every part's longest
+/// extent as a fraction of the main part's height.
+///
+/// Complexity: one landmark query, plus O(V) per part for bounds.
+pub fn proportions(doc: &Document, root: ObjectKey) -> Result<(String, Value), OpError> {
+    let record = doc.spec(root).ok_or_else(|| OpError::new(ErrorCode::InvalidParam, "proportions need a spec root").at("/target"))?;
+    let spec = parse(&record.source).map_err(|e| OpError::invalid(&format!("/spec{}", e.path), e.message))?;
+    let brief = spec.brief.as_deref().and_then(|b| doc.brief(b)).and_then(|b| parse_brief(b).ok());
+    let category = brief.as_ref().and_then(|b| b.category.clone()).or_else(|| spec.category.clone());
+    let style = brief
+        .as_ref()
+        .and_then(|b| b.style.clone())
+        .or_else(|| spec.style.as_ref().and_then(|s| s.get("preset")).and_then(Value::as_str).map(str::to_owned));
+    let stylized = style.as_deref() == Some("stylized");
+    let objects: BTreeMap<String, ObjectKey> = record
+        .parts
+        .iter()
+        .filter(|(n, _)| spec.parts.get(*n).is_some_and(|p| p.join() != Join::Decal))
+        .filter_map(|(n, r)| Some((n.clone(), doc.object_by_id(r.object?)?)))
+        .collect();
+    let asset = Asset { doc, root, spec, objects };
+    let name = doc.object(root).map_or_else(String::new, |o| o.name().to_owned());
+    let mut t = format!("proportions of {name} ({}, {})\n", category.as_deref().unwrap_or("no category"), style.as_deref().unwrap_or("realistic"));
+    let mut rows = Vec::new();
+    for &(p, real, styl) in proportion_table(category.as_deref().unwrap_or("")) {
+        let (min, max) = if stylized { styl } else { real };
+        let item = BriefItem { label: p.to_owned(), kind: ItemKind::Proportion { name: p, min, max } };
+        let (status, detail) = asset.evaluate(&item);
+        let verdict = match status {
+            Status::Pass => "ok",
+            Status::Fail => "OUT OF RANGE",
+            Status::Pending => "pending",
+        };
+        t.push_str(&format!("  {p} {detail} (range {min} to {max}) {verdict}\n"));
+        rows.push(serde_json::json!({ "name": p, "value": detail, "min": min, "max": max, "status": status }));
+    }
+    if let Some(main) = asset.main_part().map(str::to_owned) {
+        let (lo, hi) = asset.skull_bounds(&main);
+        let base = (hi.y - lo.y).max(1e-9);
+        let mut parts = Vec::new();
+        for p in asset.spec.parts.keys().filter(|p| **p != main) {
+            if let Some((a, b)) = asset.part_bounds(p) {
+                parts.push((p.clone(), (b - a).max_element() / base));
+            }
+        }
+        if !parts.is_empty() {
+            let list: Vec<String> = parts.iter().map(|(p, r)| format!("{p} {r:.2}")).collect();
+            t.push_str(&format!("  parts as a share of {main}'s height: {}\n", list.join(", ")));
+        }
+        rows.push(serde_json::json!({ "relative_to": main, "parts": parts }));
+    }
+    Ok((t, Value::Array(rows)))
 }

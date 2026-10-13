@@ -145,7 +145,7 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": true
         },
-        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe or diff, as compact text.",
+        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions or brief, as compact text.",
         "inputSchema": {
           "$defs": {
             "Aspect": {
@@ -183,6 +183,21 @@ expression: tools
                 {
                   "const": "diff",
                   "description": "What changed since `from` (a revision or checkpoint; the previous revision by default).",
+                  "type": "string"
+                },
+                {
+                  "const": "visibility",
+                  "description": "How it reads at the asset class view distance: pixel sizes, details for normal maps, hidden surface, triangles against screen share.",
+                  "type": "string"
+                },
+                {
+                  "const": "proportions",
+                  "description": "A spec root's ratios against its category and style ranges, and part sizes relative to the main part.",
+                  "type": "string"
+                },
+                {
+                  "const": "brief",
+                  "description": "Coverage of the brief the target's spec answers (or the only brief).",
                   "type": "string"
                 }
               ]

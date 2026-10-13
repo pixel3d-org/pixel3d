@@ -52,6 +52,21 @@ impl AssetClass {
         }
     }
 
+    /// Typical camera distance in meters at which the asset is judged (first
+    /// person weapons sit at arm's length, props and characters at gameplay
+    /// distance, environment pieces further away).
+    pub fn view_distance(self) -> f32 {
+        match self {
+            AssetClass::PropSmall => 2.0,
+            AssetClass::PropMedium => 5.0,
+            AssetClass::PropLarge => 10.0,
+            AssetClass::HeroProp => 3.0,
+            AssetClass::WeaponFp => 0.7,
+            AssetClass::Character => 5.0,
+            AssetClass::EnvironmentModular => 15.0,
+        }
+    }
+
     /// Default texel density in pixels per meter (lower end of the range).
     pub fn texel_density(self) -> f32 {
         match self {

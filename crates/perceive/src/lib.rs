@@ -23,6 +23,7 @@ pub mod shape;
 pub mod silhouette;
 pub mod structure;
 pub mod view;
+pub mod visibility;
 
 use serde::Serialize;
 

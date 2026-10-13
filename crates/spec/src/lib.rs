@@ -15,7 +15,7 @@ pub mod ops;
 pub mod patch;
 pub mod surface;
 
-pub use brief::{Brief, Coverage, coverage, parse_brief};
+pub use brief::{Brief, Coverage, coverage, parse_brief, proportions};
 pub use compile::{CompileReport, LandmarkPoint, PartReport, PartStatus, compile, face_provenance, fingerprint, part_landmarks};
 pub use model::{ModelSpec, Part, parse};
 

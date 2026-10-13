@@ -163,6 +163,12 @@ pub enum Aspect {
     Probe,
     /// What changed since `from` (a revision or checkpoint; the previous revision by default).
     Diff,
+    /// How it reads at the asset class view distance: pixel sizes, details for normal maps, hidden surface, triangles against screen share.
+    Visibility,
+    /// A spec root's ratios against its category and style ranges, and part sizes relative to the main part.
+    Proportions,
+    /// Coverage of the brief the target's spec answers (or the only brief).
+    Brief,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]

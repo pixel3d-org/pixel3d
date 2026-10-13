@@ -30,7 +30,7 @@ fn elf_head_from_brief_to_passing_spec() {
         &mut a,
         "brief",
         json!({ "action": "set", "name": "elf", "brief": {
-            "title": "Elf ranger head", "category": "humanoid_head", "style": "stylized",
+            "title": "Elf ranger head", "category": "humanoid_head", "style": "stylized", "asset_class": "character",
             "size": { "height": "0.23m" }, "budget": { "tris": [2000, 40000] },
             "must_have": [{ "feature": "ear", "count": 2, "traits": { "length_ratio_to_head": [0.35, 0.6] } }]
         } }),
@@ -66,6 +66,12 @@ fn elf_head_from_brief_to_passing_spec() {
 
     let t = call(&mut a, "brief", json!({ "name": "elf" }));
     assert!(t.lines().skip(1).all(|l| l.trim_start().starts_with("ok ")), "{t}");
+    let t = call(&mut a, "perceive", json!({ "target": "elf_head", "aspect": "proportions" }));
+    assert!(t.contains("width_to_height") && t.contains("ok") && !t.contains("OUT OF RANGE"), "{t}");
+    let t = call(&mut a, "perceive", json!({ "target": "elf_head", "aspect": "brief" }));
+    assert!(t.starts_with("brief elf 10/10"), "{t}");
+    let t = call(&mut a, "perceive", json!({ "target": "elf_head", "aspect": "visibility" }));
+    assert!(t.starts_with("visibility at 5 m on 1080p (character)"), "{t}");
     let t = call(&mut a, "spec", json!({ "target": "elf_head" }));
     assert!(t.contains("ear_l: blended into its parent") && t.contains("eye_l: o:"), "{t}");
 }
