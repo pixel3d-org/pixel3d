@@ -938,6 +938,16 @@ impl PixelApp {
                 let op = str_param("op").ok_or("op is required: an op that takes a target")?;
                 self.run_on_selection(&op)
             }
+            "selection.action" => {
+                // The contextual action of an op: its inputs come from the
+                // selection as the tool settings row would pass them.
+                let op = str_param("op").ok_or("op is required")?;
+                let action = actions::for_context(self).into_iter().find(|a| a.op == op);
+                match action {
+                    Some(a) => actions::run(self, &a),
+                    None => Err(actions::selection_hint(self, &op)),
+                }
+            }
             "view.modal" => {
                 // G, R, S: a transform that follows the pointer until a click.
                 let kind = match params.get("kind").and_then(Value::as_str) {

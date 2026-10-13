@@ -3,9 +3,14 @@
 //! category, flags and parameter schema.
 //!
 //! - Object Mode, meshes selected: ops with a `target` that need nothing
-//!   else (no other required parameter), except curve ops.
-//! - Object Mode, curves selected: curve ops with a `target`, and
-//!   generators that take a `curve` (lathe, extruded shape, ...).
+//!   else (no other required parameter), except curve ops and generators
+//!   that create objects (array and mirror change the mesh, so they count).
+//!   With two meshes and one active: ops that take a `source` and a
+//!   `target` (scatter the others onto the active one).
+//! - Object Mode, curves selected: curve ops with a `target`, generators
+//!   that take a `curve` (lathe, extruded shape, ...), a `path` (sweep,
+//!   pipe; a required profile starts as a small circle) or, with two curves
+//!   or more, `sections` (loft).
 //! - Edit Mode, elements picked: ops whose `select` takes element ids.
 //!
 //! Hovering an action previews its result: the op runs on a working copy
@@ -16,7 +21,7 @@ use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use p3d_engine::OpCall;
-use p3d_ops::Category;
+use p3d_ops::{Category, OpFlags};
 use p3d_scene::Document;
 use serde_json::{Value, json};
 
@@ -33,9 +38,18 @@ pub enum Input {
     Target,
     /// `curve`: the selected curve, for generators.
     Curve,
+    /// `path`: the selected curve, for generators that follow one.
+    Path,
+    /// `sections`: the selected curves in selection order.
+    Sections,
+    /// `source` and `target`: each other selected mesh onto the active one.
+    SourceOnActive,
     /// `target` and `select`: the picked elements.
     Elements,
 }
+
+/// The cross section a sweep starts with when the op needs one.
+const DEFAULT_PROFILE: &str = "2cm";
 
 /// One action: the op, its label and summary, its group and icon.
 #[derive(Clone, Debug)]
@@ -102,6 +116,14 @@ fn op_icon(id: &str, c: Category) -> Icon {
         "scene.apply_transform" => Icon::Apply,
         "scene.duplicate" => Icon::Copy,
         "scene.delete" => Icon::Trash,
+        "gen.sweep" => Icon::Sweep,
+        "gen.pipe" => Icon::Pipe,
+        "gen.loft" => Icon::Loft,
+        "gen.array" => Icon::Array,
+        "gen.mirror" => Icon::Symmetrize,
+        "gen.scatter" => Icon::Scatter,
+        "gen.lathe" => Icon::Tube,
+        "gen.extrude_shape" => Icon::Extrude,
         _ => category_icon(c),
     }
 }
@@ -120,6 +142,33 @@ pub fn category_label(c: Category) -> &'static str {
     }
 }
 
+/// What to select before an op can run as an action.
+pub fn selection_hint(app: &PixelApp, op: &str) -> String {
+    let Ok(o) = app.session.registry().get(op) else { return format!("{} `{op}`", crate::i18n::t("no op")) };
+    let schema = o.params_schema();
+    let needs = required(&schema);
+    let what = if needs.contains(&"source") {
+        "select the meshes to place and, last, the mesh to place them on"
+    } else if needs.contains(&"sections") {
+        "select two curves or more"
+    } else if needs.contains(&"path") || o.meta().category == Category::Curve {
+        "select a curve"
+    } else if app.ui.mode.is_edit() {
+        "select vertices, edges or faces"
+    } else {
+        "select a mesh"
+    };
+    format!("{}: {}", o.meta().label, crate::i18n::t(what))
+}
+
+/// Public ids of the selected curves, in selection order.
+///
+/// Complexity: O(s) in selected objects.
+fn selected_curves(app: &PixelApp) -> Vec<String> {
+    let doc = app.doc();
+    app.selection.iter().filter_map(|k| doc.object(*k)).filter(|o| o.curve_key().is_some()).map(|o| o.public_id()).collect()
+}
+
 /// Required parameters of a schema.
 fn required(schema: &Value) -> Vec<&str> {
     schema.get("required").and_then(Value::as_array).map(|r| r.iter().filter_map(Value::as_str).collect()).unwrap_or_default()
@@ -134,7 +183,11 @@ pub fn for_context(app: &PixelApp) -> Vec<Action> {
     let picked = edit && !app.edit.picked().0.is_empty();
     let selected: Vec<_> = app.selection.iter().filter_map(|k| doc.object(*k)).collect();
     let meshes = !edit && selected.iter().any(|o| o.mesh_key().is_some());
-    let curves = !edit && selected.iter().any(|o| o.curve_key().is_some());
+    let curve_count = if edit { 0 } else { selected.iter().filter(|o| o.curve_key().is_some()).count() };
+    let curves = curve_count > 0;
+    // Another mesh besides the active one, which is a mesh too.
+    let active_mesh = app.active_object().and_then(|k| doc.object(k)).is_some_and(|o| o.mesh_key().is_some());
+    let mesh_pair = !edit && active_mesh && selected.iter().filter(|o| o.mesh_key().is_some()).count() >= 2;
     let mut out = Vec::new();
     for op in app.session.registry().iter() {
         let meta = op.meta();
@@ -150,9 +203,17 @@ pub fn for_context(app: &PixelApp) -> Vec<Action> {
             (picked && has("select") && has("target") && only(&["target", "select"]) && op.id() != "edit.transform").then_some(Input::Elements)
         } else if curves && meta.category == Category::Gen && has("curve") && only(&[]) {
             Some(Input::Curve)
+        } else if curves && meta.category == Category::Gen && needs.contains(&"path") && only(&["path", "profile"]) {
+            Some(Input::Path)
+        } else if curve_count >= 2 && meta.category == Category::Gen && needs == ["sections"] {
+            Some(Input::Sections)
+        } else if mesh_pair && needs.len() == 2 && only(&["source", "target"]) {
+            Some(Input::SourceOnActive)
         } else if has("target") && only(&["target"]) && !needs.contains(&"select") {
             let curve_op = meta.category == Category::Curve;
-            ((curve_op && curves) || (!curve_op && meshes && meta.category != Category::Gen)).then_some(Input::Target)
+            // Generators that make new objects need more than a target.
+            let makes = meta.category == Category::Gen && meta.flags.contains(OpFlags::CREATES_OBJECTS);
+            ((curve_op && curves) || (!curve_op && meshes && !makes)).then_some(Input::Target)
         } else {
             None
         };
@@ -184,6 +245,41 @@ pub fn calls(app: &PixelApp, a: &Action) -> Result<Vec<OpCall>, String> {
         Input::Curve => {
             let curve = app.selection.iter().filter_map(|k| doc.object(*k)).find(|o| o.curve_key().is_some()).map(|o| o.public_id());
             curve.map(|c| vec![OpCall::new(a.op, json!({ "curve": c }))]).ok_or_else(|| crate::i18n::t("select a curve").to_owned())
+        }
+        Input::Path => {
+            let needs_profile = app.session.registry().get(a.op).is_ok_and(|op| required(&op.params_schema()).contains(&"profile"));
+            let curves = selected_curves(app);
+            let calls: Vec<OpCall> = curves
+                .iter()
+                .map(|c| {
+                    let mut p = json!({ "path": { "curve": c } });
+                    if needs_profile {
+                        p["profile"] = json!({ "circle": DEFAULT_PROFILE });
+                    }
+                    OpCall::new(a.op, p)
+                })
+                .collect();
+            if calls.is_empty() { Err(crate::i18n::t("select a curve").to_owned()) } else { Ok(calls) }
+        }
+        Input::Sections => {
+            let sections: Vec<Value> = selected_curves(app).into_iter().map(|c| json!({ "curve": c })).collect();
+            if sections.len() < 2 {
+                return Err(crate::i18n::t("select two curves or more").to_owned());
+            }
+            Ok(vec![OpCall::new(a.op, json!({ "sections": sections }))])
+        }
+        Input::SourceOnActive => {
+            let active = app.active_object().filter(|k| doc.object(*k).is_some_and(|o| o.mesh_key().is_some()));
+            let target = active.and_then(|k| doc.object(k)).map(|o| o.public_id()).ok_or(crate::i18n::t("make a mesh active"))?;
+            let calls: Vec<OpCall> = app
+                .selection
+                .iter()
+                .filter(|k| Some(**k) != active)
+                .filter_map(|k| doc.object(*k))
+                .filter(|o| o.mesh_key().is_some())
+                .map(|o| OpCall::new(a.op, json!({ "source": o.public_id(), "target": target })))
+                .collect();
+            if calls.is_empty() { Err(crate::i18n::t("select another mesh besides the active one").to_owned()) } else { Ok(calls) }
         }
         Input::Elements => {
             let select = app.element_op_state(a.op)?.ok_or_else(|| crate::i18n::t("Select vertices, edges or faces first.").to_owned())?;
@@ -317,6 +413,45 @@ mod tests {
             ids(&curve)
         );
         assert!(curve.iter().any(|a| a.op.starts_with("curve.") && a.input == Input::Target), "{:?}", ids(&curve));
+    }
+
+    #[test]
+    fn generators_take_curves_and_meshes_from_the_selection() {
+        let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        let find = |app: &PixelApp, op: &str| for_context(app).into_iter().find(|a| a.op == op);
+        app.run("prim.box", json!({ "name": "ground", "width": 4, "depth": 4, "height": 0.2 })).unwrap();
+        // Array and mirror change the selected mesh; scatter needs two.
+        assert_eq!(find(&app, "gen.array").map(|a| a.input), Some(Input::Target));
+        assert_eq!(find(&app, "gen.mirror").map(|a| a.input), Some(Input::Target));
+        assert!(find(&app, "gen.scatter").is_none());
+        let ground = app.doc().resolve("ground").unwrap();
+        app.run("prim.box", json!({ "name": "rock", "width": 0.1, "depth": 0.1, "height": 0.1 })).unwrap();
+        let rock = app.doc().resolve("rock").unwrap();
+        app.selection = [ground, rock].into_iter().collect();
+        app.active = Some(ground);
+        let scatter = find(&app, "gen.scatter").unwrap();
+        assert_eq!(scatter.input, Input::SourceOnActive);
+        assert_eq!(calls(&app, &scatter).unwrap()[0].args, json!({ "source": "o:2", "target": "o:1" }));
+        run(&mut app, &scatter).unwrap();
+        // One curve: sweep (with a starting profile) and pipe follow it.
+        app.run("curve.circle", json!({ "name": "rim" })).unwrap();
+        let rim = app.doc().resolve("rim").unwrap();
+        app.selection = [rim].into_iter().collect();
+        let sweep = find(&app, "gen.sweep").unwrap();
+        assert_eq!(sweep.input, Input::Path);
+        assert_eq!(calls(&app, &sweep).unwrap()[0].args["profile"], json!({ "circle": DEFAULT_PROFILE }));
+        assert_eq!(find(&app, "gen.pipe").map(|a| a.input), Some(Input::Path));
+        assert!(find(&app, "gen.loft").is_none(), "loft needs two sections");
+        run(&mut app, &sweep).unwrap();
+        // Two curves: loft through them.
+        app.run("curve.circle", json!({ "name": "top", "position": [0, 1, 0] })).unwrap();
+        let top = app.doc().resolve("top").unwrap();
+        app.selection = [rim, top].into_iter().collect();
+        let loft = find(&app, "gen.loft").unwrap();
+        assert_eq!(loft.input, Input::Sections);
+        let before = app.doc().object_count();
+        run(&mut app, &loft).unwrap();
+        assert_eq!(app.doc().object_count(), before + 1);
     }
 
     #[test]

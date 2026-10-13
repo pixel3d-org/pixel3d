@@ -229,3 +229,27 @@ pub const TORUS: &[&str] = &["M12 12m-9 0a9 5 0 1 0 18 0a9 5 0 1 0 -18 0", "M8 1
 
 /// A wedge (ramp): a triangular prism.
 pub const WEDGE: &[&str] = &["M3 18l8 3l10 -4l-8 -12z", "M11 21l2 -16"];
+
+/// A cross section (small square) swept along a curve.
+pub const SWEEP: &[&str] = &["M5 17c5 0 5 -11 15 -11", "M3 15h4v4h-4z"];
+
+/// A pipe bending around a corner.
+pub const PIPE: &[&str] = &["M4 20v-8a6 6 0 0 1 6 -6h10", "M8 20v-8a2 2 0 0 1 2 -2h10", "M4 20h4", "M20 6v4"];
+
+/// A square section below blending into a round one above.
+pub const LOFT: &[&str] = &["M4 17l8 3l8 -3l-8 -3z", "M12 6m-5 0a5 2 0 1 0 10 0a5 2 0 1 0 -10 0", "M4 17l3 -11", "M20 17l-3 -11"];
+
+/// Three copies in a row.
+pub const ARRAY: &[&str] = &["M2 10h5v5h-5z", "M9.5 10h5v5h-5z", "M17 10h5v5h-5z"];
+
+/// Dots spread loosely over an area.
+pub const SCATTER: &[&str] = &[
+    "M5 6m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M12 4m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M19 7m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M8 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M16 13m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M5 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M12 18m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M19 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+];

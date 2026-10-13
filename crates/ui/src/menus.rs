@@ -174,7 +174,34 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::Curve, item("Rectangle", "curve.rectangle")),
                 None,
                 header("Generate"),
-                icon(Icon::Extrude, item("Extruded shape", "gen.extrude_shape")),
+                icon(
+                    Icon::Extrude,
+                    with(
+                        "Extruded shape",
+                        "gen.extrude_shape",
+                        || json!({ "outline": [[-0.5, -0.2], [0.1, -0.2], [0.1, -0.4], [0.5, 0.0], [0.1, 0.4], [0.1, 0.2], [-0.5, 0.2]], "depth": "8cm" }),
+                    ),
+                ),
+                icon(
+                    Icon::Sweep,
+                    with(
+                        "Sweep",
+                        "gen.sweep",
+                        || json!({ "path": [[-0.5, 0, 0], [0, 0, -0.4], [0.5, 0, 0]], "smooth_path": true, "profile": { "rectangle": ["8cm", "4cm"] } }),
+                    ),
+                ),
+                icon(
+                    Icon::Pipe,
+                    with("Pipe", "gen.pipe", || json!({ "path": [[0, 0, 0], [0, 0.5, 0], [0.5, 0.5, 0], [0.5, 0.5, -0.5]], "radius": "3cm" })),
+                ),
+                icon(
+                    Icon::Loft,
+                    with(
+                        "Loft",
+                        "gen.loft",
+                        || json!({ "points": 16, "sections": [[[-0.2, 0, -0.2], [0.2, 0, -0.2], [0.2, 0, 0.2], [-0.2, 0, 0.2]], [[0.15, 0.5, 0], [0, 0.5, -0.15], [-0.15, 0.5, 0], [0, 0.5, 0.15]]] }),
+                    ),
+                ),
                 None,
                 header("Generate (lathe)"),
                 icon(Icon::Tube, with("Barrel", "gen.lathe", || json!({ "profile": "barrel" }))),
@@ -195,6 +222,14 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::LodGroup, item("LOD group from selection", "edit.lod_group")),
                 icon(Icon::Merge, keyed("Join", "edit.join", key(Modifiers::COMMAND, Key::J))),
                 with("Move out of parent", "selection.run", || json!({ "op": "scene.unparent" })),
+                None,
+                header("Generate from selection"),
+                icon(Icon::Array, with("Array", "selection.action", || json!({ "op": "gen.array" }))),
+                icon(Icon::Symmetrize, with("Mirror", "selection.action", || json!({ "op": "gen.mirror" }))),
+                icon(Icon::Scatter, with("Scatter onto active", "selection.action", || json!({ "op": "gen.scatter" }))),
+                icon(Icon::Sweep, with("Sweep along curve", "selection.action", || json!({ "op": "gen.sweep" }))),
+                icon(Icon::Pipe, with("Pipe along curve", "selection.action", || json!({ "op": "gen.pipe" }))),
+                icon(Icon::Loft, with("Loft through curves", "selection.action", || json!({ "op": "gen.loft" }))),
                 None,
                 icon(Icon::Trash, keyed("Delete", "edit.delete", key(Modifiers::NONE, Key::Delete))),
             ],
@@ -234,6 +269,17 @@ mod tests {
                     let _ = state(&app);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn every_add_item_creates_an_object() {
+        let mut app = crate::PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        let add = menus().into_iter().find(|m| m.label == "Add").unwrap();
+        for it in add.entries.into_iter().flatten().filter(|it| !it.is_header()) {
+            let before = app.doc().object_count();
+            app.run(it.command, (it.params)()).unwrap_or_else(|e| panic!("{}: {e}", it.label));
+            assert!(app.doc().object_count() > before, "{}", it.label);
         }
     }
 }
