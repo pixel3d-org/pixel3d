@@ -88,6 +88,29 @@ fn scale_crates(root: &Path) -> Vec<String> {
     out
 }
 
+/// Runs every crate's `scale` bench, limited to groups matching `filter`.
+///
+/// Complexity: O(crates) bench runs.
+fn run_benches(filter: Option<&str>, large: bool, measure_s: &str) -> Result<(), String> {
+    for pkg in scale_crates(&root()) {
+        let mut c = cargo();
+        c.args(["bench", "-p", &pkg, "--bench", "scale", "--"]);
+        if let Some(f) = filter {
+            c.arg(f);
+        }
+        c.args(["--warm-up-time", "0.5", "--measurement-time", measure_s, "--sample-size", "20"]);
+        if large {
+            c.env("P3D_BENCH_SCALE", "large");
+        }
+        eprintln!("$ cargo bench -p {pkg} --bench scale{}", if large { " (large sizes)" } else { "" });
+        let status = c.status().map_err(|e| format!("cargo bench: {e}"))?;
+        if !status.success() {
+            return Err(format!("cargo bench -p {pkg} --bench scale failed with {status}"));
+        }
+    }
+    Ok(())
+}
+
 pub fn run(args: &[&str]) -> Result<(), String> {
     let large = args.contains(&"--large");
     let filter = args.iter().position(|a| *a == "--kernel").and_then(|i| args.get(i + 1)).copied();
@@ -105,24 +128,21 @@ pub fn run(args: &[&str]) -> Result<(), String> {
         }
     }
 
-    for pkg in scale_crates(&root()) {
-        let mut c = cargo();
-        c.args(["bench", "-p", &pkg, "--bench", "scale", "--"]);
-        if let Some(f) = filter {
-            c.arg(f);
-        }
-        c.args(["--warm-up-time", "0.5", "--measurement-time", "2", "--sample-size", "20"]);
-        if large {
-            c.env("P3D_BENCH_SCALE", "large");
-        }
-        eprintln!("$ cargo bench -p {pkg} --bench scale{}", if large { " (large sizes)" } else { "" });
-        let status = c.status().map_err(|e| format!("cargo bench: {e}"))?;
-        if !status.success() {
-            return Err(format!("cargo bench -p {pkg} --bench scale failed with {status}"));
+    run_benches(filter, large, "2")?;
+    let mut kernels = collect(&criterion_dir, filter)?;
+    // Shared CI runners are noisy: a kernel over the limit is measured once
+    // more, longer, and fails only if it is still over. A real regression
+    // (quadratic work) fails both times.
+    let over: Vec<String> = kernels.iter().filter(|k| slope(&k.points).is_some_and(|s| s > MAX_SLOPE)).map(|k| k.name.clone()).collect();
+    for name in &over {
+        eprintln!("bench-scale: {name} is over n^{MAX_SLOPE}; measuring it again for longer");
+        let group = format!("scale_{name}/");
+        run_benches(Some(&group), large, "6")?;
+        let again = collect(&criterion_dir, Some(&format!("scale_{name}")))?;
+        if let (Some(k), Some(new)) = (kernels.iter_mut().find(|k| &k.name == name), again.into_iter().find(|k| &k.name == name)) {
+            *k = new;
         }
     }
-
-    let kernels = collect(&criterion_dir, filter)?;
     if kernels.is_empty() {
         return Err("no scale_* benchmark results found".into());
     }

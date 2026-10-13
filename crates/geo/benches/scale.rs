@@ -130,8 +130,11 @@ fn scale(c: &mut Criterion) {
 
     // Element transform with proportional editing: a tenth of the vertices
     // selected, the rest within reach follow (straight distances, k-d tree).
+    // Like the tree queries below it starts at 16k triangles: smaller trees
+    // sit in cache and the first step measures the cache, not the algorithm.
+    let tree_spheres: Vec<(usize, p3d_mesh::Mesh)> = scale_sizes(16_000, 100_000).iter().map(|&t| (t, sphere(t))).collect();
     let mut g = c.benchmark_group("scale_edit_transform_proportional");
-    for (t, m) in &spheres {
+    for (t, m) in &tree_spheres {
         let sel: Vec<u32> = m.verts().step_by(10).collect();
         let spec = p3d_geo::edit::TransformSpec {
             translate: Vec3::Y * 0.01,
