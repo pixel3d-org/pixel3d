@@ -71,10 +71,10 @@ pub fn round_profile(radius: f64, segments: u32) -> Vec<DVec2> {
 
 /// A frame along the path: right, up, tangent, and the miter stretch.
 #[derive(Debug, Clone, Copy)]
-struct Frame {
-    r: DVec3,
-    s: DVec3,
-    t: DVec3,
+pub(crate) struct Frame {
+    pub(crate) r: DVec3,
+    pub(crate) s: DVec3,
+    pub(crate) t: DVec3,
     /// Bend direction and stretch factor at a joint.
     bend: DVec3,
     stretch: f64,
@@ -118,7 +118,7 @@ fn tangents(path: &[DVec3], closed: bool) -> Result<Vec<(DVec3, DVec3, f64)>, Pr
 /// the leftover turn evenly by length so the seam meets.
 ///
 /// Complexity: O(points).
-fn frames(path: &[DVec3], closed: bool, up: DVec3) -> Result<Vec<Frame>, PrimError> {
+pub(crate) fn frames(path: &[DVec3], closed: bool, up: DVec3) -> Result<Vec<Frame>, PrimError> {
     let tans = tangents(path, closed)?;
     let n = path.len();
     let t0 = tans[0].0;

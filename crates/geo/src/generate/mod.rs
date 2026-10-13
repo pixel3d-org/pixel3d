@@ -4,12 +4,14 @@
 //! Generators share the primitives' conventions: +Y up, quads by default,
 //! semantic face groups and sharp flags on hard edges.
 
+mod array;
 mod extrude;
 mod lathe;
 mod loft;
 mod shape;
 mod sweep;
 
+pub use array::{MAX_COPIES, array, linear_copies, mirror_copy, path_copies, radial_copies};
 pub use extrude::{SHAPE_CORNER_DEG, ShapeSpec, extrude_shape};
 pub use lathe::{CORNER_DEG, LatheSpec, MAX_PROFILE_POINTS, lathe};
 pub use loft::{LOFT_CORNER_DEG, LoftSpec, MAX_LOFT_STEPS, MAX_SECTIONS, loft};

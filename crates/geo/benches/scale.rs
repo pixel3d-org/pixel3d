@@ -253,6 +253,31 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // 16 welded copies of a plane tile of t / 16 triangles.
+    let mut g = c.benchmark_group("scale_gen_array");
+    for &t in &sizes {
+        let n = ((t as f64 / 32.0).sqrt().round()) as u32;
+        let tile = plane(&PlaneSpec { size_x: 1.0, size_z: 1.0, segments_x: n, segments_z: n }).unwrap_or_default();
+        let copies = p3d_geo::generate::linear_copies(16, Vec3::X);
+        g.bench_with_input(BenchmarkId::from_parameter(t), &tile, |b, tile| {
+            b.iter(|| p3d_geo::generate::array(black_box(tile), &copies, Some(1e-4)))
+        });
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_gen_mirror");
+    for &t in &sizes {
+        let n = ((t as f64 / 4.0).sqrt().round()) as u32;
+        let half = plane(&PlaneSpec { size_x: 1.0, size_z: 1.0, segments_x: n, segments_z: n }).unwrap_or_default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &half, |b, half| {
+            b.iter_batched(
+                || half.clone(),
+                |mut m| p3d_geo::generate::mirror_copy(&mut m, p3d_geo::edit::Axis::X, 0.5, Some(1e-4)),
+                BatchSize::LargeInput,
+            )
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)

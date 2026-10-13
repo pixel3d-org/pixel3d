@@ -4,6 +4,9 @@
 /** Angle: degrees as a number, or a string with a unit (deg, rad), e.g. "45deg". */
 export type Angle = number | string;
 
+/** How array copies are placed. */
+export type ArrayMode = "linear" | "radial" | "curve";
+
 /** An axis of object space. */
 export type AxisParam = "x" | "y" | "z";
 
@@ -929,6 +932,48 @@ export type GenLoftParams = {
   steps?: number;
 };
 
+/** `gen.array`: Repeats a mesh in a line, around an axis or along a curve, welding copies that touch. */
+export type GenArrayParams = {
+  /** Curve: turn each copy so its +X follows the curve. */
+  align?: boolean;
+  /** Radial: the turn the copies spread over (360 spaces them evenly; less puts the last copy at the angle). */
+  angle?: Angle;
+  /** Radial: the axis to turn around. */
+  axis?: AxisParam;
+  /** Radial: a point on the axis in object space (the origin when omitted). */
+  center?: [Length, Length, Length] | null;
+  /** Total copies, the original included. */
+  count?: number;
+  /** Curve: the curve object to place copies along (its first spline). */
+  curve?: string | null;
+  /** Placement: `linear`, `radial` or `curve`. */
+  mode?: ArrayMode;
+  /** Linear: step between copies in object space. */
+  offset?: [Length, Length, Length] | null;
+  /** Linear: step in multiples of the mesh's size per axis ([1, 0, 0] when no offset is given: side by side along X). */
+  relative_offset?: [number, number, number] | null;
+  /** Mesh object (name, path or id); its mesh is replaced by the copies. */
+  target: string;
+  /** Open-edge vertices of touching copies within this distance merge (0 keeps copies apart). */
+  weld?: Length;
+};
+
+/** `gen.mirror`: Adds the mirror image of a mesh across an axis plane, welding the seam; optionally bisects first. */
+export type GenMirrorParams = {
+  /** The axis the mirror plane is normal to (X mirrors left and right). */
+  axis?: AxisParam;
+  /** Cuts the mesh at the plane first and keeps one side, so the halves meet exactly. */
+  bisect?: boolean;
+  /** With bisect: keep the positive side (default) or the negative side. */
+  keep_positive?: boolean;
+  /** Where the mirror plane sits along the axis, in object space. */
+  offset?: Length;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Open-edge vertices this close to the plane weld to their mirror twins (0 keeps the seam open). */
+  weld?: Length;
+};
+
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
 export type PrimPlaneParams = {
   /** Rarely needed settings. */
@@ -1465,6 +1510,8 @@ export interface OpParams {
   "gen.sweep": GenSweepParams;
   "gen.pipe": GenPipeParams;
   "gen.loft": GenLoftParams;
+  "gen.array": GenArrayParams;
+  "gen.mirror": GenMirrorParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

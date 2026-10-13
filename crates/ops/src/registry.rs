@@ -70,6 +70,8 @@ impl Registry {
             Arc::new(Typed::<generate::SweepOp>::new()),
             Arc::new(Typed::<generate::PipeOp>::new()),
             Arc::new(Typed::<generate::LoftOp>::new()),
+            Arc::new(Typed::<generate::ArrayOp>::new()),
+            Arc::new(Typed::<generate::MirrorOp>::new()),
             Arc::new(Typed::<prim::Plane>::new()),
             Arc::new(Typed::<select::Save>::new()),
             Arc::new(Typed::<select::Grow>::new()),

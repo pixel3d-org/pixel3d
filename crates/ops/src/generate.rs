@@ -1373,3 +1373,313 @@ impl Op for LoftOp {
         Ok(created_summary(tx, key, "loft"))
     }
 }
+
+// ---- gen.array ---------------------------------------------------------------------------
+
+/// How array copies are placed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ArrayMode {
+    /// In a line, each `offset` (or `relative_offset` sizes) after the previous.
+    #[default]
+    Linear,
+    /// Around an axis through `center`.
+    Radial,
+    /// Evenly along a curve object.
+    Curve,
+}
+
+fn three() -> u32 {
+    3
+}
+
+fn weld_default() -> Length {
+    Length(1e-4)
+}
+
+/// Parameters of `gen.array`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ArrayParams {
+    /// Mesh object (name, path or id); its mesh is replaced by the copies.
+    pub target: String,
+    /// Placement: `linear`, `radial` or `curve`.
+    #[serde(default)]
+    pub mode: ArrayMode,
+    /// Total copies, the original included.
+    #[serde(default = "three")]
+    pub count: u32,
+    /// Linear: step between copies in object space.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<[Length; 3]>,
+    /// Linear: step in multiples of the mesh's size per axis ([1, 0, 0] when no offset is given: side by side along X).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_offset: Option<[f64; 3]>,
+    /// Radial: the axis to turn around.
+    #[serde(default = "y_axis")]
+    pub axis: AxisParam,
+    /// Radial: the turn the copies spread over (360 spaces them evenly; less puts the last copy at the angle).
+    #[serde(default = "full_turn")]
+    pub angle: Angle,
+    /// Radial: a point on the axis in object space (the origin when omitted).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub center: Option<[Length; 3]>,
+    /// Curve: the curve object to place copies along (its first spline).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve: Option<String>,
+    /// Curve: turn each copy so its +X follows the curve.
+    #[serde(default = "yes")]
+    pub align: bool,
+    /// Open-edge vertices of touching copies within this distance merge (0 keeps copies apart).
+    #[serde(default = "weld_default")]
+    pub weld: Length,
+}
+
+impl Default for ArrayParams {
+    fn default() -> Self {
+        ArrayParams {
+            target: String::new(),
+            mode: ArrayMode::Linear,
+            count: 3,
+            offset: None,
+            relative_offset: None,
+            axis: AxisParam::Y,
+            angle: full_turn(),
+            center: None,
+            curve: None,
+            align: true,
+            weld: weld_default(),
+        }
+    }
+}
+
+fn axis_name(a: AxisParam) -> &'static str {
+    match a {
+        AxisParam::X => "X",
+        AxisParam::Y => "Y",
+        AxisParam::Z => "Z",
+    }
+}
+
+fn weld_of(l: Length) -> Option<f32> {
+    (l.0 > 0.0).then_some(l.0 as f32)
+}
+
+/// `gen.array`.
+pub struct ArrayOp;
+
+impl Op for ArrayOp {
+    const ID: &'static str = "gen.array";
+    type Params = ArrayParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Array",
+            category: Category::Gen,
+            summary: "Repeats a mesh in a line, around an axis or along a curve, welding copies that touch.",
+            docs: "Replaces the target's mesh with `count` copies (the original included). **Linear** steps by `offset`, or by \
+                   `relative_offset` multiples of the mesh's size (side by side along X by default). **Radial** turns copies \
+                   around `axis` through `center` over `angle`. **Curve** puts copies' origins evenly along a curve object, turned \
+                   so their +X follows it (`align`). Open-edge vertices of touching copies within `weld` merge, so fence rails \
+                   and chain links become one piece; closed parts stay separate.\n\n\
+                   **Use for** fences, stairs, columns, bolts around a flange, spokes, chain links, tiles, railings along a path.",
+            examples: &[
+                OpExample { args: r#"{"target": "crate", "count": 4}"#, result: "crate (o:1): 4 copies along X every 0.6 m: 24 faces" },
+                OpExample {
+                    args: r#"{"target": "crate", "mode": "radial", "count": 6, "center": [-1, 0, 0]}"#,
+                    result: "crate (o:1): 6 copies around Y over 360 degrees: 36 faces",
+                },
+            ],
+            aliases: &["array", "array modifier", "duplicate linear", "radial array", "circular array", "pattern", "repeat"],
+            complexity: "O(count x mesh size) plus O(b log b) for b open-edge vertices when welding",
+            flags: OpFlags::UNDOABLE,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &ArrayParams) -> Result<(), OpError> {
+        crate::common::mesh_target(doc, &p.target)?;
+        check_count("/count", p.count, 1, p3d_geo::generate::MAX_COPIES)?;
+        check_length("/weld", p.weld, 0.0, 1.0)?;
+        if p.offset.is_some() && p.relative_offset.is_some() {
+            return Err(OpError::invalid("/relative_offset", "give offset or relative_offset, not both"));
+        }
+        if let Some(r) = p.relative_offset
+            && !r.iter().all(|x| x.is_finite() && x.abs() <= 1e3)
+        {
+            return Err(OpError::out_of_range("/relative_offset", "relative offsets must be finite and at most 1000"));
+        }
+        match (p.mode, &p.curve) {
+            (ArrayMode::Curve, None) => {
+                return Err(OpError::invalid("/curve", "curve mode needs a curve object").with_hint("for example {\"curve\": \"path\"}"));
+            }
+            (ArrayMode::Curve, Some(c)) => {
+                curve_target(doc, c, "/curve")?;
+            }
+            (_, Some(_)) => return Err(OpError::invalid("/curve", "curve applies to mode \"curve\" only")),
+            _ => {}
+        }
+        if p.angle.degrees().abs() > 360.0 + 1e-9 {
+            return Err(OpError::out_of_range("/angle", "the angle must be at most 360 degrees"));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &ArrayParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = crate::common::mesh_target(tx.doc(), &p.target)?;
+        let src = tx.mesh(key, "/target")?.clone();
+        let (copies, what) = match p.mode {
+            ArrayMode::Linear => {
+                let step = match (p.offset, p.relative_offset) {
+                    (Some(o), _) => crate::params::vec3(&o),
+                    (None, rel) => {
+                        let r = rel.unwrap_or([1.0, 0.0, 0.0]);
+                        let size = src.bounds().map_or(Vec3::ZERO, |(lo, hi)| hi - lo);
+                        Vec3::new(size.x * r[0] as f32, size.y * r[1] as f32, size.z * r[2] as f32)
+                    }
+                };
+                let dir = match step.abs().max_position() {
+                    0 => "X",
+                    1 => "Y",
+                    _ => "Z",
+                };
+                let what = if step.abs().cmpge(Vec3::splat(1e-9)).bitmask().count_ones() == 1 {
+                    format!("along {dir} every {}", p3d_math::format_length(f64::from(step.length())))
+                } else {
+                    format!("every {}", p3d_math::format_length(f64::from(step.length())))
+                };
+                (p3d_geo::generate::linear_copies(p.count, step), what)
+            }
+            ArrayMode::Radial => {
+                let center = p.center.as_ref().map_or(Vec3::ZERO, crate::params::vec3);
+                let copies = p3d_geo::generate::radial_copies(p.count, axis(p.axis).unit(), center, p.angle.radians() as f32);
+                (copies, format!("around {} over {} degrees", axis_name(p.axis), crate::common::degrees(p.angle)))
+            }
+            ArrayMode::Curve => {
+                let name = p.curve.as_deref().ok_or_else(|| OpError::invalid("/curve", "curve mode needs a curve object"))?;
+                let path = resolve_path(tx.doc(), &PathParam::Curve { curve: name.to_owned() }, false, false, GEN_RESOLUTION)?;
+                let ck = path.source.ok_or_else(|| OpError::internal("curve vanished"))?;
+                // The curve's points in the target's object space.
+                let doc = tx.doc();
+                let rel = match (doc.world_affine(key), doc.world_affine(ck)) {
+                    (Some(a), Some(b)) => a.inverse() * b,
+                    _ => return Err(OpError::internal("object vanished")),
+                };
+                let pts: Vec<Vec3> = path.points.iter().map(|q| rel.transform_point3(q.as_vec3())).collect();
+                let copies = p3d_geo::generate::path_copies(p.count, &pts, path.closed, p.align, Vec3::Y).map_err(gen_error)?;
+                (copies, format!("along {}", crate::common::label(tx.doc(), ck)))
+            }
+        };
+        let (mesh, welded) = p3d_geo::generate::array(&src, &copies, weld_of(p.weld)).map_err(gen_error)?;
+        let faces = mesh.face_count();
+        *tx.mesh_mut(key, "/target")? = mesh;
+        let weld = if welded > 0 { format!(", welded {} vertices", crate::common::thousands(welded)) } else { String::new() };
+        let mut out = OpOutput::summary(format!(
+            "{}: {} copies {what}{weld}: {} faces",
+            crate::common::label(tx.doc(), key),
+            p.count,
+            crate::common::thousands(faces)
+        ));
+        out.changed.push(key);
+        Ok(out)
+    }
+}
+
+// ---- gen.mirror --------------------------------------------------------------------------
+
+/// Parameters of `gen.mirror`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MirrorParams {
+    /// Mesh object (name, path or id).
+    pub target: String,
+    /// The axis the mirror plane is normal to (X mirrors left and right).
+    #[serde(default)]
+    pub axis: AxisParam,
+    /// Where the mirror plane sits along the axis, in object space.
+    #[serde(default)]
+    pub offset: Length,
+    /// Cuts the mesh at the plane first and keeps one side, so the halves meet exactly.
+    #[serde(default)]
+    pub bisect: bool,
+    /// With bisect: keep the positive side (default) or the negative side.
+    #[serde(default = "yes")]
+    pub keep_positive: bool,
+    /// Open-edge vertices this close to the plane weld to their mirror twins (0 keeps the seam open).
+    #[serde(default = "weld_default")]
+    pub weld: Length,
+}
+
+impl Default for MirrorParams {
+    fn default() -> Self {
+        MirrorParams { target: String::new(), axis: AxisParam::X, offset: Length(0.0), bisect: false, keep_positive: true, weld: weld_default() }
+    }
+}
+
+/// `gen.mirror`.
+pub struct MirrorOp;
+
+impl Op for MirrorOp {
+    const ID: &'static str = "gen.mirror";
+    type Params = MirrorParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Mirror",
+            category: Category::Gen,
+            summary: "Adds the mirror image of a mesh across an axis plane, welding the seam; optionally bisects first.",
+            docs: "Keeps the mesh and adds its mirror image across the plane normal to `axis` at `offset`. Open-edge vertices \
+                   within `weld` of the plane merge with their twins, so a half model built against the plane closes into one \
+                   piece. `bisect` first cuts the mesh at the plane and keeps one side (`keep_positive`), like `edit.symmetrize`, \
+                   so parts that cross the plane do not overlap their mirror image.\n\n\
+                   **Use for** modelling one half of a symmetric prop or character and mirroring it, wheel pairs, left and right \
+                   panels. For separate mirrored objects use `scene.duplicate` and negate the position instead.",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "offset": 0.3}"#,
+                result: "crate (o:1): mirrored across X at 0.3 m, welded 0 vertices: 12 faces",
+            }],
+            aliases: &["mirror", "mirror modifier", "symmetry", "reflect", "mirror geometry"],
+            complexity: "O(mesh size) plus O(b log b) for b open-edge vertices near the plane",
+            flags: OpFlags::UNDOABLE,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &MirrorParams) -> Result<(), OpError> {
+        crate::common::mesh_target(doc, &p.target)?;
+        check_length("/weld", p.weld, 0.0, 1.0)?;
+        if !p.offset.0.is_finite() || p.offset.0.abs() > 1e4 {
+            return Err(OpError::out_of_range("/offset", "the offset must be within 10 km"));
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &MirrorParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = crate::common::mesh_target(tx.doc(), &p.target)?;
+        let ax = axis(p.axis);
+        let off = p.offset.0 as f32;
+        let mesh = tx.mesh_mut(key, "/target")?;
+        let welded = if p.bisect {
+            // Symmetrize works on the plane through the origin: shift there and back.
+            let shift = glam::Affine3A::from_translation(-ax.unit() * off);
+            mesh.transform(shift);
+            let r = p3d_geo::edit::symmetrize(mesh, ax, p.keep_positive, weld_of(p.weld).unwrap_or(1e-6));
+            mesh.transform(shift.inverse());
+            r.map_err(crate::edit::kernel_error)?.welded
+        } else {
+            p3d_geo::generate::mirror_copy(mesh, ax, off, weld_of(p.weld)).map_err(gen_error)?
+        };
+        let faces = mesh.face_count();
+        let mut out = OpOutput::summary(format!(
+            "{}: mirrored across {} at {}{}, welded {} vertices: {} faces",
+            crate::common::label(tx.doc(), key),
+            axis_name(p.axis),
+            p3d_math::format_length(p.offset.0),
+            if p.bisect { " (bisected)" } else { "" },
+            crate::common::thousands(welded),
+            crate::common::thousands(faces)
+        ));
+        out.changed.push(key);
+        Ok(out)
+    }
+}

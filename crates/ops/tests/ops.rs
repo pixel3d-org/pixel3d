@@ -865,6 +865,41 @@ fn lofts_between_placed_curves() {
 }
 
 #[test]
+fn arrays_and_mirrors_repeat_meshes() {
+    let mut tx = curve_fixture();
+    // Fence posts along the path curve (moved away from the posts' origin).
+    ok(&mut tx, "scene.set_transform", json!({ "target": "path", "position": [0, 0, 2] }));
+    ok(&mut tx, "prim.box", json!({ "name": "post", "width": 0.1, "height": 1, "depth": 0.1 }));
+    let s = ok(&mut tx, "gen.array", json!({ "target": "post", "mode": "curve", "curve": "path", "count": 5 }));
+    assert!(s.contains("5 copies along path (o:2)"), "{s}");
+    let m = tx.doc().object_mesh(tx.doc().resolve("post").unwrap()).unwrap();
+    let (lo, hi) = m.bounds().unwrap();
+    assert!(lo.z > 0.9 && hi.z < 2.1 && hi.x > 1.0, "posts follow the curve in world space: {lo} {hi}");
+    // Open tiles side by side weld into one sheet.
+    ok(&mut tx, "prim.plane", json!({ "name": "tile", "width": 0.5, "depth": 0.5 }));
+    let s = ok(&mut tx, "gen.array", json!({ "target": "tile", "count": 4, "relative_offset": [1, 0, 0] }));
+    assert!(s.contains("welded 6 vertices"), "{s}");
+    assert_eq!(topo(&tx, "tile").boundary_loops, 1);
+    // Half a spindle (both profile ends on the axis) mirrored back into a whole one, with and without bisecting.
+    ok(&mut tx, "gen.lathe", json!({ "name": "bowl", "profile": [[0, 0], [0.3, 0.1], [0, 0.3]], "smooth": true, "angle": 180, "segments": 12 }));
+    let s = ok(&mut tx, "gen.mirror", json!({ "target": "bowl", "axis": "x" }));
+    assert!(!s.contains("welded 0"), "{s}");
+    assert!(topo(&tx, "bowl").is_watertight());
+    ok(&mut tx, "prim.quad_sphere", json!({ "name": "ball" }));
+    ok(&mut tx, "gen.mirror", json!({ "target": "ball", "axis": "z", "bisect": true, "keep_positive": false }));
+    assert!(topo(&tx, "ball").is_watertight());
+
+    let e = err(&mut tx, "gen.array", json!({ "target": "post", "mode": "curve" }));
+    assert_eq!(e.path.as_deref(), Some("/curve"));
+    let e = err(&mut tx, "gen.array", json!({ "target": "post", "offset": [1, 0, 0], "relative_offset": [1, 0, 0] }));
+    assert_eq!(e.path.as_deref(), Some("/relative_offset"));
+    let e = err(&mut tx, "gen.array", json!({ "target": "path" }));
+    assert_eq!(e.path.as_deref(), Some("/target"));
+    let e = err(&mut tx, "gen.array", json!({ "target": "post", "count": 20000 }));
+    assert_eq!(e.code, ErrorCode::OutOfRange);
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

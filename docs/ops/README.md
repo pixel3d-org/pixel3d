@@ -58,6 +58,8 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`gen.sweep`](gen.sweep.md) | Carries a cross section along a path into rails, trims, frames, handles and cables, with twist and taper. |
 | [`gen.pipe`](gen.pipe.md) | Builds a round pipe along a path with smooth bends at the corners and quad caps. |
 | [`gen.loft`](gen.loft.md) | Builds a surface through a sequence of cross sections, resampling them so their point counts match. |
+| [`gen.array`](gen.array.md) | Repeats a mesh in a line, around an axis or along a curve, welding copies that touch. |
+| [`gen.mirror`](gen.mirror.md) | Adds the mirror image of a mesh across an axis plane, welding the seam; optionally bisects first. |
 
 ## select
 

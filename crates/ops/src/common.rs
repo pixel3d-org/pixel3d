@@ -118,6 +118,15 @@ pub fn label(doc: &Document, key: ObjectKey) -> String {
     }
 }
 
+/// A mesh object's key, or an error at `/target`.
+pub fn mesh_target(doc: &Document, target: &str) -> Result<ObjectKey, OpError> {
+    let key = doc.resolve(target).map_err(|e| OpError::from_scene(e, "/target"))?;
+    if doc.object_mesh(key).is_none() {
+        return Err(OpError::invalid("/target", format!("{} is not a mesh", label(doc, key))));
+    }
+    Ok(key)
+}
+
 /// Checks a length parameter against a range, as `OUT_OF_RANGE` at `path`.
 pub fn check_length(path: &str, l: Length, min: f64, max: f64) -> Result<(), OpError> {
     if l.0.is_finite() && (min..=max).contains(&l.0) {
