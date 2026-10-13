@@ -16,6 +16,7 @@ pub mod control;
 pub mod curves;
 pub mod docking;
 pub mod elements;
+pub mod files;
 pub mod gizmo;
 pub mod health;
 pub mod i18n;
@@ -268,6 +269,9 @@ pub struct PixelApp {
     pub services: Services,
     /// The file the document was opened from or saved to.
     pub path: Option<PathBuf>,
+    /// Folders file ops may use: the project's and those the user picked
+    /// files from (the session's file access follows them).
+    pub files: files::FileRoots,
     saved_revision: u64,
     /// Bumped on every document load so scene caches never confuse two files.
     generation: u64,
@@ -324,6 +328,7 @@ impl PixelApp {
             coalesce: None,
             services,
             path: None,
+            files: files::FileRoots::default(),
             generation: 0,
             status: None,
             console: Vec::new(),
@@ -676,10 +681,33 @@ impl PixelApp {
 
     // ---- documents ----------------------------------------------------------------
 
+    /// Gives the session the current folders: the project's and the picked ones.
+    ///
+    /// Complexity: O(folders) file system calls.
+    fn sync_file_access(&mut self) {
+        self.session.set_file_access(self.files.access());
+    }
+
+    /// Allows the folder of a file the user chose (in a dialog or by
+    /// dropping it on the window) for file ops, for the rest of the run.
+    pub fn allow_picked(&mut self, file: &std::path::Path) {
+        if self.files.allow_picked_file(file) {
+            self.sync_file_access();
+        }
+    }
+
+    /// The open document's file changed: its folder is the project folder.
+    fn set_project_file(&mut self, file: Option<&std::path::Path>) {
+        if self.files.set_project_file(file) {
+            self.sync_file_access();
+        }
+    }
+
     fn loaded(&mut self, doc: Document, path: Option<PathBuf>) {
         self.session.load(doc);
         self.generation += 1;
         self.saved_revision = self.session.revision();
+        self.set_project_file(path.as_deref());
         self.path = path;
         self.selection.clear();
         self.active = None;
@@ -715,6 +743,14 @@ impl PixelApp {
         }
     }
 
+    /// Asks the user for a file with a host dialog; the folder of the
+    /// chosen file is allowed for file ops from now on.
+    fn pick(&mut self, dialog: impl FnOnce(&Services) -> Option<PathBuf>) -> Option<PathBuf> {
+        let chosen = dialog(&self.services)?;
+        self.allow_picked(&chosen);
+        Some(chosen)
+    }
+
     /// Saves to `path`, or to the current file.
     pub fn save_to(&mut self, path: Option<PathBuf>) -> Result<Value, String> {
         let path = match path.or_else(|| self.path.clone()) {
@@ -724,6 +760,7 @@ impl PixelApp {
         let path = if path.extension().is_none() { path.with_extension("p3d") } else { path };
         p3d_io::p3d::save(self.session.doc(), &path).map_err(|e| format!("{} {}: {e}", t("Cannot save"), path.display()))?;
         self.saved_revision = self.session.revision();
+        self.set_project_file(Some(&path));
         self.path = Some(path.clone());
         self.ui.remember(&path);
         self.set_status(format!("{} {}", t("Saved"), path.display()));
@@ -750,7 +787,10 @@ impl PixelApp {
                 Ok(json!({}))
             }
             "file.open" => {
-                let path = str_param("path").map(PathBuf::from).or_else(|| self.services.pick_open.as_ref().and_then(|f| f()));
+                let path = match str_param("path") {
+                    Some(p) => Some(PathBuf::from(p)),
+                    None => self.pick(|s| s.pick_open.as_ref().and_then(|f| f())),
+                };
                 match path {
                     Some(p) => self.open_path(&p).map(|()| json!({ "path": p.display().to_string() })),
                     None => Ok(json!({ "cancelled": true })),
@@ -764,7 +804,7 @@ impl PixelApp {
                         .as_ref()
                         .and_then(|p| p.file_name())
                         .map_or_else(|| "untitled.p3d".to_owned(), |n| n.to_string_lossy().into_owned());
-                    path = self.services.pick_save.as_ref().and_then(|f| f(&suggested));
+                    path = self.pick(|s| s.pick_save.as_ref().and_then(|f| f(&suggested)));
                     if path.is_none() {
                         return Ok(json!({ "cancelled": true }));
                     }

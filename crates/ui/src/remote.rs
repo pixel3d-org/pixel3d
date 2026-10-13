@@ -234,7 +234,9 @@ impl PixelApp {
             }
             "ui.command" => {
                 let id = params.get("id").and_then(Value::as_str).ok_or(t("id is required (a command or op id)"))?;
-                self.run(id, params.get("params").cloned().unwrap_or(Value::Null))
+                let params = params.get("params").cloned().unwrap_or(Value::Null);
+                self.check_agent_path(id, &params)?;
+                self.run(id, params)
             }
             "ui.commands" => {
                 let list: Vec<Value> = crate::commands::index(self)
@@ -246,6 +248,24 @@ impl PixelApp {
             p3d_mcp::connect::METHOD => self.agent_call(params),
             other => Err(format!("{} `{other}`", t("unknown control method"))),
         }
+    }
+
+    /// Agents name files only inside the folders the user allowed (the
+    /// session's file access, `files.rs`): a `path` given to `file.open`,
+    /// `file.import`, `file.save` or `file.save_as` must lie in one, so
+    /// opening or saving a file cannot widen the folders. Without a path
+    /// these commands ask the user in a dialog.
+    ///
+    /// Complexity: O(folders + path length).
+    fn check_agent_path(&self, id: &str, params: &Value) -> Result<(), String> {
+        let Some(path) = params.get("path").and_then(Value::as_str) else { return Ok(()) };
+        let files = self.session.file_access();
+        let checked = match id {
+            "file.open" | "file.import" => files.readable(path).map(|_| ()),
+            "file.save" | "file.save_as" => files.writable(path).map(|_| ()),
+            _ => Ok(()),
+        };
+        checked.map_err(|e| format!("{}: {e}", t("agents may use only the folders the user allowed")))
     }
 
     /// Runs an MCP tool on this app's scene (`pixel3d-cli mcp --connect`):
@@ -304,6 +324,7 @@ impl PixelApp {
             "camera": { "yaw": self.viewport.camera.yaw.to_degrees(), "pitch": self.viewport.camera.pitch.to_degrees(), "distance": self.viewport.camera.distance, "ortho": self.viewport.camera.ortho },
             "viewport": [self.viewport.rect.left(), self.viewport.rect.top(), self.viewport.rect.width(), self.viewport.rect.height()],
             "scene": { "objects": doc.object_count(), "revision": doc.revision, "dirty": self.is_dirty(), "path": self.path.as_ref().map(|p| p.display().to_string()) },
+            "allowedFolders": self.session.file_access().roots().iter().map(|r| r.display().to_string()).collect::<Vec<_>>(),
             "palette": self.palette.is_some(),
             "status": self.status_message(),
             "gizmoDragging": self.gizmo.dragging(),
@@ -355,6 +376,49 @@ mod tests {
         app.feed_remote_input(&mut raw);
         app.filter_input(&ctx, &mut raw);
         assert!(app.ui.mode.is_edit());
+    }
+
+    #[test]
+    fn agents_get_the_users_folders_and_never_more() {
+        let (project, other) = (crate::files::tests::temp_dir("agent-project"), crate::files::tests::temp_dir("agent-other"));
+        crate::files::tests::write_obj(&project.join("tri.obj"));
+        crate::files::tests::write_obj(&other.join("tri.obj"));
+        let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        // The user saves the scene: its folder is the project folder.
+        app.run("file.save", json!({ "path": project.join("scene.p3d").display().to_string() })).unwrap();
+        let addr = app.start_control(0).unwrap();
+        let token = app.remote.server.as_ref().map(|s| s.token().to_owned()).unwrap();
+        let ctx = egui::Context::default();
+        let (inside, outside) = (project.join("tri.obj").display().to_string(), other.join("tri.obj").display().to_string());
+        let elsewhere = other.join("scene.p3d").display().to_string();
+        let client = std::thread::spawn(move || {
+            let mut c = Client::connect(addr, &token).unwrap();
+            let tool = |c: &mut Client, path: &str| {
+                let out = c.call("mcp.call", json!({ "tool": "import", "args": { "path": path } })).unwrap();
+                p3d_mcp::ToolOutput::from_wire(&out).unwrap()
+            };
+            let ok = tool(&mut c, &inside);
+            let refused = tool(&mut c, &outside);
+            let save = c.call("ui.command", json!({ "id": "file.save_as", "params": { "path": elsewhere } })).err().map(|e| e.to_string());
+            let open = c.call("ui.command", json!({ "id": "file.open", "params": { "path": outside } })).err().map(|e| e.to_string());
+            let state = c.call("ui.state", Value::Null).unwrap();
+            (ok, refused, save, open, state)
+        });
+        while !client.is_finished() {
+            app.drain_control(&ctx);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let (ok, refused, save, open, state) = client.join().unwrap();
+        assert!(!ok.is_error, "{}", ok.text);
+        assert!(refused.is_error && refused.text.contains("outside the allowed folders"), "{}", refused.text);
+        for e in [save, open] {
+            assert!(e.is_some_and(|e| e.contains("only the folders the user allowed")), "saving or opening elsewhere cannot widen the folders");
+        }
+        assert_eq!(state["allowedFolders"], json!([project.display().to_string()]));
+        assert!(app.session.file_access().readable(&other.join("tri.obj").display().to_string()).is_err());
+        for d in [project, other] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     #[test]
