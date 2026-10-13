@@ -9,6 +9,7 @@
 //! written ones. Expansion is pure data: no geometry, O(parts).
 
 mod humanoid;
+mod weapon;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -191,6 +192,7 @@ pub trait Archetype: Send + Sync {
 pub fn library() -> Vec<Box<dyn Archetype>> {
     let mut v: Vec<Box<dyn Archetype>> = Vec::new();
     v.extend(humanoid::all());
+    v.extend(weapon::all());
     v.sort_by_key(|a| a.info().id);
     v
 }

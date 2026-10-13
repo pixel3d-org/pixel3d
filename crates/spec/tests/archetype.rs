@@ -70,6 +70,49 @@ fn every_race_compiles_to_its_height() {
 }
 
 #[test]
+fn every_weapon_compiles_to_its_length() {
+    for (kind, style, length) in [
+        ("sword", "human", 0.95f32),
+        ("sword", "elven", 1.0),
+        ("dagger", "dwarven", 0.35),
+        ("axe", "dwarven", 0.9),
+        ("hammer", "human", 0.8),
+        ("spear", "elven", 2.0),
+    ] {
+        let mut tx = Tx::new(Document::new());
+        let spec = json!({ "archetypes": { "w": { "kind": kind, "params": { "style": style, "length": length } } } });
+        run(&mut tx, "spec.set", json!({ "name": "w", "spec": spec })).unwrap_or_else(|e| panic!("{kind} {style}: {e:?}"));
+        let (lo, hi) = bounds(&tx, "w");
+        assert!((hi.y - lo.y - length).abs() < 0.08 * length, "{kind} {style}: {lo} {hi}");
+    }
+    // A double-bit axe reaches both ways from the haft.
+    let mut tx = Tx::new(Document::new());
+    run(&mut tx, "spec.set", json!({ "name": "w", "spec": { "archetypes": { "w": { "kind": "axe", "params": { "bits": 2 } } } } })).unwrap();
+    let (lo, hi) = bounds(&tx, "w");
+    assert!(lo.x < -0.15 && hi.x > 0.15, "{lo} {hi}");
+}
+
+#[test]
+fn a_weapon_sits_in_the_fist_it_is_put_in() {
+    let spec = json!({ "archetypes": {
+        "dwarf": { "kind": "dwarf", "params": { "hold": "right", "beard": "none", "hair": "none" } },
+        "axe": { "kind": "axe", "at": "dwarf.grip_r" }
+    } });
+    let s = p3d_spec::parse(&spec).unwrap();
+    let (grip, q) = s.skeletons["dwarf"].joints["grip_r"].frame();
+    let (axe_grip, aq) = s.skeletons["axe"].joints["grip"].frame();
+    assert!((grip - axe_grip).length() < 1e-4 && (q * glam::Vec3::Y - aq * glam::Vec3::Y).length() < 1e-4);
+    // The haft runs up through the fist; the head is above it.
+    let head = s.skeletons["axe"].joints["head"].frame().0;
+    assert!(head.y > grip.y + 0.3, "{head} {grip}");
+    let mut tx = Tx::new(Document::new());
+    let out = run(&mut tx, "spec.set", json!({ "name": "warrior", "spec": spec })).unwrap();
+    assert!(out.contains("archetype axe (axe)") && out.contains("haft"), "{out}");
+    let haft = tx.doc().resolve("warrior/haft").unwrap();
+    assert!(tx.doc().object(haft).unwrap().transform.translation.y < grip.y, "the haft starts below the fist");
+}
+
+#[test]
 fn written_parts_and_joint_edits_change_the_body() {
     let mut tx = Tx::new(Document::new());
     let spec = json!({
