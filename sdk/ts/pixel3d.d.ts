@@ -24,6 +24,9 @@ export type BevelParams = {
   width: Length;
 };
 
+/** Which rims of an extruded shape get the bevel. */
+export type BevelSides = "both" | "front" | "back";
+
 /** Advanced box settings. */
 export type BoxAdvanced = {
   /** Quads along X, Y and Z on each flat face. */
@@ -254,6 +257,16 @@ export type Selector = {
 /** How to split a mesh. */
 export type SeparateBy = "loose_parts" | "material" | "groups";
 
+/** Rim bevel of an extruded shape. */
+export type ShapeBevel = {
+  /** 1 is a chamfer, 2 or more round it. */
+  segments?: number;
+  /** Rims to bevel. */
+  sides?: BevelSides;
+  /** Bevel width, inward from the outline and up from the cap. */
+  width: Length;
+};
+
 /** Advanced settings of `edit.smooth`. */
 export type SmoothAdvanced = {
   /** Keep open-border vertices in place. */
@@ -402,11 +415,11 @@ export type SceneSetMetadataParams = {
   target: string;
 };
 
-/** `scene.join`: Merges several mesh objects into one, keeping their world shapes. */
+/** `scene.join`: Merges several mesh objects, or several curve objects, into one, keeping their world shapes. */
 export type SceneJoinParams = {
   /** The object that receives the others; the first target when omitted. */
   into?: string | null;
-  /** Mesh objects to join (at least two). */
+  /** Mesh objects, or curve objects, to join (at least two). */
   targets: string[];
 };
 
@@ -775,6 +788,30 @@ export type GenLatheParams = {
   segments?: number | null;
   /** A smooth Bezier through the points instead of straight segments (points and polyline curves). */
   smooth?: boolean;
+};
+
+/** `gen.extrude_shape`: Turns a flat outline with holes into a solid of a given depth, with optional round or chamfered rims. */
+export type GenExtrudeShapeParams = {
+  /** Rounded or chamfered rims; sharp when omitted. */
+  bevel?: ShapeBevel | null;
+  /** A curve object of closed splines instead of `outline` (inner splines become holes); its plane is used. */
+  curve?: string | null;
+  /** Thickness along the plane's normal (the back stays on the plane). */
+  depth?: Length;
+  /** Holes inside the outline, as point lists like the outline. */
+  holes?: [Length, Length][][];
+  /** Object name; a free name such as `shape_1` is picked when omitted. */
+  name?: string | null;
+  /** Outline points `[x, y]` in the shape plane (closed automatically, either winding). */
+  outline?: [Length, Length][] | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Plane of `outline` points; the shape extrudes along its normal (+Z, +Y, +X). */
+  plane?: PlaneParam;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Segments per curved span of Bezier splines. */
+  resolution?: number;
 };
 
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
@@ -1309,6 +1346,7 @@ export interface OpParams {
   "curve.offset": CurveOffsetParams;
   "curve.fillet": CurveFilletParams;
   "gen.lathe": GenLatheParams;
+  "gen.extrude_shape": GenExtrudeShapeParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

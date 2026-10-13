@@ -4,9 +4,13 @@
 //! Generators share the primitives' conventions: +Y up, quads by default,
 //! semantic face groups and sharp flags on hard edges.
 
+mod extrude;
 mod lathe;
+mod shape;
 
+pub use extrude::{SHAPE_CORNER_DEG, ShapeSpec, extrude_shape};
 pub use lathe::{CORNER_DEG, LatheSpec, MAX_PROFILE_POINTS, lathe};
+pub use shape::MAX_CONTOURS;
 
 use crate::prim::PrimError;
 use crate::prim::soup::Soup;

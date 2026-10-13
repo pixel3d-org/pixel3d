@@ -841,7 +841,7 @@ impl Op for SetMetadata {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct JoinParams {
-    /// Mesh objects to join (at least two).
+    /// Mesh objects, or curve objects, to join (at least two).
     pub targets: Vec<String>,
     /// The object that receives the others; the first target when omitted.
     #[serde(default)]
@@ -859,9 +859,11 @@ impl Op for Join {
         OpMeta {
             label: "Join",
             category: Category::Scene,
-            summary: "Merges several mesh objects into one, keeping their world shapes.",
+            summary: "Merges several mesh objects, or several curve objects, into one, keeping their world shapes.",
             docs: "The other objects' meshes move into the receiving object's space and are appended as separate parts; the other \
-                   objects are removed and their children move to the receiver. Groups with the same name merge.",
+                   objects are removed and their children move to the receiver. Groups with the same name merge.\n\n\
+                   Curves join the same way: their splines are appended, so an outline and the hole curves inside it become \
+                   one shape for `gen.extrude_shape`.",
             examples: &[OpExample { args: r#"{"targets": ["crate", "post"]}"#, result: "joined 2 objects into crate (o:1): 38 faces" }],
             aliases: &["ctrl j", "combine", "merge objects", "attach"],
             complexity: "O(total mesh size + targets x log n + children x depth)",
@@ -878,8 +880,12 @@ impl Op for Join {
         for (i, t) in p.targets.iter().enumerate() {
             let path = format!("/targets/{i}");
             let k = resolve(doc, t, &path)?;
-            if doc.object_mesh(k).is_none() {
-                return Err(OpError::invalid(&path, format!("{} is not a mesh", label(doc, k))));
+            let curve = doc.object_curve(k).is_some();
+            if doc.object_mesh(k).is_none() && !curve {
+                return Err(OpError::invalid(&path, format!("{} is not a mesh or a curve", label(doc, k))));
+            }
+            if i > 0 && curve != resolve(doc, &p.targets[0], "/targets/0").is_ok_and(|f| doc.object_curve(f).is_some()) {
+                return Err(OpError::invalid(&path, "join meshes with meshes and curves with curves"));
             }
             if !keys.insert(k) {
                 return Err(OpError::invalid(&path, format!("{} is listed twice", label(doc, k))));
@@ -920,8 +926,33 @@ impl Op for Join {
             return Err(OpError::new(ErrorCode::Unsupported, format!("{} has a singular transform", label(tx.doc(), into))));
         }
         let inv = world_into.inverse();
-        tx.doc_mut().make_mesh_unique(into).map_err(scene_err("/into"))?;
         let others: Vec<ObjectKey> = keys.iter().copied().filter(|&k| k != into).collect();
+        if let Some(ck) = tx.doc().object(into).and_then(|o| o.curve_key()) {
+            for &k in &others {
+                let rel = inv * tx.doc().world_affine(k).ok_or_else(|| OpError::internal("object vanished"))?;
+                let mut part = tx.doc().object_curve(k).ok_or_else(|| OpError::internal("curve vanished"))?.clone();
+                let map = |p: &mut [f32; 3]| *p = rel.transform_point3(glam::Vec3::from(*p)).to_array();
+                for s in &mut part.splines {
+                    s.points.iter_mut().for_each(map);
+                    s.handles.iter_mut().flatten().flatten().for_each(map);
+                }
+                tx.doc_mut().curve_mut(ck).ok_or_else(|| OpError::internal("curve vanished"))?.splines.extend(part.splines);
+                tx.doc_mut().move_children(k, Some(into)).map_err(scene_err("/targets"))?;
+            }
+            let deleted = tx.doc_mut().delete_leaves(&others).map_err(scene_err("/targets"))?;
+            let c = tx.doc().object_curve(into).ok_or_else(|| OpError::internal("curve vanished"))?;
+            let (splines, points) = (c.splines.len(), c.point_count());
+            let mut out = OpOutput::summary(format!(
+                "joined {} objects into {}: {splines} splines, {} points",
+                keys.len(),
+                label(tx.doc(), into),
+                thousands(points)
+            ));
+            out.changed.push(into);
+            out.deleted = deleted;
+            return Ok(out);
+        }
+        tx.doc_mut().make_mesh_unique(into).map_err(scene_err("/into"))?;
         for &k in &others {
             let rel = inv * tx.doc().world_affine(k).ok_or_else(|| OpError::internal("object vanished"))?;
             let mut part = tx.mesh(k, "/targets")?.clone();

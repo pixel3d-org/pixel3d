@@ -18,7 +18,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`scene.set_origin`](scene.set_origin.md) | Moves an object's origin (pivot) without moving its geometry in the world. |
 | [`scene.tag`](scene.tag.md) | Adds or removes tags such as high, low, collision or lod1 on an object. |
 | [`scene.set_metadata`](scene.set_metadata.md) | Sets or removes free-form JSON metadata on an object. |
-| [`scene.join`](scene.join.md) | Merges several mesh objects into one, keeping their world shapes. |
+| [`scene.join`](scene.join.md) | Merges several mesh objects, or several curve objects, into one, keeping their world shapes. |
 | [`scene.separate`](scene.separate.md) | Splits a mesh object into several objects by loose part, material or face group. |
 
 ## prim
@@ -54,6 +54,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | Op | Summary |
 |---|---|
 | [`gen.lathe`](gen.lathe.md) | Revolves a profile around an axis into a round object with groups side, cap_top, cap_bottom and profile_<i>. |
+| [`gen.extrude_shape`](gen.extrude_shape.md) | Turns a flat outline with holes into a solid of a given depth, with optional round or chamfered rims. |
 
 ## select
 

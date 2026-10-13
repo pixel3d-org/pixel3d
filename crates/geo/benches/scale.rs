@@ -180,6 +180,34 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // A wavy outline with a hole, extruded with a round bevel on both rims.
+    let mut g = c.benchmark_group("scale_gen_extrude_shape");
+    for &t in &sizes {
+        let ring = |n: usize, r: f64| -> Vec<glam::DVec2> {
+            (0..n)
+                .map(|i| {
+                    let a = std::f64::consts::TAU * i as f64 / n as f64;
+                    glam::DVec2::new(a.cos(), a.sin()) * r * (1.0 + 0.05 * (a * 9.0).sin())
+                })
+                .collect()
+        };
+        let n = (t / 32).max(8);
+        let contours = vec![ring(n, 1.0), ring(n / 2, 0.4)];
+        g.bench_with_input(BenchmarkId::from_parameter(t), &contours, |b, contours| {
+            let spec = p3d_geo::generate::ShapeSpec {
+                contours,
+                depth: 0.2,
+                bevel: 0.01,
+                bevel_segments: 3,
+                bevel_front: true,
+                bevel_back: true,
+                axis: p3d_geo::edit::Axis::Z,
+            };
+            b.iter(|| p3d_geo::generate::extrude_shape(black_box(&spec)))
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)
