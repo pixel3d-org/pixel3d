@@ -888,7 +888,7 @@ impl PixelApp {
         self.bisect = bisect::BisectState::default();
         self.features.inserted = None;
         self.strands.grown = None;
-        self.strands.report = None;
+        self.strands.object = None;
         self.job_card = jobcard::JobCard::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
@@ -1048,6 +1048,8 @@ impl PixelApp {
             features_cmd if features_cmd.starts_with("features.") => self.features_command(features_cmd, params),
             // The Strands panel: kind, region, parameters and Grow.
             strands_cmd if strands_cmd.starts_with("strands.") => self.strands_command(strands_cmd, params),
+            // The Health panel: fix, frame or select a finding, open its cause.
+            health_cmd if health_cmd.starts_with("health.") => self.health_command(health_cmd, params),
             "view.feature_landmarks" => {
                 self.ui.view.feature_landmarks = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.feature_landmarks);
                 Ok(json!({ "featureLandmarks": self.ui.view.feature_landmarks }))
@@ -1879,7 +1881,7 @@ impl PixelApp {
                 gizmo::show(self, ui, gizmo_rect);
                 quick::show(self, ui, gizmo_rect);
                 jobcard::show(self, ui, gizmo_rect);
-                health::badges(self, ui);
+                health::badges(self, ui, &mut viewport_events);
                 nav = navgizmo::show(ui, view_rect, &mut self.viewport, self.ui.view.ortho);
             }
             other => {

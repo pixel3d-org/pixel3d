@@ -53,6 +53,7 @@ fn part_icon(p: &PartInfo) -> Icon {
         "extrude" => Icon::Extrude,
         "pipe" => Icon::Pipe,
         "feature" => Icon::Features,
+        "strands" => Icon::Strands,
         "shell" => Icon::Leaf,
         "silhouettes" => Icon::Blueprint,
         _ => Icon::Empty,
@@ -283,8 +284,8 @@ fn part_fields(app: &mut PixelApp, ui: &mut egui::Ui, p: &PartInfo, parts: &[Par
     let root = defs(app);
     panel(ui, "spec-part", &format!("{} {}", t("Part"), p.name), true, |ui| {
         info(ui, t("Shape"), &p.kind);
-        // A feature's parameters are its shape: first.
-        if p.key == "feature" {
+        // A feature's (or strands') parameters are its shape: first.
+        if matches!(p.key, "feature" | "strands") {
             shape_form(app, ui, p, src, out);
         }
         // Placement next: where the part sits is what specs are about.
@@ -295,7 +296,7 @@ fn part_fields(app: &mut PixelApp, ui: &mut egui::Ui, p: &PartInfo, parts: &[Par
             anchor_fields(app, ui, p, parts, src, &root, out);
             join_fields(ui, src, &root, out);
         }
-        if p.key != "feature" {
+        if !matches!(p.key, "feature" | "strands") {
             shape_form(app, ui, p, src, out);
         }
         transform_fields(ui, src, &root, out);
@@ -410,10 +411,97 @@ fn feature_form(app: &PixelApp, ui: &mut egui::Ui, p: &PartInfo, src: &Value, ou
     }
 }
 
+/// The other parts of the edited spec (what strands can grow on).
+fn parts_for_strands(app: &PixelApp, p: &PartInfo) -> Vec<String> {
+    app.spec.root.map(|r| crate::spec::parts_of(app.doc(), r)).unwrap_or_default().into_iter().map(|q| q.name).filter(|n| *n != p.name).collect()
+}
+
+/// A strands part's parameters: the part it grows on, the region (a loop
+/// of landmark names, or all), and the rest with the Strands panel's form
+/// (preset values greyed in Auto fields); its coverage from the part
+/// object's report. Edits patch `params`.
+fn strands_form(app: &PixelApp, ui: &mut egui::Ui, p: &PartInfo, others: Vec<String>, src: &Value, out: &mut Out) {
+    let tk = Tokens::get();
+    let kind = src.get("strands").and_then(Value::as_str).unwrap_or("hair");
+    let params = src.get("params").cloned().unwrap_or(Value::Null);
+    // What it grew: coverage from the part object's report.
+    if let Some(r) = p.object.and_then(|k| crate::strands::report_of(app.doc(), k)) {
+        let low = r.coverage.is_some_and(|c| c < 0.95);
+        let mut line = r.coverage.map_or_else(String::new, |c| format!("{} {:.0}%", t("Coverage"), c * 100.0));
+        if let Some((_, area)) = r.bald.filter(|_| low) {
+            line.push_str(&format!("; {} {:.0} cm2", t("largest bald spot"), area * 1e4));
+        }
+        if !line.is_empty() {
+            note(ui, &line, if low { tk.health_warn } else { tk.health_ok });
+        }
+    }
+    // The part it grows on.
+    let on = params.get("on").and_then(Value::as_str).map(str::to_owned);
+    prop_row(ui, t("Grows on"), t("The part the strands grow on"), |ui| {
+        egui::ComboBox::from_id_salt(("spec-strands-on", &p.name)).selected_text(on.clone().unwrap_or_default()).width(ui.available_width()).show_ui(
+            ui,
+            |ui| {
+                for q in &others {
+                    if ui.selectable_label(on.as_deref() == Some(q.as_str()), q).clicked() && on.as_deref() != Some(q.as_str()) {
+                        out.patch = Some((json!({ "params": { "on": q } }), t("Strands").to_owned(), false));
+                    }
+                }
+            },
+        );
+    });
+    // The region: a loop of landmark names, or all.
+    let region = params.get("region").cloned().unwrap_or(Value::Null);
+    let shown = match &region {
+        Value::Array(a) if a.iter().all(Value::is_string) => a.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(", "),
+        Value::String(w) => w.clone(),
+        Value::Null => "all".to_owned(),
+        other => other.to_string(),
+    };
+    let id = egui::Id::new(("spec-strands-region", &p.name));
+    prop_row(ui, t("Region"), t("all, or a loop of landmark names around the patch, comma separated"), |ui| {
+        let mut text: String = ui.data_mut(|d| d.get_temp::<(String, String)>(id)).filter(|(s, _)| *s == shown).map_or(shown.clone(), |(_, e)| e);
+        let r = ui.add(egui::TextEdit::singleline(&mut text).desired_width(ui.available_width()));
+        crate::control::record_widget(ui, &r, t("Strands region"), "textbox", None);
+        ui.data_mut(|d| d.insert_temp(id, (shown.clone(), text.clone())));
+        if r.lost_focus() && text.trim() != shown {
+            let names: Vec<&str> = text.split(',').map(str::trim).filter(|n| !n.is_empty()).collect();
+            let v = if names.is_empty() || names == ["all"] { json!("all") } else { json!(names) };
+            out.patch = Some((json!({ "params": { "region": v } }), t("Strands region").to_owned(), false));
+        }
+    });
+    // The rest, with the preset's values in Auto fields.
+    let Ok(op) = app.session.registry().get("gen.strands") else { return };
+    let width = p.object.and_then(|k| crate::strands::report_of(app.doc(), k)).and_then(|r| r.width);
+    let schema = crate::strands::schema_with_presets(&op.params_schema(), kind, width);
+    let hide = ["on", "kind", "region", "name", "inside", "anchor"];
+    // The set values as the form reads them (`"12cm"` as 0.12); the rest
+    // stay unset (Auto).
+    let mut v = Value::Object(Map::new());
+    if let (Some(props), Some(given)) = (schema.get("properties").and_then(Value::as_object), params.as_object()) {
+        for (k, x) in given {
+            let mut x = x.clone();
+            if let Some(s) = props.get(k) {
+                normalize(&schema_form::kind_of(s, &schema), &mut x);
+            }
+            v[k] = x;
+        }
+    }
+    let before = v.clone();
+    let o = schema_form::form(ui, egui::Id::new(("spec-strands", &p.name)), &schema, &schema, &mut v, &hide);
+    out.dragging |= o.dragging;
+    if o.changed {
+        let fields = changed(&before, &v);
+        out.patch = Some((json!({ "params": fields }), t("Strands parameters").to_owned(), o.dragging));
+    }
+}
+
 /// The fields of a primitive or generator part, as the op's form.
 fn shape_form(app: &PixelApp, ui: &mut egui::Ui, p: &PartInfo, src: &Value, out: &mut Out) {
     if p.key == "feature" {
         return feature_form(app, ui, p, src, out);
+    }
+    if p.key == "strands" {
+        return strands_form(app, ui, p, parts_for_strands(app, p), src, out);
     }
     let (op, key, value) = match p.key {
         "primitive" => (format!("prim.{}", p.kind), p.kind.as_str(), src.get("primitive").and_then(|v| v.get(&p.kind))),

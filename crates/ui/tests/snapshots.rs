@@ -436,3 +436,57 @@ fn hair_cards_on_a_head_in_the_viewport() {
     let rgba = image::RgbaImage::from_raw(img.width, img.height, img.pixels).unwrap();
     egui_kittest::image_snapshot_options(&rgba, "hair_viewport", &options("hair_viewport"));
 }
+
+#[test]
+fn spec_tab_with_a_strands_part() {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = ThemePref::Light;
+    a.run(
+        "spec.set",
+        json!({ "name": "elf", "spec": { "category": "humanoid_head", "parts": {
+            "head": { "feature": "head_base", "detail": "5mm" },
+            "hair": { "strands": "hair", "params": { "on": "head", "region": ["hairline_front", "temple_l", "nape", "temple_r"], "length": "12cm" } }
+        } } }),
+    )
+    .unwrap();
+    a.run("ui.dock", json!({ "operation": "close", "panel": "health" })).unwrap();
+    a.run("ui.bottom", json!({ "on": false })).unwrap();
+    a.run("ui.dock", json!({ "operation": "close", "panel": "outliner" })).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("spec.select_part", json!({ "root": "elf", "part": "hair" })).unwrap();
+    h.run_steps(20);
+    snapshot(&mut h, "spec_strands_light");
+}
+
+/// Findings of several kinds in the Health panel: an open bin, two crates
+/// pushed into each other and a floating lid, with badges in the viewport.
+fn findings_app(theme: ThemePref) -> Harness<'static, PixelApp> {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = theme;
+    a.run("ui.dock", json!({ "operation": "close", "panel": "outliner" })).unwrap();
+    a.run("ui.dock", json!({ "operation": "close", "panel": "properties" })).unwrap();
+    a.run("prim.box", json!({ "name": "bin" })).unwrap();
+    a.run("edit.delete_elements", json!({ "target": "bin", "select": { "faces": { "group": "bottom" } } })).unwrap();
+    a.run("prim.box", json!({ "name": "crate_a", "position": [1.5, 0, 0] })).unwrap();
+    a.run("prim.box", json!({ "name": "crate_b", "position": [1.8, 0, 0.2] })).unwrap();
+    a.run("prim.box", json!({ "name": "lid", "width": 0.8, "height": 0.1, "depth": 0.8, "position": [0, 1.6, 0] })).unwrap();
+    a.run("edit.select_none", Value::Null).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("view.frame", Value::Null).unwrap();
+    h.run_steps(20);
+    h
+}
+
+#[test]
+fn findings_view_dark() {
+    let mut h = findings_app(ThemePref::Dark);
+    snapshot(&mut h, "findings_dark");
+}
+
+#[test]
+fn findings_view_light() {
+    let mut h = findings_app(ThemePref::Light);
+    snapshot(&mut h, "findings_light");
+}

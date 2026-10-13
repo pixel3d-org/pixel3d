@@ -338,3 +338,47 @@ fn sdf_feature_parts_show_their_landmarks() {
     assert!(names.contains(&"ala_l") && names.contains(&"tip"), "{names:?}");
     assert!(names.iter().all(|n| !n.starts_with("lm.")));
 }
+
+#[test]
+fn strands_parts_edit_their_params_and_show_coverage() {
+    let mut a = PixelApp::new(p3d_engine::Session::new(), Services::default());
+    a.run(
+        "spec.set",
+        json!({ "name": "elf", "spec": { "category": "humanoid_head", "parts": {
+            "head": { "feature": "head_base", "detail": "5mm" },
+            "hair": { "strands": "hair", "params": { "on": "head", "region": ["hairline_front", "temple_l", "nape", "temple_r"] } }
+        } } }),
+    )
+    .unwrap();
+    select(&mut a, "elf/hair");
+    assert_eq!(a.spec.part.as_deref(), Some("hair"));
+    let root = a.doc().resolve("elf").unwrap();
+    let parts = parts_of(a.doc(), root);
+    let hair = parts.iter().find(|p| p.name == "hair").unwrap();
+    assert_eq!((hair.kind.as_str(), hair.key), ("strands hair", "strands"));
+    let report = crate::strands::report_of(a.doc(), hair.object.unwrap()).expect("the part object keeps its report");
+    assert!(report.coverage.is_some());
+    // A dragged parameter previews in the background, then commits.
+    let fields = json!({ "params": { "clumps": 160 } });
+    a.spec.pending = Some((fields.clone(), "Strands parameters".into()));
+    a.spec_preview(json!({ "parts": { "hair": fields.clone() } }));
+    let ctx = egui::Context::default();
+    for _ in 0..4000 {
+        a.spec_tick(&ctx);
+        if a.spec.preview_doc().is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(a.spec.preview_doc().is_some());
+    let steps = a.session.history().len();
+    let (pending, label) = a.spec.pending.take().unwrap();
+    a.spec_patch_part(pending, &label).unwrap();
+    settle(&mut a);
+    assert_eq!(a.session.history().len(), steps + 1);
+    assert_eq!(a.doc().spec(root).unwrap().source["parts"]["hair"]["params"]["clumps"], json!(160));
+    // The region word all.
+    a.spec_patch_part(json!({ "params": { "region": "all" } }), "Strands region").unwrap();
+    settle(&mut a);
+    assert!(a.spec.error.is_none(), "{:?}", a.spec.error);
+}
