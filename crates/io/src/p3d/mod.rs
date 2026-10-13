@@ -126,6 +126,7 @@ fn build(doc: &Document) -> Result<Built, P3dError> {
             visible: o.visible,
             locked: o.locked,
             history: doc.history(k).map(|g| g.nodes.clone()).unwrap_or_default(),
+            spec: o.spec.as_deref().cloned(),
         });
     }
     let manifest = Manifest {
@@ -137,6 +138,7 @@ fn build(doc: &Document) -> Result<Built, P3dError> {
         meshes,
         objects,
         expectations: doc.expectations().to_vec(),
+        briefs: doc.briefs().map(|(k, v)| (k.to_owned(), v.clone())).collect(),
         extras: doc.extras.clone(),
     };
     let mut keys: Vec<(u32, MeshKey)> = mesh_ids.into_iter().map(|(k, id)| (id, k)).collect();
@@ -269,6 +271,9 @@ pub fn from_bytes(bytes: &[u8]) -> Result<Document, P3dError> {
     doc.settings = manifest.settings.clone();
     doc.extras = manifest.extras.clone();
     *doc.expectations_mut() = manifest.expectations.clone();
+    for (name, b) in &manifest.briefs {
+        doc.set_brief(name, b.clone());
+    }
 
     // Meshes: each blob decoded once; copies share the decoded data.
     let mut decoded: BTreeMap<&str, std::sync::Arc<p3d_mesh::Mesh>> = BTreeMap::new();
@@ -325,6 +330,7 @@ pub fn from_bytes(bytes: &[u8]) -> Result<Document, P3dError> {
             obj.metadata = o.metadata.clone();
             obj.visible = o.visible;
             obj.locked = o.locked;
+            obj.spec = o.spec.clone().map(std::sync::Arc::new);
         }
         if !o.history.is_empty() {
             doc.set_history(key, OpGraph { nodes: o.history.clone() }).map_err(|e| fail(o, e.to_string()))?;

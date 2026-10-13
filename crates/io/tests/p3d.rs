@@ -9,7 +9,7 @@ use glam::{DVec3, Quat, Vec3};
 use p3d_geo::prim::{BoxSpec, CylinderSpec, Origin, cuboid, cylinder};
 use p3d_io::p3d::{self, P3dError};
 use p3d_math::Trs;
-use p3d_scene::{AssetClass, Check, Document, Expectation, ObjectKind, ObjectRef, OpNode, Range};
+use p3d_scene::{AssetClass, Check, Document, Expectation, ObjectKind, ObjectRef, OpNode, PartRecord, ProvEntry, Provenance, Range, SpecRecord};
 use serde_json::json;
 
 /// crate (box, bevel) > lid (box) > hinge (empty); post (cylinder);
@@ -55,6 +55,18 @@ fn sample() -> Document {
             depth: None,
         },
     });
+    d.set_brief("elf", json!({ "title": "Elf head", "category": "humanoid_head" }));
+    let root = d.create_object("elf_head", None, ObjectKind::Empty).unwrap();
+    let entries = vec![ProvEntry { path: "/parts/head/sdf/0".into(), op: "sdf.mesh".into() }];
+    let record = SpecRecord {
+        source: json!({ "spec": "elf_head", "parts": { "head": { "sdf": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 } }] } } }),
+        parts: [(
+            "head".to_owned(),
+            PartRecord { hash: 7, object: Some(3), fingerprint: 9, provenance: Provenance::from_faces(entries, &[0, 0, 0]) },
+        )]
+        .into(),
+    };
+    d.set_spec(root, Some(record)).unwrap();
     // Free an id so next_id must be stored, not inferred.
     let tmp = d.create_object("tmp", None, ObjectKind::Empty).unwrap();
     d.delete(tmp, true).unwrap();
@@ -63,11 +75,18 @@ fn sample() -> Document {
 
 /// Everything observable about a document, in a comparable form.
 fn dump(d: &Document) -> Vec<String> {
-    let mut out = vec![format!("settings {:?} extras {:?} next {} expect {:?}", d.settings, d.extras, d.next_id(), d.expectations())];
+    let mut out = vec![format!(
+        "settings {:?} extras {:?} next {} expect {:?} briefs {:?}",
+        d.settings,
+        d.extras,
+        d.next_id(),
+        d.expectations(),
+        d.briefs().collect::<Vec<_>>()
+    )];
     for (k, o) in d.objects() {
         let t = o.transform;
         out.push(format!(
-            "{} {} {:?} t={:?} r={:?} s={:?} tags={:?} meta={:?} vis={} lock={} hist={:?}",
+            "{} {} {:?} t={:?} r={:?} s={:?} tags={:?} meta={:?} vis={} lock={} hist={:?} spec={:?}",
             o.public_id(),
             d.path(k).unwrap(),
             o.kind().as_str(),
@@ -78,7 +97,8 @@ fn dump(d: &Document) -> Vec<String> {
             o.metadata,
             o.visible,
             o.locked,
-            d.history(k).map(|g| g.nodes.clone())
+            d.history(k).map(|g| g.nodes.clone()),
+            o.spec
         ));
         if let Some(m) = d.object_mesh(k) {
             out.push(format!("  mesh users={} raw={:?}", d.mesh_users(o.mesh_key().unwrap()), m.to_raw()));
@@ -100,8 +120,8 @@ fn round_trip_keeps_everything() {
     let copy = back.resolve("post_copy").unwrap();
     assert_eq!(back.object(post).unwrap().mesh_key(), back.object(inst).unwrap().mesh_key(), "instances stay instances");
     assert_ne!(back.object(post).unwrap().mesh_key(), back.object(copy).unwrap().mesh_key(), "copies stay independent");
-    assert_eq!(back.create_object_with_id(7, "x", None, ObjectKind::Empty).map(|_| ()), Ok(()));
-    assert_eq!(back.next_id(), 8);
+    assert_eq!(back.create_object_with_id(8, "x", None, ObjectKind::Empty).map(|_| ()), Ok(()));
+    assert_eq!(back.next_id(), 9);
 }
 
 #[test]
@@ -200,7 +220,10 @@ fn manifest_is_readable_json_with_stable_order() {
     let mut text = String::new();
     zip.by_name("manifest.json").unwrap().read_to_string(&mut text).unwrap();
     let keys: Vec<&str> = text.lines().filter(|l| l.starts_with("  \"")).map(|l| l.trim().split('"').nth(1).unwrap()).collect();
-    assert_eq!(keys, vec!["format", "format_version", "app_version", "settings", "next_id", "meshes", "objects", "expectations", "future_field"]);
+    assert_eq!(
+        keys,
+        vec!["format", "format_version", "app_version", "settings", "next_id", "meshes", "objects", "expectations", "briefs", "future_field"]
+    );
     assert!(text.contains("\"hero_prop\""));
 }
 

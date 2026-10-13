@@ -9,6 +9,7 @@ mod history;
 pub mod name;
 mod object;
 mod settings;
+pub mod spec;
 #[cfg(test)]
 mod tests;
 
@@ -18,3 +19,4 @@ pub use expect::{Check, Expectation, ObjectRef, Range};
 pub use history::{OpGraph, OpNode};
 pub use object::{CurveKey, GraphKey, MeshKey, Object, ObjectKey, ObjectKind};
 pub use settings::{AssetClass, DisplayUnits, DocSettings};
+pub use spec::{PartRecord, ProvEntry, Provenance, SpecRecord};

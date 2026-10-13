@@ -15,6 +15,7 @@ use crate::history::{OpGraph, OpNode};
 use crate::name::{NameError, check_name, suggest};
 use crate::object::{CurveKey, GraphKey, MeshKey, Object, ObjectKey, ObjectKind};
 use crate::settings::DocSettings;
+use crate::spec::SpecRecord;
 
 /// Why a document edit or lookup failed. Nothing changes when an edit fails.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
@@ -66,6 +67,8 @@ pub struct Document {
     curve_owner: Arc<SecondaryMap<CurveKey, ObjectKey>>,
     graphs: Arc<SlotMap<GraphKey, Arc<OpGraph>>>,
     expectations: Arc<Vec<Expectation>>,
+    /// Briefs (structured intent, project spec 17.2) by name, as written.
+    briefs: Arc<BTreeMap<String, Arc<serde_json::Value>>>,
     next_id: u32,
     pub settings: DocSettings,
     /// Unknown top-level fields of the file this document came from, kept so
@@ -89,6 +92,7 @@ impl Default for Document {
             curve_owner: Arc::default(),
             graphs: Arc::default(),
             expectations: Arc::default(),
+            briefs: Arc::default(),
             next_id: 1,
             settings: DocSettings::default(),
             extras: BTreeMap::new(),
@@ -341,6 +345,7 @@ impl Document {
             transform: Trs::IDENTITY,
             tags: SmallVec::new(),
             metadata: BTreeMap::new(),
+            spec: None,
             visible: true,
             locked: false,
         };
@@ -767,6 +772,51 @@ impl Document {
     /// Complexity: O(expectations x n).
     pub fn next_expectation_name(&self) -> String {
         (1u32..).map(|n| format!("E{n}")).find(|n| !self.expectations.iter().any(|e| &e.name == n)).unwrap_or_default()
+    }
+
+    // ---- briefs ----------------------------------------------------------------
+
+    /// Briefs by name.
+    pub fn briefs(&self) -> impl Iterator<Item = (&str, &serde_json::Value)> {
+        self.briefs.iter().map(|(k, v)| (k.as_str(), &**v))
+    }
+
+    pub fn brief(&self, name: &str) -> Option<&serde_json::Value> {
+        self.briefs.get(name).map(|b| &**b)
+    }
+
+    /// Adds or replaces a brief; returns the one it replaced.
+    ///
+    /// Complexity: O(log briefs), plus O(briefs) on the first write after a
+    /// snapshot.
+    pub fn set_brief(&mut self, name: &str, brief: serde_json::Value) -> Option<Arc<serde_json::Value>> {
+        Arc::make_mut(&mut self.briefs).insert(name.to_owned(), Arc::new(brief))
+    }
+
+    /// Complexity: O(log briefs), plus O(briefs) after a snapshot.
+    pub fn remove_brief(&mut self, name: &str) -> Option<Arc<serde_json::Value>> {
+        Arc::make_mut(&mut self.briefs).remove(name)
+    }
+
+    // ---- specs -----------------------------------------------------------------
+
+    /// The Model Spec rooted at an object.
+    pub fn spec(&self, key: ObjectKey) -> Option<&SpecRecord> {
+        self.object(key)?.spec.as_deref()
+    }
+
+    /// Roots of Model Specs, in key order.
+    ///
+    /// Complexity: O(objects).
+    pub fn spec_roots(&self) -> impl Iterator<Item = ObjectKey> + '_ {
+        self.objects.iter().filter(|(_, o)| o.spec.is_some()).map(|(k, _)| k)
+    }
+
+    /// Sets or clears the Model Spec of an object.
+    pub fn set_spec(&mut self, key: ObjectKey, spec: Option<SpecRecord>) -> Result<(), SceneError> {
+        let o = self.object_mut(key).ok_or(SceneError::StaleObject)?;
+        o.spec = spec.map(Arc::new);
+        Ok(())
     }
 
     // ---- history ---------------------------------------------------------------

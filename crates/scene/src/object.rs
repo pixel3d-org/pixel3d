@@ -54,6 +54,8 @@ pub struct Object {
     pub tags: SmallVec<[String; 2]>,
     /// Free-form metadata, sorted by key.
     pub metadata: BTreeMap<String, serde_json::Value>,
+    /// The Model Spec this object is the root of (ADR 0010).
+    pub spec: Option<std::sync::Arc<crate::spec::SpecRecord>>,
     pub visible: bool,
     pub locked: bool,
 }

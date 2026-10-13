@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use p3d_scene::{DocSettings, Expectation, OpNode};
+use p3d_scene::{DocSettings, Expectation, OpNode, SpecRecord};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -29,6 +29,9 @@ pub struct Manifest {
     /// Expectations (model tests) in the order they were added.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expectations: Vec<Expectation>,
+    /// Briefs (structured intent) by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub briefs: BTreeMap<String, Value>,
     /// Fields this version does not know; written back unchanged.
     #[serde(flatten)]
     pub extras: BTreeMap<String, Value>,
@@ -77,6 +80,9 @@ pub struct ObjectEntry {
     pub locked: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub history: Vec<OpNode>,
+    /// The Model Spec rooted here, with its last compile record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spec: Option<SpecRecord>,
 }
 
 fn yes() -> bool {
