@@ -3481,6 +3481,7 @@ dependencies = [
  "p3d-render",
  "p3d-scene",
  "p3d-spec",
+ "p3d-strands",
  "serde",
  "serde_json",
  "tracing",

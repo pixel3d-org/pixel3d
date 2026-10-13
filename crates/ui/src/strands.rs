@@ -48,30 +48,84 @@ impl Mode {
     }
 }
 
-/// What the last grow reported.
+/// What a grow reported, kept on the strands object as its metadata
+/// `strands`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Report {
     /// Covered share of the region (0 to 1).
     pub coverage: Option<f64>,
-    /// The largest bald spot: its center in the object's space and its
-    /// area (m2).
+    /// The largest bald spot: its center in the strands object's space and
+    /// its area (m2).
     pub bald: Option<(Vec3, f64)>,
+    /// Root width of a card or clump (m), as used.
+    pub width: Option<f64>,
 }
 
-/// Reads coverage and the bald spot from a `gen.strands` summary
-/// (`coverage 87% (largest bald spot 12 cm2 at (10, 20, 30) mm)`).
+/// The report of a strands object (its metadata `strands`).
 ///
-/// Complexity: O(summary length).
-pub fn parse_report(summary: &str) -> Report {
-    let after = |key: &str| summary.find(key).map(|i| &summary[i + key.len()..]);
-    let coverage = after("coverage ").and_then(|s| s.split('%').next()).and_then(|n| n.trim().parse::<f64>().ok()).map(|p| p / 100.0);
-    let bald = after("largest bald spot ").and_then(|s| {
-        let area = s.split(" cm2").next()?.trim().parse::<f64>().ok()? / 1e4;
-        let coords = s.split("at (").nth(1)?.split(')').next()?;
-        let v: Vec<f32> = coords.split(',').filter_map(|c| c.trim().parse::<f32>().ok()).collect();
-        (v.len() == 3).then(|| (Vec3::new(v[0], v[1], v[2]) / 1000.0, area))
+/// Complexity: O(1).
+pub fn report_of(doc: &Document, k: ObjectKey) -> Option<Report> {
+    let m = doc.object(k)?.metadata.get("strands")?;
+    let bald = m.get("bald_spot").filter(|b| !b.is_null()).and_then(|b| {
+        let a = b.get("at")?.as_array()?;
+        let c = |i: usize| a.get(i).and_then(Value::as_f64).map(|x| x as f32);
+        Some((Vec3::new(c(0)?, c(1)?, c(2)?), b.get("area")?.as_f64()?))
     });
-    Report { coverage, bald }
+    Some(Report { coverage: m.get("coverage").and_then(Value::as_f64), bald, width: m.get("width").and_then(Value::as_f64) })
+}
+
+/// A kind's preset values for the parameters the panel leaves on Auto, as
+/// the op takes them (the form shows them greyed out).
+pub fn preset_defaults(kind: &str) -> Map<String, Value> {
+    let Some(k) = p3d_strands::Kind::parse(kind) else { return Map::new() };
+    let s = p3d_strands::StrandSpec::preset(k);
+    let q = |x: f32| (f64::from(x) * 1e5).round() / 1e5;
+    let mut m = Map::new();
+    for (key, v) in [
+        ("length", json!(q(s.length))),
+        ("length_variation", json!(q(s.length_variation))),
+        ("clumps", json!(s.clumps)),
+        ("segments", json!(s.segments)),
+        ("gravity", json!(q(s.gravity))),
+        ("curl", json!(q(s.curl))),
+        ("curl_turns", json!(q(s.curl_turns))),
+        ("noise", json!(q(s.noise))),
+        ("lift", json!(q(s.lift))),
+        ("volume", json!(q(s.volume))),
+        ("tip_width", json!(q(s.tip_width))),
+        ("layers", json!(s.layers)),
+        ("flyaways", json!(q(s.flyaways))),
+        ("cap", json!(s.cap)),
+        ("shells", json!(s.shells)),
+        ("sides", json!(s.sides)),
+    ] {
+        m.insert(key.to_owned(), v);
+    }
+    // 0 sizes cards from the guide spacing: no fixed default.
+    if s.width > 0.0 {
+        m.insert("width".to_owned(), json!(q(s.width)));
+    }
+    m
+}
+
+/// The `gen.strands` parameter schema with a kind's preset values (and the
+/// last grow's width) as defaults, so Auto fields show what the op uses.
+///
+/// Complexity: O(parameters).
+pub fn schema_with_presets(schema: &Value, kind: &str, width: Option<f64>) -> Value {
+    let mut s = schema.clone();
+    let mut d = preset_defaults(kind);
+    if let Some(w) = width.filter(|_| !d.contains_key("width")) {
+        d.insert("width".into(), json!((w * 1e5).round() / 1e5));
+    }
+    if let Some(props) = s.get_mut("properties").and_then(Value::as_object_mut) {
+        for (k, v) in d {
+            if let Some(p) = props.get_mut(&k) {
+                p["default"] = v;
+            }
+        }
+    }
+    s
 }
 
 /// The panel between frames.
@@ -88,10 +142,11 @@ pub struct StrandsTool {
     /// The op's other parameters as the user set them (the preset fills
     /// the rest).
     pub params: Map<String, Value>,
-    /// The last grow (its revision), the object it grew on, and its report.
+    /// The last grow (its revision), the object it grew on, and the
+    /// strands object it made (its metadata holds the report).
     pub grown: Option<u64>,
     pub on: Option<ObjectKey>,
-    pub report: Option<Report>,
+    pub object: Option<ObjectKey>,
     pub error: Option<String>,
     /// Loop points and the bald spot on screen last frame (for agents).
     pub screen: Vec<(String, Pos2)>,
@@ -109,7 +164,7 @@ impl Default for StrandsTool {
             params: Map::new(),
             grown: None,
             on: None,
-            report: None,
+            object: None,
             error: None,
             screen: Vec::new(),
         }
@@ -155,9 +210,7 @@ impl PixelApp {
     fn strands_region(&self) -> Result<Value, String> {
         let s = &self.strands;
         match s.mode {
-            // Left out: the op's default is the whole surface (it reads `"all"`
-            // as no region at all).
-            Mode::All => Ok(Value::Null),
+            Mode::All => Ok(json!("all")),
             Mode::Groups if s.groups.is_empty() => Err(t("pick at least one face group").to_owned()),
             Mode::Groups => Ok(json!({ "groups": s.groups.iter().collect::<Vec<_>>() })),
             Mode::Landmarks if s.landmarks.len() < 3 => Err(t("a landmark loop needs three or more landmarks").to_owned()),
@@ -182,10 +235,17 @@ impl PixelApp {
         Ok(OpCall::new("gen.strands", Value::Object(args)))
     }
 
-    /// The last grow's summary, read for its report.
+    /// Remembers the strands object a grow made (it is selected after it).
     fn strands_take_report(&mut self) {
-        let summary = self.result.as_ref().and_then(|r| r.entries.first()).filter(|e| e.op == "gen.strands").map(|e| e.summary.clone());
-        self.strands.report = summary.as_deref().map(parse_report);
+        self.strands.object = self.active_object().filter(|k| is_strands(self.doc(), *k));
+    }
+
+    /// The report shown: the selected strands object's, else the last
+    /// grow's.
+    pub fn strands_report(&self) -> Option<(ObjectKey, Report)> {
+        let doc = self.doc();
+        let k = self.active_object().filter(|k| is_strands(doc, *k)).or(self.strands.object)?;
+        report_of(doc, k).map(|r| (k, r))
     }
 
     /// Grows strands on the selected mesh (one undo step).
@@ -374,8 +434,8 @@ impl PixelApp {
             "picking": s.picking,
             "params": s.params,
             "live": s.grown == Some(self.session.revision()),
-            "coverage": s.report.as_ref().and_then(|r| r.coverage),
-            "baldSpot": s.report.as_ref().and_then(|r| r.bald).map(|(p, a)| json!({ "at": p.to_array(), "area": a })),
+            "coverage": self.strands_report().and_then(|(_, r)| r.coverage),
+            "baldSpot": self.strands_report().and_then(|(_, r)| r.bald).map(|(p, a)| json!({ "at": p.to_array(), "area": a })),
             "onScreen": s.screen.iter().map(|(n, at)| json!({ "name": n, "at": [at.x, at.y] })).collect::<Vec<_>>(),
             "error": s.error,
         })
@@ -478,10 +538,10 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
             app.set_status(e);
         }
         // What the grow reported.
-        if let Some(r) = app.strands.report.clone() {
+        if let Some((_, r)) = app.strands_report() {
             let low = r.coverage.is_some_and(|c| c < 0.95);
             let mut line = r.coverage.map_or_else(String::new, |c| format!("{} {:.0}%", t("Coverage"), c * 100.0));
-            if let Some((_, area)) = r.bald {
+            if let Some((_, area)) = r.bald.filter(|_| low) {
                 line.push_str(&format!("; {} {:.0} cm2 ({})", t("largest bald spot"), area * 1e4, t("marked in the viewport")));
             }
             if !line.is_empty() {
@@ -501,7 +561,8 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
         // The op's parameters from its schema (auto means the preset's).
         let registry = app.session.registry();
         let Ok(op) = registry.get("gen.strands") else { return };
-        let schema = op.params_schema();
+        let width = app.strands_report().and_then(|(_, r)| r.width);
+        let schema = schema_with_presets(&op.params_schema(), app.strands.kind, width);
         let mut v = Value::Object(app.strands.params.clone());
         let hide = ["on", "kind", "region", "name", "inside", "anchor"];
         let o = crate::schema_form::form(ui, egui::Id::new("strands-params"), &schema, &schema, &mut v, &hide);
@@ -620,10 +681,10 @@ pub fn overlay(app: &mut PixelApp, ui: &egui::Ui) {
         p.circle_filled(*s, 3.0, tk.accent);
         p.text(*s + vec2(5.0, 5.0), egui::Align2::LEFT_TOP, format!("{}", i + 1), theme::small(), tk.accent);
     }
-    // The bald spot of the last grow.
-    if let (Some(r), Some(grown_on)) = (&app.strands.report, app.strands.on)
-        && let Some((at, area)) = r.bald
-        && let Some(w) = doc.world_affine(grown_on)
+    // The bald spot of the shown report (low coverage only).
+    if let Some((k, r)) = app.strands_report()
+        && let Some((at, area)) = r.bald.filter(|_| r.coverage.is_some_and(|c| c < 0.95))
+        && let Some(w) = doc.world_affine(k)
     {
         let c = w.transform_point3(at);
         let radius = (area / std::f64::consts::PI).sqrt() as f32;
@@ -660,15 +721,13 @@ mod tests {
     }
 
     #[test]
-    fn reports_read_coverage_and_the_bald_spot() {
-        let r = parse_report(
-            "created head/hair (o:2) hair 0.2 x 0.2 x 0.2 m: 1 faces; 40 cards, 900 tris, region 310 cm2, coverage 87% (largest bald spot 12 cm2 at (10, -20, 30) mm)",
-        );
-        assert_eq!(r.coverage, Some(0.87));
-        let (at, area) = r.bald.unwrap();
-        assert!(at.distance(Vec3::new(0.01, -0.02, 0.03)) < 1e-6 && (area - 0.0012).abs() < 1e-9);
-        let full = parse_report("30 cards, 240 tris, region 3600 cm2, coverage 100%");
-        assert_eq!((full.coverage, full.bald), (Some(1.0), None));
+    fn presets_fill_the_auto_fields() {
+        let d = preset_defaults("hair");
+        assert!(d["clumps"].as_u64().is_some_and(|c| c > 1) && d["segments"].as_u64().is_some_and(|c| c > 1), "{d:?}");
+        let schema = p3d_ops::Registry::builtin().get("gen.strands").map(|o| o.params_schema()).unwrap();
+        let s = schema_with_presets(&schema, "fur", Some(0.004));
+        assert_eq!(s["properties"]["shells"]["default"], preset_defaults("fur")["shells"]);
+        assert!(s["properties"]["width"]["default"].is_number());
     }
 
     #[test]
@@ -682,7 +741,7 @@ mod tests {
         let hair = a.doc().resolve("head/hair").unwrap();
         assert!(is_strands(a.doc(), hair));
         assert_eq!(describe(a.doc(), hair).as_deref(), Some("hair strands"));
-        assert!(a.strands.report.as_ref().and_then(|r| r.coverage).is_some(), "{:?}", a.strands.report);
+        assert!(a.strands_report().and_then(|(_, r)| r.coverage).is_some(), "{:?}", a.strands_report());
         // The grown hair is selected; the panel still grows on the head.
         assert_eq!(a.strands_target(), a.doc().resolve("head").ok());
         // An edit regrows in place: one step, one hair object.
@@ -733,7 +792,7 @@ mod tests {
         let grass = a.doc().resolve("crate/grass").unwrap();
         assert!(is_strands(a.doc(), grass));
         let summary = a.result.as_ref().map(|r| r.entries[0].summary.clone()).unwrap_or_default();
-        assert!(a.strands.report.as_ref().and_then(|r| r.coverage).is_some(), "{summary}");
+        assert!(a.strands_report().and_then(|(_, r)| r.coverage).is_some(), "{summary}");
         // All of it: the op's default region.
         a.run("strands.region", json!({ "mode": "all" })).unwrap();
         a.run("strands.kind", json!({ "kind": "fur" })).unwrap();

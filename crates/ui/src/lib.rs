@@ -888,7 +888,7 @@ impl PixelApp {
         self.bisect = bisect::BisectState::default();
         self.features.inserted = None;
         self.strands.grown = None;
-        self.strands.report = None;
+        self.strands.object = None;
         self.job_card = jobcard::JobCard::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
