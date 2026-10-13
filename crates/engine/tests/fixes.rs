@@ -13,12 +13,18 @@ fn top_fixes_resolve_their_findings() {
     for (name, doc) in scenes::broken_corpus() {
         let findings = diagnose_predicted(&registry, &doc, None, 0).unwrap();
         for f in findings.iter().filter(|f| !f.fixes.is_empty()) {
+            // Info findings are predicted on request.
+            let f = if f.fixes[0].predicted.as_deref().is_some_and(|p| p.starts_with("not predicted")) {
+                explain(&registry, &doc, None, 0, &f.id).unwrap()
+            } else {
+                f.clone()
+            };
             let p = f.fixes[0].predicted.as_deref().unwrap();
             assert!(p.starts_with("resolved"), "{name} {} {}: {p}", f.id, f.code);
             checked += 1;
         }
     }
-    assert!(checked >= 6, "{checked} fixes checked");
+    assert!(checked >= 7, "{checked} fixes checked");
 }
 
 #[test]
