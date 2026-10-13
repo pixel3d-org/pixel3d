@@ -17,7 +17,7 @@ use crate::params::Length;
 use crate::tx::Tx;
 
 /// Parameters of `remesh.quad`.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuadRemeshParams {
     /// Mesh object (name, path or id); it must be closed.
@@ -31,6 +31,13 @@ pub struct QuadRemeshParams {
     /// Relaxation sweeps onto the original surface.
     #[serde(default = "four")]
     pub relax: u32,
+}
+
+// Forms and the op docs start from these, so they match serde's defaults.
+impl Default for QuadRemeshParams {
+    fn default() -> Self {
+        QuadRemeshParams { target: String::new(), edge: None, iterations: twelve(), relax: four() }
+    }
 }
 
 fn twelve() -> u32 {
@@ -137,6 +144,7 @@ impl Op for QuadRemesh {
         let edge = p.edge.map_or(size / 40.0, |e| e.0 as f32);
         let spec = QuadSpec { edge, iterations: p.iterations, relax: p.relax, seed: ctx.seed, ..QuadSpec::default() };
         ctx.check_cancel()?;
+        ctx.report(0.05);
         // Long thin faces (primitives, CAD-like meshes) are resampled evenly
         // first: the direction field needs an even sampling.
         let longest = old
@@ -152,9 +160,15 @@ impl Op for QuadRemesh {
         } else {
             None
         };
+        // Progress by stage: the kernel runs as one call.
+        ctx.check_cancel()?;
+        ctx.report(0.25);
         let (mut mesh, r): (Mesh, QuadReport) = quad_remesh(resampled.as_ref().unwrap_or(old), &spec).map_err(remesh_error)?;
+        ctx.check_cancel()?;
+        ctx.report(0.85);
         carry(old, &mut mesh);
         ctx.check_cancel()?;
+        ctx.report(0.95);
         let faces = mesh.face_count();
         *tx.mesh_mut(key, "/target")? = mesh;
         let mut out = OpOutput::summary(format!(

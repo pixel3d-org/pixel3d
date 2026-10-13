@@ -18,8 +18,8 @@ Field-aligned quad remeshing (Instant Meshes, Jakob et al. 2015): a smooth direc
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `edge` | `Length \| null` | - | Target edge length; about a fortieth of the largest side when omitted. |
-| `iterations` | `number` | `0` | Smoothing sweeps of the direction and position fields per level (more is smoother and slower). |
-| `relax` | `number` | `0` | Relaxation sweeps onto the original surface. |
+| `iterations` | `number` | `12` | Smoothing sweeps of the direction and position fields per level (more is smoother and slower). |
+| `relax` | `number` | `4` | Relaxation sweeps onto the original surface. |
 | `target` | `string` | required | Mesh object (name, path or id); it must be closed. |
 
 ## Examples

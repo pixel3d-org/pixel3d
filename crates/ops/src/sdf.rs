@@ -703,12 +703,15 @@ impl Op for FromMesh {
         let size = old.bounds().map_or(1.0, |(lo, hi)| (hi - lo).max_element());
         let voxel = p.detail.map_or((size / 60.0).clamp(MIN_DETAIL as f32, MAX_DETAIL as f32), f);
         ctx.check_cancel()?;
+        ctx.report(0.1);
         let r = mesh(&field, &MeshSpec { voxel }).map_err(|e| match e {
             SdfError::Empty => OpError::new(ErrorCode::Topology, "nothing is left at this detail: the mesh is thinner than a voxel")
                 .at("/detail")
                 .with_hint("use a smaller detail"),
             e => sdf_error(e, &[]),
         })?;
+        ctx.check_cancel()?;
+        ctx.report(0.9);
         let before = old.face_count();
         let faces = r.mesh.face_count();
         *tx.mesh_mut(key, "/target")? = r.mesh;
