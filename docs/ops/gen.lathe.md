@@ -41,10 +41,10 @@ The best tool for round objects: barrels, vases, bottles, bowls, columns, wheels
 {"name":"barrel","profile":"barrel","segments":24}
 ```
 
-Result: `created barrel (o:1) lathe 0.62 x 0.9 x 0.62 m: 504 faces (1,008 tris; budget 6,000)`
+Result: `created barrel (o:4) lathe 0.62 x 0.9 x 0.62 m: 504 faces (1,008 tris; budget 6,000)`
 
 ```json
 {"name":"knob","profile":[[0.02,0],[0.03,0.01],[0.025,0.03],[0,0.035]],"segments":16,"smooth":true}
 ```
 
-Result: `created knob (o:1) lathe 61.25 x 35 x 61.25 mm: 336 faces (656 tris; budget 6,000)`
+Result: `created knob (o:4) lathe 61.25 x 35 x 61.25 mm: 336 faces (656 tris; budget 6,000)`

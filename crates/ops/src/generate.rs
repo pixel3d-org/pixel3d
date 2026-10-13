@@ -296,11 +296,11 @@ impl Op for LatheOp {
             examples: &[
                 OpExample {
                     args: r#"{"name": "barrel", "profile": "barrel", "segments": 24}"#,
-                    result: "created barrel (o:1) lathe 0.62 x 0.9 x 0.62 m: 504 faces (1,008 tris; budget 6,000)",
+                    result: "created barrel (o:4) lathe 0.62 x 0.9 x 0.62 m: 504 faces (1,008 tris; budget 6,000)",
                 },
                 OpExample {
                     args: r#"{"name": "knob", "profile": [[0.02, 0], [0.03, 0.01], [0.025, 0.03], [0, 0.035]], "smooth": true, "segments": 16}"#,
-                    result: "created knob (o:1) lathe 61.25 x 35 x 61.25 mm: 336 faces (656 tris; budget 6,000)",
+                    result: "created knob (o:4) lathe 61.25 x 35 x 61.25 mm: 336 faces (656 tris; budget 6,000)",
                 },
             ],
             aliases: &["lathe", "spin", "screw", "revolve", "surface of revolution", "turn"],
@@ -368,5 +368,256 @@ impl Op for LatheOp {
         let mesh = lathe(&spec).map_err(gen_error)?;
         let key = create_mesh_object(tx, p.name.as_deref(), "lathe", p.parent.as_deref(), &p.position, mesh)?;
         Ok(created_summary(tx, key, "lathe"))
+    }
+}
+
+// ---- gen.extrude_shape -----------------------------------------------------------------
+
+/// Which rims of an extruded shape get the bevel.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BevelSides {
+    #[default]
+    Both,
+    Front,
+    Back,
+}
+
+/// Rim bevel of an extruded shape.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ShapeBevel {
+    /// Bevel width, inward from the outline and up from the cap.
+    pub width: Length,
+    /// 1 is a chamfer, 2 or more round it.
+    #[serde(default = "two")]
+    pub segments: u32,
+    /// Rims to bevel.
+    #[serde(default)]
+    pub sides: BevelSides,
+}
+
+fn two() -> u32 {
+    2
+}
+
+fn tenth() -> Length {
+    Length(0.1)
+}
+
+/// Parameters of `gen.extrude_shape`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ExtrudeShapeParams {
+    /// Object name; a free name such as `shape_1` is picked when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Parent object (name, path or id); top level when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Outline points `[x, y]` in the shape plane (closed automatically, either winding).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline: Option<Vec<[Length; 2]>>,
+    /// Holes inside the outline, as point lists like the outline.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holes: Vec<Vec<[Length; 2]>>,
+    /// A curve object of closed splines instead of `outline` (inner splines become holes); its plane is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve: Option<String>,
+    /// Plane of `outline` points; the shape extrudes along its normal (+Z, +Y, +X).
+    #[serde(default = "front_plane")]
+    pub plane: crate::curve::PlaneParam,
+    /// Thickness along the plane's normal (the back stays on the plane).
+    #[serde(default = "tenth")]
+    pub depth: Length,
+    /// Rounded or chamfered rims; sharp when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bevel: Option<ShapeBevel>,
+    /// Segments per curved span of Bezier splines.
+    #[serde(default = "gen_resolution")]
+    pub resolution: u32,
+    /// Origin position in the parent's space.
+    #[serde(default = "zero3")]
+    pub position: [Length; 3],
+}
+
+fn front_plane() -> crate::curve::PlaneParam {
+    crate::curve::PlaneParam::Xy
+}
+
+impl Default for ExtrudeShapeParams {
+    fn default() -> Self {
+        let sq = |h: f64| vec![[Length(-h), Length(-h)], [Length(h), Length(-h)], [Length(h), Length(h)], [Length(-h), Length(h)]];
+        ExtrudeShapeParams {
+            name: None,
+            parent: None,
+            outline: Some(sq(0.5)),
+            holes: Vec::new(),
+            curve: None,
+            plane: front_plane(),
+            depth: tenth(),
+            bevel: None,
+            resolution: GEN_RESOLUTION,
+            position: zero3(),
+        }
+    }
+}
+
+/// Shape plane coordinates of a point: `(u, v)` and the height along the normal.
+fn to_plane(plane: crate::curve::PlaneParam, p: Vec3) -> (DVec2, f64) {
+    let p = p.as_dvec3();
+    match plane {
+        crate::curve::PlaneParam::Xy => (DVec2::new(p.x, p.y), p.z),
+        crate::curve::PlaneParam::Xz => (DVec2::new(p.x, -p.z), p.y),
+        crate::curve::PlaneParam::Yz => (DVec2::new(p.y, p.z), p.x),
+    }
+}
+
+fn plane_axis(plane: crate::curve::PlaneParam) -> Axis {
+    match plane {
+        crate::curve::PlaneParam::Xy => Axis::Z,
+        crate::curve::PlaneParam::Xz => Axis::Y,
+        crate::curve::PlaneParam::Yz => Axis::X,
+    }
+}
+
+/// Contours of a curve object of closed splines, the axis plane they lie
+/// in and the plane's height.
+///
+/// Complexity: O(points x resolution).
+fn curve_contours(doc: &Document, target: &str, resolution: u32) -> Result<(Vec<Vec<DVec2>>, crate::curve::PlaneParam, f64), OpError> {
+    let key = curve_target(doc, target, "/curve")?;
+    let c = doc.object_curve(key).ok_or_else(|| OpError::internal("curve vanished"))?;
+    let mut sampled = Vec::with_capacity(c.splines.len());
+    for (i, s) in c.splines.iter().enumerate() {
+        if !s.closed {
+            return Err(OpError::invalid("/curve", format!("spline {i} is open; a shape needs closed outlines"))
+                .with_hint("make closed curves, for example curve.polyline with closed: true or curve.rectangle"));
+        }
+        sampled.push(crate::curve::polyline(s, resolution).map_err(curve_error)?);
+    }
+    let pts = sampled.iter().flatten();
+    let (lo, hi) = pts.fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+    let size = hi - lo;
+    let flat = |s: f32| s <= size.max_element() * 1e-5;
+    let plane = match (flat(size.x), flat(size.y), flat(size.z)) {
+        (false, false, true) => crate::curve::PlaneParam::Xy,
+        (false, true, false) => crate::curve::PlaneParam::Xz,
+        (true, false, false) => crate::curve::PlaneParam::Yz,
+        _ => {
+            return Err(OpError::invalid("/curve", "the curve does not lie flat in the XY, XZ or YZ plane")
+                .with_hint("draw shapes with curve.* in one plane (the plane parameter)"));
+        }
+    };
+    let height = to_plane(plane, (lo + hi) * 0.5).1;
+    let contours = sampled.iter().map(|s| s.iter().map(|p| to_plane(plane, *p).0).collect()).collect();
+    Ok((contours, plane, height))
+}
+
+/// `gen.extrude_shape`.
+pub struct ExtrudeShapeOp;
+
+impl Op for ExtrudeShapeOp {
+    const ID: &'static str = "gen.extrude_shape";
+    type Params = ExtrudeShapeParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Extrude shape",
+            category: Category::Gen,
+            summary: "Turns a flat outline with holes into a solid of a given depth, with optional round or chamfered rims.",
+            docs: "Give the outline as `outline` points (plus `holes`) in a `plane`, or as a `curve` object whose closed splines \
+                   nest into holes and islands (its own plane is used). The back stays on the plane and the front moves `depth` \
+                   along its normal: +Z for `xy` (signs, plaques, panels), +Y for `xz` (floor plans to walls and slabs), +X for `yz`.\n\n\
+                   **Groups:** `front`, `back`, `side`, and `bevel` with a bevel. Caps are constrained Delaunay fills merged into \
+                   quads; walls are quads. Side edges at outline corners and sharp rims are marked sharp; a round bevel (2 or more \
+                   segments) blends smoothly. Bevels inset the outline, so keep them narrower than half the thinnest part.\n\n\
+                   **Use for** signs, frames, gaskets, cookie-cutter shapes, logos, floor slabs, window panels, gears.",
+            examples: &[
+                OpExample {
+                    args: r#"{"name": "frame", "outline": [[-0.3, -0.2], [0.3, -0.2], [0.3, 0.2], [-0.3, 0.2]], "holes": [[[-0.25, -0.15], [0.25, -0.15], [0.25, 0.15], [-0.25, 0.15]]], "depth": "2cm"}"#,
+                    result: "created frame (o:4) shape 0.6 m x 0.4 m x 20 mm: 16 faces (32 tris; budget 6,000)",
+                },
+                OpExample {
+                    args: r#"{"name": "slab", "curve": "outline", "depth": "15cm", "bevel": {"width": "1cm", "segments": 2, "sides": "front"}}"#,
+                    result: "created slab (o:4) shape 0.8 x 0.15 x 0.6 m: 14 faces (28 tris; budget 6,000)",
+                },
+            ],
+            aliases: &["extrude shape", "solidify outline", "extrude curve", "linear extrude", "fill and extrude", "plaque"],
+            complexity: "O(n log n) in outline points, plus O(n x bevel segments)",
+            flags: FLAGS,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &ExtrudeShapeParams) -> Result<(), OpError> {
+        check_new_object(doc, p.name.as_deref(), p.parent.as_deref())?;
+        check_count("/resolution", p.resolution, 1, MAX_RESOLUTION)?;
+        check_length("/depth", p.depth, 1e-5, 1e4)?;
+        match (&p.outline, &p.curve) {
+            (Some(o), None) => {
+                if o.len() < 3 {
+                    return Err(OpError::invalid("/outline", "an outline needs at least 3 points"));
+                }
+                if let Some(i) = p.holes.iter().position(|h| h.len() < 3) {
+                    return Err(OpError::invalid(&format!("/holes/{i}"), "a hole needs at least 3 points"));
+                }
+            }
+            (None, Some(c)) => {
+                curve_target(doc, c, "/curve")?;
+                if !p.holes.is_empty() {
+                    return Err(OpError::invalid("/holes", "holes come from the curve's inner splines when curve is given"));
+                }
+            }
+            _ => {
+                return Err(
+                    OpError::invalid("", "give exactly one of outline and curve").with_hint("for example {\"outline\": [[0, 0], [1, 0], [1, 1]]}")
+                );
+            }
+        }
+        if let Some(b) = &p.bevel {
+            check_length("/bevel/width", b.width, 0.0, 1e3)?;
+            check_count("/bevel/segments", b.segments, 1, p3d_geo::prim::MAX_BEVEL_SEGMENTS)?;
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &ExtrudeShapeParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let (contours, plane, height, path) = match (&p.outline, &p.curve) {
+            (Some(o), _) => {
+                let pts = |c: &[[Length; 2]]| c.iter().map(|[x, y]| DVec2::new(x.0, y.0)).collect::<Vec<_>>();
+                let mut cs = vec![pts(o)];
+                cs.extend(p.holes.iter().map(|h| pts(h)));
+                (cs, p.plane, 0.0, "/outline")
+            }
+            (None, Some(c)) => {
+                let (cs, plane, h) = curve_contours(tx.doc(), c, p.resolution)?;
+                (cs, plane, h, "/curve")
+            }
+            (None, None) => return Err(OpError::invalid("", "give exactly one of outline and curve")),
+        };
+        let (w, segs, sides) = p.bevel.as_ref().map_or((0.0, 1, BevelSides::Both), |b| (b.width.0, b.segments, b.sides));
+        let spec = p3d_geo::generate::ShapeSpec {
+            contours: &contours,
+            depth: p.depth.0,
+            bevel: w,
+            bevel_segments: segs,
+            bevel_front: sides != BevelSides::Back,
+            bevel_back: sides != BevelSides::Front,
+            axis: plane_axis(plane),
+        };
+        let mut mesh = p3d_geo::generate::extrude_shape(&spec).map_err(|e| match e {
+            PrimError::InvalidParam { param: "shape", value, reason } => OpError::invalid(path, format!("{value} {reason}")),
+            PrimError::InvalidParam { param: "bevel", value, reason } => OpError::out_of_range("/bevel/width", format!("{value}: {reason}")),
+            e => gen_error(e),
+        })?;
+        if height != 0.0 {
+            let shift = plane_axis(plane).unit() * height as f32;
+            for q in &mut mesh.positions {
+                *q += shift;
+            }
+        }
+        let key = create_mesh_object(tx, p.name.as_deref(), "shape", p.parent.as_deref(), &p.position, mesh)?;
+        Ok(created_summary(tx, key, "shape"))
     }
 }

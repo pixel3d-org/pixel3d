@@ -94,7 +94,7 @@ fn every_example_produces_its_documented_result() {
                 Category::Edit | Category::Shade | Category::Subd | Category::Deform => edit_fixture(),
                 Category::Expect => expect_fixture(),
                 Category::Curve => curve_fixture(),
-                Category::Gen => Tx::new(Document::new()),
+                Category::Gen => curve_fixture(),
                 _ => fixture(),
             };
             match op.run(&mut tx, &args, &OpCtx::default()) {
@@ -754,6 +754,43 @@ fn lathe_presets_points_and_curves() {
     ok(&mut tx, "curve.circle", json!({ "name": "flat_ring", "radius": 0.2 }));
     let e = err(&mut tx, "gen.lathe", json!({ "profile": { "curve": "flat_ring" } }));
     assert!(e.message.contains("XY plane"), "{}", e.message);
+}
+
+#[test]
+fn shapes_extrude_from_points_and_joined_curves() {
+    let mut tx = curve_fixture();
+    // A washer plate from an outline curve and a hole curve joined into one.
+    ok(&mut tx, "curve.rectangle", json!({ "name": "plate", "size": [0.4, 0.3], "corner_radius": "3cm", "plane": "xy" }));
+    ok(&mut tx, "curve.circle", json!({ "name": "bore", "radius": "5cm", "segments": 16, "plane": "xy", "position": [0.05, 0, 0] }));
+    let s = ok(&mut tx, "scene.join", json!({ "targets": ["plate", "bore"] }));
+    assert!(s.ends_with("2 splines, 36 points"), "{s}");
+    ok(&mut tx, "gen.extrude_shape", json!({ "name": "washer", "curve": "plate", "depth": "1cm", "bevel": { "width": "2mm" } }));
+    let t = topo(&tx, "washer");
+    assert!(t.is_watertight());
+    let m = tx.doc().object_mesh(tx.doc().resolve("washer").unwrap()).unwrap();
+    let euler = m.vert_count() as i64 - m.edge_count() as i64 + m.face_count() as i64;
+    assert_eq!(euler, 0, "one through hole");
+    // The joined bore keeps its world place: the hole is off center.
+    let (lo, hi) = m.bounds().unwrap();
+    assert!((hi.z - lo.z - 0.01).abs() < 1e-5 && (hi.x - lo.x - 0.4).abs() < 1e-5);
+    // A floor plan in the ground plane rises along +Y from its curve's height.
+    ok(&mut tx, "scene.set_transform", json!({ "target": "outline", "position": [0, 0, 0] }));
+    ok(&mut tx, "curve.polyline", json!({ "name": "plan", "points": [[0, 0.5, 0], [2, 0.5, 0], [2, 0.5, -1], [0, 0.5, -1]], "closed": true }));
+    ok(&mut tx, "gen.extrude_shape", json!({ "name": "floor", "curve": "plan", "depth": "20cm" }));
+    let floor = tx.doc().object_mesh(tx.doc().resolve("floor").unwrap()).unwrap();
+    let (lo, hi) = floor.bounds().unwrap();
+    assert!((lo.y - 0.5).abs() < 1e-5 && (hi.y - 0.7).abs() < 1e-5, "{lo} {hi}");
+
+    let e = err(&mut tx, "gen.extrude_shape", json!({ "curve": "path" }));
+    assert!(e.message.contains("open"), "{}", e.message);
+    let e = err(&mut tx, "gen.extrude_shape", json!({ "outline": [[0, 0], [1, 0], [1, 1]], "curve": "outline" }));
+    assert_eq!(e.code, ErrorCode::InvalidParam);
+    let e = err(&mut tx, "gen.extrude_shape", json!({ "outline": [[0, 0], [1, 1], [1, 0], [0, 1]] }));
+    assert_eq!(e.path.as_deref(), Some("/outline"));
+    let e = err(&mut tx, "gen.extrude_shape", json!({ "outline": [[0, 0], [0.1, 0], [0.1, 1], [0, 1]], "depth": 1, "bevel": { "width": "6cm" } }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/bevel/width")));
+    let e = err(&mut tx, "scene.join", json!({ "targets": ["outline", "crate"] }));
+    assert!(e.message.contains("curves with curves"), "{}", e.message);
 }
 
 #[test]
