@@ -1037,6 +1037,10 @@ impl PixelApp {
             "history.bisect" | "history.jump" => self.bisect_command(id, params),
             "history.bisect_card" => {
                 self.bisect.open = params.get("on").and_then(Value::as_bool).unwrap_or(!self.bisect.open);
+                if self.bisect.open {
+                    // The card lives in the History panel: show it.
+                    self.ui.docking.command(&json!({ "operation": "open", "panel": "history" }))?;
+                }
                 Ok(json!({ "open": self.bisect.open }))
             }
             // The Spec tab: starters, parts, the raw source, landmarks.
