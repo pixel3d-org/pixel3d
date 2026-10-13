@@ -676,6 +676,80 @@ impl Agent {
         self.one_op("deform.handles", args)
     }
 
+    fn bisect(&mut self, test: Option<&BisectTest>) -> Result<ToolOutput, OpError> {
+        let test = test.ok_or_else(|| {
+            OpError::invalid("/test", "bisect needs a test").with_hint(
+                "{\"expect\": \"E2\"}, {\"finding\": {\"code\": \"PENETRATION\"}} or {\"brief\": {\"name\": \"elf\", \"item\": \"ear length\"}}",
+            )
+        })?;
+        let doc = self.doc();
+        let (label, outcome) = match test {
+            BisectTest::Expect(name) => {
+                let e = doc.expectations().iter().find(|e| &e.name == name).cloned().ok_or_else(|| {
+                    let mut err = OpError::new(ErrorCode::NotFound, format!("no expectation `{name}`")).at("/test/expect");
+                    err.suggestions = p3d_scene::name::suggest(name, doc.expectations().iter().map(|e| e.name.as_str()), 3);
+                    err
+                })?;
+                (format!("{} {}", e.name, e.check.label()), self.session.bisect(|d| !checks::check(d, &e).pass))
+            }
+            BisectTest::Finding { code, part } => {
+                let label = match part {
+                    Some(p) => format!("{code} on {p}"),
+                    None => code.clone(),
+                };
+                let found = |d: &Document| {
+                    View::new(d, None).is_ok_and(|v| {
+                        diagnose(&v).iter().any(|f| f.code.eq_ignore_ascii_case(code) && part.as_ref().is_none_or(|p| f.part.contains(p.as_str())))
+                    })
+                };
+                (label, self.session.bisect(found))
+            }
+            BisectTest::Brief { name, item } => {
+                let failing = |d: &Document| {
+                    p3d_spec::coverage(d, name)
+                        .is_ok_and(|c| c.items.iter().any(|i| i.label.starts_with(item.as_str()) && i.status == p3d_spec::brief::Status::Fail))
+                };
+                (format!("brief {name} {item}"), self.session.bisect(failing))
+            }
+        };
+        let text = match &outcome {
+            p3d_engine::Bisected::NotNow => format!("bisect {label}: it passes now; nothing to look for\n"),
+            p3d_engine::Bisected::AlwaysBad { oldest } => {
+                format!("bisect {label}: it already failed at rev {oldest}, the oldest state in the history\n")
+            }
+            p3d_engine::Bisected::Found { label: tx, before, after, checks } => {
+                let mut t = format!(
+                    "bisect {label}: first fails at rev {} after `{tx}` (passes at rev {}; {checks} checks)\n",
+                    after.revision, before.revision
+                );
+                for root in after.spec_roots() {
+                    let (Some(new), Some(old)) = (after.spec(root), before.spec(root)) else { continue };
+                    let mut changes = Vec::new();
+                    json_diff(&old.source, &new.source, String::new(), &mut changes);
+                    if !changes.is_empty() {
+                        let name = after.path(root).unwrap_or_default();
+                        t.push_str(&format!("  spec {name} changed:\n"));
+                        for c in changes.iter().take(6) {
+                            t.push_str(&format!("    {c}\n"));
+                        }
+                        if changes.len() > 6 {
+                            t.push_str(&format!("    ... {} more\n", changes.len() - 6));
+                        }
+                    }
+                }
+                t
+            }
+        };
+        let data = match outcome {
+            p3d_engine::Bisected::Found { label, before, after, checks } => {
+                json!({ "found": true, "transaction": label, "good": before.revision, "bad": after.revision, "checks": checks })
+            }
+            p3d_engine::Bisected::AlwaysBad { oldest } => json!({ "found": false, "oldest": oldest }),
+            p3d_engine::Bisected::NotNow => json!({ "found": false, "passes": true }),
+        };
+        Ok(ToolOutput::ok(text, data))
+    }
+
     fn one_op(&mut self, op: &str, args: Value) -> Result<ToolOutput, OpError> {
         let r = self.execute(&[OpCall::new(op, args)], &BatchOptions::default()).map_err(|mut e| {
             e.path = e.path.map(|p| p.trim_start_matches("/ops/0/args").to_owned()).filter(|p| !p.is_empty());
@@ -892,6 +966,7 @@ impl Agent {
     fn history(&mut self, a: &HistoryArgs) -> Result<ToolOutput, OpError> {
         let steps = a.steps.unwrap_or(1).clamp(1, 1000);
         match a.action {
+            HistoryAction::Bisect => self.bisect(a.test.as_ref()),
             HistoryAction::List => {
                 let h = self.session.history();
                 let mut t = format!("rev {}; {} undo step{}", self.session.revision(), h.len(), if h.len() == 1 { "" } else { "s" });
@@ -943,4 +1018,39 @@ impl Agent {
 fn count_of(n: usize, kind: p3d_mesh::ElementKind) -> String {
     let plural = kind.as_str();
     if n == 1 { format!("1 {}", plural.trim_end_matches('s')) } else { format!("{} {plural}", thousands(n)) }
+}
+
+/// A short JSON value for reports.
+fn short(v: &Value) -> String {
+    let s = v.to_string();
+    if s.chars().count() > 48 { format!("{}...", s.chars().take(45).collect::<String>()) } else { s }
+}
+
+/// The JSON pointers where `b` differs from `a`, with both values.
+///
+/// Complexity: O(size of both values).
+fn json_diff(a: &Value, b: &Value, path: String, out: &mut Vec<String>) {
+    match (a, b) {
+        (Value::Object(x), Value::Object(y)) => {
+            let mut keys: Vec<&String> = x.keys().chain(y.keys()).collect();
+            keys.sort();
+            keys.dedup();
+            for k in keys {
+                let p = format!("{path}/{k}");
+                match (x.get(k), y.get(k)) {
+                    (Some(u), Some(v)) => json_diff(u, v, p, out),
+                    (None, Some(v)) => out.push(format!("{p} added: {}", short(v))),
+                    (Some(_), None) => out.push(format!("{p} removed")),
+                    (None, None) => {}
+                }
+            }
+        }
+        (Value::Array(x), Value::Array(y)) if x.len() == y.len() => {
+            for (i, (u, v)) in x.iter().zip(y).enumerate() {
+                json_diff(u, v, format!("{path}/{i}"), out);
+            }
+        }
+        _ if a != b => out.push(format!("{path}: {} -> {}", short(a), short(b))),
+        _ => {}
+    }
 }

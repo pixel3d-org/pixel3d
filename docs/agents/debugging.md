@@ -65,3 +65,7 @@ Write the expectations from the user's request first, then model until they pass
 ## History
 
 `history diff` (or `perceive` with `aspect: "diff"`) compares two states; `checkpoint` names a state before a risky change and `revert` returns to it as an undoable step.
+
+## Finding the change that broke something
+
+`history` with `"action": "bisect"` searches the undo history for the transaction that made a test fail: `{"test": {"expect": "E2"}}`, `{"test": {"finding": {"code": "PENETRATION", "part": "ear_l"}}}` or `{"test": {"brief": {"name": "elf", "item": "ear length"}}}`. It answers with the revision, the transaction and, for specs, the paths it changed (`/parts/ear_l/sdf/0/capsule/b/0: 0.05 -> 0.02`), in a handful of checks however long the history is.

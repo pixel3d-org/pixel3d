@@ -121,3 +121,36 @@ fn a_spec_with_dna_reports_its_genes() {
     let out = a.call("spec", json!({ "action": "patch", "target": "axe", "merge": { "dna": { "culture": "gnomish" } } }));
     assert!(out.is_error && out.text.contains("/spec/dna/culture"), "{}", out.text);
 }
+
+#[test]
+fn bisect_finds_the_patch_that_broke_the_brief() {
+    let mut a = Agent::new(Session::new());
+    call(
+        &mut a,
+        "brief",
+        json!({ "action": "set", "name": "elf", "brief": {
+            "category": "humanoid_head", "style": "stylized",
+            "must_have": [{ "feature": "ear", "count": 2, "traits": { "length_ratio_to_head": [0.35, 0.6] } }]
+        } }),
+    );
+    let spec = json!({
+        "brief": "elf", "category": "humanoid_head",
+        "parts": {
+            "head": { "sdf": [{ "ellipsoid": { "at": [0, 0.13, 0], "radii": [0.075, 0.105, 0.09] }, "name": "cranium" }], "detail": "6mm", "landmarks": "category" },
+            "ear_l": ear([0.05, 0.075, -0.02]),
+            "ear_r": { "mirror": "ear_l" },
+            "eye_l": { "primitive": { "uv_sphere": { "radius": 0.012, "origin": "center" } }, "anchor": { "on": "head", "landmark": "eye_l", "offset": [0, 0, -0.008] } }
+        }
+    });
+    call(&mut a, "spec", json!({ "action": "set", "target": "elf_head", "spec": spec }));
+    let eye = |r: f64| json!({ "action": "patch", "target": "elf_head", "merge": { "parts": { "eye_l": { "primitive": { "uv_sphere": { "radius": r, "origin": "center" } } } } } });
+    call(&mut a, "spec", eye(0.013));
+    call(&mut a, "spec", json!({ "action": "patch", "target": "elf_head", "merge": { "parts": { "ear_l": ear([0.02, 0.03, -0.01]) } } }));
+    call(&mut a, "spec", eye(0.011));
+    call(&mut a, "spec", eye(0.012));
+    let t = call(&mut a, "history", json!({ "action": "bisect", "test": { "brief": { "name": "elf", "item": "ear length" } } }));
+    assert!(t.contains("first fails at rev 4") && t.contains("passes at rev 3"), "{t}");
+    assert!(t.contains("/parts/ear_l/sdf/0/capsule/b/0: 0.05 -> 0.02"), "{t}");
+    let t = call(&mut a, "history", json!({ "action": "bisect", "test": { "finding": { "code": "FLOATING_PART" } } }));
+    assert!(t.contains("passes now"), "{t}");
+}

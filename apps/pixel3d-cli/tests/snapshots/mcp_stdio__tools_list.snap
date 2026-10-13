@@ -1811,6 +1811,78 @@ expression: tools
         "description": "Undo, redo, checkpoints, revert and diffs between states.",
         "inputSchema": {
           "$defs": {
+            "BisectTest": {
+              "description": "What `history bisect` looks for.",
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "description": "An expectation failing, by name: `{\"expect\": \"E2\"}`.",
+                  "properties": {
+                    "expect": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "expect"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A diagnostics finding: `{\"finding\": {\"code\": \"PENETRATION\", \"part\": \"ear_l\"}}`.",
+                  "properties": {
+                    "finding": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "part": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "finding"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A brief item failing: `{\"brief\": {\"name\": \"elf\", \"item\": \"ear length\"}}`.",
+                  "properties": {
+                    "brief": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "item": {
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "name",
+                        "item"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "brief"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
             "HistoryAction": {
               "oneOf": [
                 {
@@ -1839,6 +1911,11 @@ expression: tools
                   "const": "diff",
                   "description": "What changed between two states (`from`, `to`).",
                   "type": "string"
+                },
+                {
+                  "const": "bisect",
+                  "description": "Find the transaction that made `test` fail (binary search over the history).",
+                  "type": "string"
                 }
               ]
             }
@@ -1849,7 +1926,7 @@ expression: tools
             "action": {
               "$ref": "#/$defs/HistoryAction",
               "default": "list",
-              "description": "`list` (default), `undo`, `redo`, `checkpoint`, `revert` or `diff`."
+              "description": "`list` (default), `undo`, `redo`, `checkpoint`, `revert`, `diff` or `bisect`."
             },
             "from": {
               "description": "`diff` base: a revision number or a checkpoint name; the previous revision by default.",
@@ -1880,6 +1957,17 @@ expression: tools
                 "string",
                 "null"
               ]
+            },
+            "test": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/BisectTest"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`bisect`: the test that fails now."
             },
             "to": {
               "description": "`diff` end: a revision number or a checkpoint name; the current state by default.",

@@ -112,14 +112,35 @@ pub enum HistoryAction {
     Revert,
     /// What changed between two states (`from`, `to`).
     Diff,
+    /// Find the transaction that made `test` fail (binary search over the history).
+    Bisect,
+}
+
+/// What `history bisect` looks for.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum BisectTest {
+    /// An expectation failing, by name: `{"expect": "E2"}`.
+    Expect(String),
+    /// A diagnostics finding: `{"finding": {"code": "PENETRATION", "part": "ear_l"}}`.
+    Finding {
+        code: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        part: Option<String>,
+    },
+    /// A brief item failing: `{"brief": {"name": "elf", "item": "ear length"}}`.
+    Brief { name: String, item: String },
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HistoryArgs {
-    /// `list` (default), `undo`, `redo`, `checkpoint`, `revert` or `diff`.
+    /// `list` (default), `undo`, `redo`, `checkpoint`, `revert`, `diff` or `bisect`.
     #[serde(default)]
     pub action: HistoryAction,
+    /// `bisect`: the test that fails now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub test: Option<BisectTest>,
     /// Checkpoint name for `checkpoint` and `revert`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
