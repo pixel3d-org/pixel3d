@@ -72,6 +72,18 @@ fn boolean_ready(app: &PixelApp) -> Result<(), String> {
     app.tools_on_active().map(|_| ())
 }
 
+/// Whether a mesh is selected (cleanup works on meshes).
+///
+/// Complexity: O(selected objects).
+fn mesh_selected(app: &PixelApp) -> Result<(), String> {
+    let doc = app.doc();
+    if app.selection.iter().any(|k| doc.object(*k).is_some_and(|o| o.mesh_key().is_some())) {
+        Ok(())
+    } else {
+        Err(crate::i18n::t("Select a mesh first.").to_owned())
+    }
+}
+
 fn when(state: Ready, it: Option<MenuItem>) -> Option<MenuItem> {
     it.map(|it| MenuItem { enabled: Some(state), ..it })
 }
@@ -289,6 +301,10 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::Fill, with("Fill holes", "selection.run", || json!({ "op": "edit.fill" }))),
                 icon(Icon::Normals, with("Recalculate normals", "selection.run", || json!({ "op": "edit.recalc_normals" }))),
                 None,
+                header("Clean Up"),
+                when(mesh_selected, icon(Icon::CleanUp, with("Auto Clean", "selection.run", || json!({ "op": "cleanup.auto" })))),
+                when(mesh_selected, icon(Icon::Report, with("Report", "selection.run", || json!({ "op": "cleanup.report" })))),
+                None,
                 icon(Icon::Apply, with("Apply transform", "selection.run", || json!({ "op": "scene.apply_transform" }))),
             ],
         },
@@ -343,6 +359,28 @@ mod tests {
             assert_eq!(shortcut_text(ui.ctx(), &minus), ui.ctx().format_shortcut(&minus));
         });
         out.textures_delta.clear();
+    }
+
+    #[test]
+    fn clean_up_items_clean_and_report() {
+        let mut app = crate::PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        let mesh = menus().into_iter().find(|m| m.label == "Mesh").unwrap();
+        let items: Vec<MenuItem> = mesh.entries.into_iter().flatten().filter(|it| matches!(it.label, "Auto Clean" | "Report")).collect();
+        assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|it| (it.enabled.unwrap())(&app).is_err()), "nothing selected");
+        app.run("prim.box", serde_json::json!({ "name": "crate" })).unwrap();
+        assert!(items.iter().all(|it| (it.enabled.unwrap())(&app).is_ok()));
+        let steps = app.session.history().len();
+        for it in items.iter().rev() {
+            app.run(it.command, (it.params)()).unwrap();
+        }
+        // The report adds no undo step and reads as lines; the clean box stays clean.
+        assert_eq!(app.session.history().len(), steps + 1);
+        assert!(app.result.as_ref().is_some_and(|r| !r.read_only));
+        app.run(items[1].command, (items[1].params)()).unwrap();
+        let r = app.result.clone().unwrap();
+        let (_, lines) = crate::results::readable(&r.entries[0].summary, app.session.registry());
+        assert!(r.read_only && lines.iter().any(|l| l == "Clean up would change nothing"), "{lines:?}");
     }
 
     #[test]
