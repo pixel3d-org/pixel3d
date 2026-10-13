@@ -10,6 +10,11 @@
 //! spec 6): a collection is an empty tagged `collection`, a LOD group an
 //! empty tagged `lod_group` whose children are tagged `lod0`, `lod1`, ...
 //! (or named `<asset>_LOD<n>`).
+//!
+//! Model Specs: a spec root carries a `spec` badge, each part object shows
+//! its kind and join, and parts blended into another part's mesh (which
+//! have no object) get rows of their own under the root; hovering one
+//! lights its faces in the viewport.
 
 use std::collections::BTreeSet;
 
@@ -21,6 +26,7 @@ use serde_json::{Value, json};
 use crate::PixelApp;
 use crate::i18n::t;
 use crate::icons::{self, Icon};
+use crate::spec::SpecParts;
 use crate::theme::{self, Tokens};
 use crate::viewport::ViewportEvent;
 use crate::widgets;
@@ -39,6 +45,9 @@ enum Node {
     Object(ObjectKey),
     /// The mesh data of an object.
     Mesh(ObjectKey),
+    /// A part of the spec on a root blended into another part (by its index
+    /// in the root's parts).
+    Blend(ObjectKey, u32),
 }
 
 /// What kind of thing a row is, for its icon, default state and actions.
@@ -51,6 +60,8 @@ pub enum Kind {
     Curve,
     Empty,
     MeshData,
+    /// A blended spec part.
+    BlendPart,
 }
 
 /// The LOD level of an object: a `lodN` tag, else a `_LOD<n>` name suffix.
@@ -91,7 +102,7 @@ struct Row {
 fn open_by_default(doc: &Document, node: Node) -> bool {
     match node {
         Node::Scene => true,
-        Node::Mesh(_) => false,
+        Node::Mesh(_) | Node::Blend(..) => false,
         Node::Object(k) => doc.object(k).is_some_and(|o| !matches!(kind_of(o), Kind::Mesh | Kind::Curve | Kind::Empty) || !o.children().is_empty()),
     }
 }
@@ -105,11 +116,12 @@ fn children(doc: &Document, obj: &Object) -> Vec<ObjectKey> {
     c
 }
 
-/// The visible rows: the tree under expanded nodes, or with a filter the
-/// matching objects in a flat list.
+/// The visible rows: the tree under expanded nodes (blended spec parts
+/// under their root, after its objects), or with a filter the matching
+/// objects in a flat list.
 ///
-/// Complexity: O(objects + children sorting of LOD groups).
-fn rows(doc: &Document, toggled: &BTreeSet<Node>, filter: &str) -> Vec<Row> {
+/// Complexity: O(objects + spec parts + children sorting of LOD groups).
+fn rows(doc: &Document, specs: &SpecParts, toggled: &BTreeSet<Node>, filter: &str) -> Vec<Row> {
     let open = |n: Node| open_by_default(doc, n) != toggled.contains(&n);
     let needle = filter.trim().to_lowercase();
     let mut out = Vec::new();
@@ -134,8 +146,15 @@ fn rows(doc: &Document, toggled: &BTreeSet<Node>, filter: &str) -> Vec<Row> {
                 let kind = kind_of(o);
                 let kids = children(doc, o);
                 let has_mesh = o.mesh_key().is_some();
-                out.push(Row { node, kind, depth, expandable: has_mesh || !kids.is_empty() });
+                let blended: Vec<u32> = specs
+                    .get(&k)
+                    .map(|parts| parts.iter().enumerate().filter(|(_, p)| p.object.is_none()).map(|(i, _)| i as u32).collect())
+                    .unwrap_or_default();
+                out.push(Row { node, kind, depth, expandable: has_mesh || !kids.is_empty() || !blended.is_empty() });
                 if open(node) {
+                    for i in blended.into_iter().rev() {
+                        stack.push((Node::Blend(k, i), depth + 1));
+                    }
                     for c in kids.into_iter().rev() {
                         stack.push((Node::Object(c), depth + 1));
                     }
@@ -145,6 +164,7 @@ fn rows(doc: &Document, toggled: &BTreeSet<Node>, filter: &str) -> Vec<Row> {
                 }
             }
             Node::Mesh(_) => out.push(Row { node, kind: Kind::MeshData, depth, expandable: false }),
+            Node::Blend(..) => out.push(Row { node, kind: Kind::BlendPart, depth, expandable: false }),
             Node::Scene => {}
         }
     }
@@ -229,11 +249,17 @@ pub fn lod_group_from_selection(app: &mut PixelApp) -> Result<Value, String> {
 
 /// What a row asked for this frame.
 enum RowAction {
-    Select { key: Option<ObjectKey>, add: bool, mesh_tab: bool },
+    Select {
+        key: Option<ObjectKey>,
+        add: bool,
+        mesh_tab: bool,
+    },
     Toggle(Node),
     Hide(ObjectKey, bool),
     Rename(ObjectKey),
     Run(&'static str, Option<ObjectKey>),
+    /// Select a spec root and one of its parts.
+    SelectPart(ObjectKey, String),
 }
 
 /// The Outliner body.
@@ -259,7 +285,8 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
     ui.add_space(6.0);
 
     let doc = std::sync::Arc::clone(app.session.doc());
-    let list = rows(&doc, &toggled, &filter);
+    let specs = app.spec_parts();
+    let list = rows(&doc, &specs, &toggled, &filter);
     // Triangle counts come from the stats cache (counted once per edit).
     app.stats();
     if (list.len() <= 1 && doc.object_count() == 0) || list.is_empty() {
@@ -279,11 +306,29 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
             let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
             let key = match row.node {
                 Node::Object(k) | Node::Mesh(k) => Some(k),
-                Node::Scene => None,
+                Node::Scene | Node::Blend(..) => None,
+            };
+            // A blended spec part (no object of its own), or the spec part an
+            // object row is.
+            let blend = match row.node {
+                Node::Blend(r, i) => specs.get(&r).and_then(|p| p.get(i as usize)).map(|p| (r, p)),
+                _ => None,
             };
             let obj = key.and_then(|k| doc.object(k));
             let is_object_row = matches!(row.node, Node::Object(_));
-            let selected = is_object_row && key.is_some_and(|k| app.selection.contains(&k));
+            let part_info = match (row.node, obj.and_then(Object::parent)) {
+                (Node::Object(k), Some(parent)) => specs.get(&parent).and_then(|ps| ps.iter().find(|p| p.object == Some(k))),
+                _ => blend.map(|b| b.1),
+            };
+            let selected = match blend {
+                Some((r, p)) => app.spec.root == Some(r) && app.spec.part.as_deref() == Some(p.name.as_str()),
+                None => is_object_row && key.is_some_and(|k| app.selection.contains(&k)),
+            };
+            if let Some((r, p)) = blend
+                && resp.hovered()
+            {
+                app.spec.hover_next = Some((r, p.name.clone()));
+            }
             // A collection or LOD group shows as hidden when all of it is
             // (a walk of its subtree, for the few rows on screen).
             let hidden = key.is_some_and(|k| match row.kind {
@@ -327,6 +372,7 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
                 Kind::Curve => (Icon::Curve, tk.icon),
                 Kind::Empty => (Icon::Empty, tk.icon),
                 Kind::MeshData => (Icon::MeshData, tk.health_ok),
+                Kind::BlendPart => (Icon::Shapes, tk.icon_accent),
             };
             icons::paint_colored(ui.painter(), ir, icon, if hidden { tk.text_faint } else { icon_color }, tk.accent);
             let name_x = ir.right() + 6.0;
@@ -358,16 +404,23 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
                 ui.painter().galley(pos2(text_right, rect.center().y - g.size().y / 2.0), g, tk.text_faint);
                 text_right -= 8.0;
             }
-            // A LOD badge after the name.
+            // A LOD or spec badge after the name.
             let badge = match (row.kind, obj) {
+                (_, Some(_)) if is_object_row && key.is_some_and(|k| specs.contains_key(&k)) => Some(t("spec").to_owned()),
                 (Kind::Mesh | Kind::Curve | Kind::Empty, Some(o)) => lod_level(o).map(|n| format!("LOD{n}")),
                 (Kind::LodGroup, _) => Some("LOD".to_owned()),
                 _ => None,
             };
-            let label = match (row.node, obj) {
-                (Node::Scene, _) => t("Scene Collection").to_owned(),
-                (Node::Mesh(_), _) => t("Mesh").to_owned(),
-                (_, Some(o)) => o.name().to_owned(),
+            // A spec part's kind and join, after the name.
+            let part_text = part_info.map(|p| match (p.join, blend.and(p.on.as_deref())) {
+                ("blend", Some(on)) => format!("{}, {} {on}", p.kind, t("blended into")),
+                (join, _) => format!("{}, {}", p.kind, t(join)),
+            });
+            let label = match (row.node, obj, blend) {
+                (Node::Scene, _, _) => t("Scene Collection").to_owned(),
+                (Node::Mesh(_), _, _) => t("Mesh").to_owned(),
+                (_, _, Some((_, p))) => p.name.clone(),
+                (_, Some(o), _) => o.name().to_owned(),
                 _ => String::new(),
             };
             match (&mut renaming, key) {
@@ -401,8 +454,16 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
                     let g = ui.painter().layout_job(job);
                     let name_w = g.size().x;
                     ui.painter().galley(pos2(name_x, rect.center().y - g.size().y / 2.0), g, color);
+                    let mut after = name_x + name_w + 6.0;
                     if let Some(b) = badge {
-                        lod_badge(ui.painter(), pos2(name_x + name_w + 6.0, rect.center().y), &b);
+                        after = lod_badge(ui.painter(), pos2(after, rect.center().y), &b) + 6.0;
+                    }
+                    if let Some(s) = part_text
+                        && after + 20.0 < text_right
+                    {
+                        let g = ui.painter().layout_no_wrap(s, theme::small(), tk.text_faint);
+                        let clip = Rect::from_x_y_ranges(after..=text_right, rect.y_range());
+                        ui.painter().with_clip_rect(clip).galley(pos2(after, rect.center().y - g.size().y / 2.0), g, tk.text_faint);
                     }
                 }
             }
@@ -441,6 +502,8 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
                 if let Some(k) = key {
                     action = Some(RowAction::Rename(k));
                 }
+            } else if let (Some((r, p)), true) = (blend, resp.clicked()) {
+                action = Some(RowAction::SelectPart(r, p.name.clone()));
             } else if resp.clicked() {
                 let add = ui.input(|i| i.modifiers.shift || i.modifiers.command);
                 action = Some(RowAction::Select { key, add, mesh_tab: row.kind == Kind::MeshData });
@@ -481,6 +544,13 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
         }
         Some(RowAction::Rename(k)) => renaming = app.doc().object(k).map(|o| (k, o.name().to_owned())),
         Some(RowAction::Run(cmd, k)) => run(app, cmd, k),
+        Some(RowAction::SelectPart(root, part)) => {
+            app.handle_viewport(vec![ViewportEvent::Picked { object: Some(root), add: false }]);
+            app.spec_follow();
+            if let Err(e) = app.spec_select_part(Some(&part)) {
+                app.set_status(e);
+            }
+        }
         None => {}
     }
     ui.data_mut(|d| d.insert_temp(state, (toggled, filter, renaming)));
@@ -510,13 +580,14 @@ fn run(app: &mut PixelApp, cmd: &str, key: Option<ObjectKey>) {
     }
 }
 
-/// A small `LOD0`-style pill.
-fn lod_badge(p: &egui::Painter, left_center: egui::Pos2, text: &str) {
+/// A small `LOD0`-style pill; returns its right edge.
+fn lod_badge(p: &egui::Painter, left_center: egui::Pos2, text: &str) -> f32 {
     let tk = Tokens::get();
     let g = p.layout_no_wrap(text.to_owned(), egui::FontId::proportional(9.5), tk.icon_accent);
     let r = Rect::from_min_size(pos2(left_center.x, left_center.y - 8.0), vec2(g.size().x + 10.0, 16.0));
     p.rect_filled(r, 8.0, tk.accent_soft);
     p.galley(r.center() - g.size() / 2.0, g, tk.icon_accent);
+    r.right()
 }
 
 #[cfg(test)]
@@ -535,19 +606,43 @@ mod tests {
     fn rows_nest_under_the_scene_with_mesh_data() {
         let app = app();
         let doc = app.doc();
-        let list = rows(doc, &BTreeSet::new(), "");
+        let list = rows(doc, &SpecParts::new(), &BTreeSet::new(), "");
         assert_eq!(list[0].node, Node::Scene);
         assert_eq!(list.iter().filter(|r| r.depth == 1).count(), 3, "three top-level objects");
         // Objects with only mesh data start closed: no mesh rows.
         assert!(list.iter().all(|r| r.kind != Kind::MeshData));
         let k = doc.resolve("crate").unwrap();
         let open: BTreeSet<Node> = [Node::Object(k)].into();
-        let list = rows(doc, &open, "");
+        let list = rows(doc, &SpecParts::new(), &open, "");
         let at = list.iter().position(|r| r.node == Node::Object(k)).unwrap();
         assert_eq!(list[at + 1].node, Node::Mesh(k));
         assert_eq!(list[at + 1].depth, 2);
         // A filter lists matches flat.
-        assert_eq!(rows(doc, &BTreeSet::new(), "lod").len(), 1);
+        assert_eq!(rows(doc, &SpecParts::new(), &BTreeSet::new(), "lod").len(), 1);
+    }
+
+    #[test]
+    fn blended_spec_parts_get_rows_under_their_root() {
+        let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        app.run("spec.starter", json!({ "name": "elf_head" })).unwrap();
+        let specs = app.spec_parts();
+        let doc = app.doc();
+        let root = doc.resolve("elf_head").unwrap();
+        let list = rows(doc, &specs, &BTreeSet::new(), "");
+        let blended: Vec<&str> = list
+            .iter()
+            .filter_map(|r| match r.node {
+                Node::Blend(k, i) if k == root => specs[&root].get(i as usize).map(|p| p.name.as_str()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(blended, ["ear_l", "ear_r", "nose"], "the blended parts, in name order");
+        // They follow the root's part objects, one level deeper.
+        let at = list.iter().position(|r| r.node == Node::Object(root)).unwrap();
+        let first = list.iter().position(|r| matches!(r.node, Node::Blend(..))).unwrap();
+        assert!(first > at && list[first].depth == list[at].depth + 1);
+        let objects = list.iter().filter(|r| matches!(r.node, Node::Object(k) if doc.object(k).and_then(Object::parent) == Some(root))).count();
+        assert_eq!(objects, 3, "head and the two eyes have objects");
     }
 
     #[test]
