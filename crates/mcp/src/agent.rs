@@ -647,6 +647,17 @@ impl Agent {
                         None => t.push_str(&format!("  {name}: blended into its parent\n")),
                     }
                 }
+                // Skeletons (written or from archetypes): joints in world mm.
+                let joints = p3d_spec::skeleton_joints(&doc, key).unwrap_or_default();
+                let mut last = String::new();
+                for j in &joints {
+                    if j.skeleton != last {
+                        t.push_str(&format!("skeleton {} (landmarks {{\"on\": \"{}\", \"landmark\": \"<joint>\"}}):\n", j.skeleton, j.skeleton));
+                        last = j.skeleton.clone();
+                    }
+                    let mm = |v: f32| (f64::from(v) * 1000.0).round() as i64;
+                    t.push_str(&format!("  {} ({}, {}, {}) mm\n", j.name, mm(j.point.x), mm(j.point.y), mm(j.point.z)));
+                }
                 return Ok(ToolOutput::ok(t, json!({ "spec": record.source })));
             }
             SpecAction::Set => {

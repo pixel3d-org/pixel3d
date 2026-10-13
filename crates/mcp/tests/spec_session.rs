@@ -182,3 +182,15 @@ fn features_are_listed_described_and_used_in_specs() {
     );
     assert!(t.contains("horn_l") && t.contains("feature horn"), "{t}");
 }
+
+#[test]
+fn spec_get_lists_skeleton_joints() {
+    let mut a = Agent::new(Session::new());
+    call(
+        &mut a,
+        "spec",
+        json!({ "action": "set", "target": "d", "spec": { "archetypes": { "dwarf": { "kind": "dwarf", "params": { "beard": "none", "hair": "none" } } } } }),
+    );
+    let t = call(&mut a, "spec", json!({ "action": "get", "target": "d" }));
+    assert!(t.contains("skeleton dwarf (landmarks") && t.contains("  head_top (0, 1350, "), "{t}");
+}
