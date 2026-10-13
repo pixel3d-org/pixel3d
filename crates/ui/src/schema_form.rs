@@ -5,9 +5,10 @@
 //! checkbox, nested settings a collapsible section and position-like
 //! triples three X, Y, Z fields.
 
-use egui::{Color32, DragValue, RichText};
+use egui::{DragValue, RichText};
 use serde_json::{Map, Value, json};
 
+use crate::i18n::t;
 use crate::theme::{self, Tokens};
 
 /// What a form did this frame.
@@ -264,7 +265,18 @@ fn row<R>(ui: &mut egui::Ui, label: &str, desc: &str, add: impl FnOnce(&mut egui
     crate::widgets::prop_row(ui, label, desc, add)
 }
 
-fn drag(ui: &mut egui::Ui, v: &mut f64, kind: &Kind, width: f32) -> egui::Response {
+/// A number's widget: a drag value with its unit, kept within `bounds`
+/// (a schema's `minimum` and `maximum`), or a slider when the schema asks
+/// for one (`x-slider`) and both bounds are set.
+fn drag(ui: &mut egui::Ui, v: &mut f64, kind: &Kind, width: f32, bounds: (Option<f64>, Option<f64>), slider: bool) -> egui::Response {
+    if let (true, (Some(lo), Some(hi))) = (slider, bounds) {
+        let mut s = egui::Slider::new(v, lo..=hi).max_decimals(3);
+        if matches!(kind, Kind::Integer { .. }) {
+            s = s.integer();
+        }
+        ui.spacing_mut().slider_width = (width - 60.0).max(40.0);
+        return ui.add(s);
+    }
     let length_speed = (v.abs() * 0.005).max(0.001);
     let mut d = match kind {
         Kind::Length => DragValue::new(v).speed(length_speed).suffix(" m").max_decimals(4),
@@ -272,8 +284,12 @@ fn drag(ui: &mut egui::Ui, v: &mut f64, kind: &Kind, width: f32) -> egui::Respon
         Kind::Integer { .. } => DragValue::new(v).speed(0.1).fixed_decimals(0),
         _ => DragValue::new(v).speed(0.01).max_decimals(4),
     };
-    if let Kind::Integer { min, max } | Kind::Number { min, max } = kind {
-        d = d.range(min.unwrap_or(f64::NEG_INFINITY)..=max.unwrap_or(f64::INFINITY));
+    let (lo, hi) = match kind {
+        Kind::Integer { min, max } | Kind::Number { min, max } => (min.or(bounds.0), max.or(bounds.1)),
+        _ => bounds,
+    };
+    if lo.is_some() || hi.is_some() {
+        d = d.range(lo.unwrap_or(f64::NEG_INFINITY)..=hi.unwrap_or(f64::INFINITY));
     }
     ui.add_sized([width, crate::widgets::ROW], d)
 }
@@ -301,7 +317,9 @@ fn field(
     match kind {
         Kind::Length | Kind::Angle | Kind::Number { .. } | Kind::Integer { .. } => {
             let mut x = v.as_f64().unwrap_or(0.0);
-            let r = row(ui, label, desc, |ui| drag(ui, &mut x, kind, ui.available_width().max(60.0)));
+            let bounds = (schema.get("minimum").and_then(Value::as_f64), schema.get("maximum").and_then(Value::as_f64));
+            let slider = schema.get("x-slider").and_then(Value::as_bool).unwrap_or(false);
+            let r = row(ui, label, desc, |ui| drag(ui, &mut x, kind, ui.available_width().max(60.0), bounds, slider));
             if r.changed() {
                 *v = if matches!(kind, Kind::Integer { .. }) { json!(x.round() as i64) } else { json!(x) };
                 out.changed = true;
@@ -357,7 +375,7 @@ fn field(
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let (slot, _) = ui.allocate_exact_size(egui::vec2(10.0, crate::widgets::ROW), egui::Sense::hover());
                     ui.painter().text(slot.center(), egui::Align2::CENTER_CENTER, ["X", "Y", "Z"][i], theme::small(), axes[i]);
-                    drag(ui, x, inner, ui.available_width().max(40.0))
+                    drag(ui, x, inner, ui.available_width().max(40.0), (None, None), false)
                 });
                 changed |= r.changed();
                 dragging |= r.dragged();
@@ -421,8 +439,11 @@ fn field(
                     let mut x = v.as_f64().unwrap_or_else(|| default_for(inner, schema, root).as_f64().unwrap_or(8.0));
                     let (toggled, r) = row(ui, label, desc, |ui| {
                         let t = ui.checkbox(&mut check, crate::i18n::t(toggle_label)).changed();
-                        let r =
-                            ui.add_enabled_ui(if auto { !check } else { check }, |ui| drag(ui, &mut x, inner, ui.available_width().max(50.0))).inner;
+                        let r = ui
+                            .add_enabled_ui(if auto { !check } else { check }, |ui| {
+                                drag(ui, &mut x, inner, ui.available_width().max(50.0), (None, None), false)
+                            })
+                            .inner;
                         (t, r)
                     });
                     on = if auto { !check } else { check };
@@ -447,10 +468,56 @@ fn field(
             });
         }
         Kind::Other => {
-            row(ui, label, desc, |ui| ui.label(RichText::new(v.to_string()).font(theme::mono()).color(Color32::GRAY)));
+            // Values without a widget read as words: `none`, or each entry's
+            // fields with their units (`at eye_socket, radius 30 mm`).
+            let text = readable(v, schema, root);
+            row(ui, label, desc, |ui| ui.add(egui::Label::new(RichText::new(text).font(theme::small()).color(tk.text_dim)).wrap()));
         }
     }
     out
+}
+
+/// A value as short words, with units from its schema: `none` for nothing,
+/// lengths as `30 mm`, angles in degrees, lists joined with `; `.
+///
+/// Complexity: O(size of the value).
+pub fn readable(v: &Value, schema: &Value, root: &Value) -> String {
+    let s = resolve(schema, root);
+    match v {
+        Value::Null => t("none").to_owned(),
+        Value::Array(items) if items.is_empty() => t("none").to_owned(),
+        Value::Array(items) => match kind_of(schema, root) {
+            Kind::Triple(inner) => {
+                let parts: Vec<String> = items.iter().map(|x| scalar(x, &inner)).collect();
+                format!("({})", parts.join(", "))
+            }
+            _ => {
+                let each = s.get("items").cloned().unwrap_or(Value::Null);
+                items.iter().map(|x| readable(x, &each, root)).collect::<Vec<_>>().join("; ")
+            }
+        },
+        Value::Object(m) => {
+            let props = s.get("properties");
+            m.iter()
+                .filter(|(_, x)| !x.is_null())
+                .map(|(k, x)| format!("{} {}", humanize(k).to_lowercase(), readable(x, props.and_then(|p| p.get(k)).unwrap_or(&Value::Null), root)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        }
+        x => scalar(x, &kind_of(schema, root)),
+    }
+}
+
+/// One plain value with its unit.
+fn scalar(x: &Value, kind: &Kind) -> String {
+    match (x, kind) {
+        (x, Kind::Optional(inner)) => scalar(x, inner),
+        (Value::Number(n), Kind::Length) => p3d_math::format_length(n.as_f64().unwrap_or(0.0)),
+        (Value::Number(n), Kind::Angle) => format!("{}\u{b0}", n),
+        (Value::String(s), _) => s.clone(),
+        (Value::Bool(b), _) => if *b { t("yes") } else { t("no") }.to_owned(),
+        (other, _) => other.to_string(),
+    }
 }
 
 #[cfg(test)]
@@ -460,6 +527,16 @@ mod tests {
     fn schema(id: &str) -> Value {
         let r = p3d_ops::Registry::builtin();
         r.get(id).map(|o| o.params_schema()).unwrap_or(Value::Null)
+    }
+
+    #[test]
+    fn values_without_widgets_read_as_words() {
+        let s = schema("remesh.quad");
+        let loops = &s["properties"]["loops"];
+        assert_eq!(readable(&Value::Null, loops, &s), "none");
+        assert_eq!(readable(&json!([]), loops, &s), "none");
+        let v = json!([{ "at": "eye_socket", "radius": 0.03 }, { "at": [0.1, 0.2, 0] }]);
+        assert_eq!(readable(&v, loops, &s), "at eye_socket, radius 30 mm; at (0.1 m, 0.2 m, 0 m)");
     }
 
     #[test]
