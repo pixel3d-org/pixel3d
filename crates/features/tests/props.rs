@@ -1,6 +1,7 @@
 //! Feature templates keep clean topology across their parameter ranges:
 //! random parameters give valid, closed meshes with every landmark (or a
-//! clean error at a parameter path), and every default builds.
+//! clean error at a parameter path), and every default builds. Card faces
+//! (the `foliage` group of vegetation) are the only open ones.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -11,6 +12,12 @@ use serde_json::{Map, Value, json};
 
 fn closed(m: &p3d_mesh::Mesh) -> bool {
     m.edges().all(|e| !m.is_boundary_edge(e))
+}
+
+/// Closed except for card faces (the `foliage` group).
+fn closed_but_cards(m: &p3d_mesh::Mesh) -> bool {
+    let cards: std::collections::BTreeSet<u32> = m.group("foliage").map(|g| g.iter().collect()).unwrap_or_default();
+    m.edges().filter(|&e| m.is_boundary_edge(e)).all(|e| m.edge_faces(e).iter().flatten().all(|f| cards.contains(f)))
 }
 
 /// Checks one build; returns whether it succeeded.
@@ -24,7 +31,7 @@ fn check(info: &FeatureInfo, params: &Value) -> bool {
             match &b.shape {
                 Shape::Mesh(m) => {
                     assert_eq!(m.validate(), Ok(()), "{} {params}", info.id);
-                    assert!(closed(m), "{} is open for {params}", info.id);
+                    assert!(closed_but_cards(m), "{} is open for {params}", info.id);
                     let baked = p3d_features::baked_landmarks(m);
                     for (name, _) in info.landmarks {
                         assert!(baked.contains_key(*name), "{} lost landmark {name} for {params}", info.id);

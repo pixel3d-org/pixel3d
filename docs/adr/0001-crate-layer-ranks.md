@@ -11,14 +11,16 @@ The layer table (`docs/architecture.md`) puts several crates on the same layer, 
 
 Every crate gets a layer and a rank. A crate may depend on any crate of a lower layer, and on crates of its own layer with a strictly lower rank. `render` is isolated: it depends only on lower layers and no L2 crate depends on it. `testdata` is a support crate: it may depend on L0 to L3, and other crates may use it only as a dev-dependency.
 
-| Layer | Rank 0 | Rank 1 | Rank 2 | Rank 3 |
-|---|---|---|---|---|
-| L0 | `math` | `mesh` | | |
-| L1 | `scene` | `query` | | |
-| L2 | `geo`, `tex` | `uv`, `opt`, `rig`, `bake` | `anim`, `sdf`, `remesh` | `features`, `strands` |
-| L3 | `profiles` | `io`, `analyze` | `perceive` | |
-| L4 | `ops` | `graph` | `spec` | `engine` |
-| L5 | `plugin`, `control` | `mcp` | `ai` | `ui` |
+| Layer | Rank 0 | Rank 1 | Rank 2 | Rank 3 | Rank 4 |
+|---|---|---|---|---|---|
+| L0 | `math` | `mesh` | | | |
+| L1 | `scene` | `query` | | | |
+| L2 | `geo`, `tex` | `uv`, `opt`, `rig`, `bake` | `anim`, `sdf`, `remesh` | `strands`, `vegetation` | `features` |
+| L3 | `profiles` | `io`, `analyze` | `perceive` | | |
+| L4 | `ops` | `graph` | `spec` | `engine` | |
+| L5 | `plugin`, `control` | `mcp` | `ai` | `ui` | |
+
+(`features` moved to rank 4 when the vegetation templates arrived, ADR 0014.)
 
 External crate rules, checked on direct dependencies of every crate and, for L0 to L4 and `testdata`, on everything reachable through normal and build dependencies:
 

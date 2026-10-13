@@ -17,6 +17,8 @@ p3d-math = { workspace = true }
 p3d-mesh = { workspace = true }
 p3d-scene = { workspace = true }
 p3d-sdf = { workspace = true }
+p3d-strands = { workspace = true }
+p3d-vegetation = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
