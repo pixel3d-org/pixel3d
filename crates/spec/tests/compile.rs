@@ -295,3 +295,30 @@ fn landmarks_and_provenance_can_be_queried() {
     let (part, entry) = p3d_spec::face_provenance(tx.doc(), head, ear_face).unwrap();
     assert_eq!((part.as_str(), entry.path.as_str()), ("head", "/parts/ear_l/sdf/0"));
 }
+
+#[test]
+fn shells_and_silhouettes_are_shape_kinds() {
+    let mut tx = Tx::new(Document::new());
+    ok(
+        &mut tx,
+        "spec.set",
+        json!({ "name": "axe", "spec": { "parts": {
+            "head": {
+                "silhouettes": {
+                    "front": "M -0.02 0 L 0.12 -0.06 C 0.16 0 0.16 0.08 0.12 0.14 L -0.02 0.08 Z",
+                    "side": [[-0.015, -0.06], [0.015, -0.06], [0.015, 0.14], [-0.015, 0.14]],
+                    "round": "3mm", "detail": "4mm"
+                }
+            },
+            "feather": {
+                "shell": { "outline": "M 0 0 C 0.02 0.03 0.015 0.09 0 0.12 C -0.015 0.09 -0.02 0.03 0 0 Z", "bend": 0.2, "detail": "6mm" },
+                "anchor": { "on": "head", "landmark": "top" }
+            }
+        } } }),
+    );
+    let rec = tx.doc().spec(key(&tx, "axe")).unwrap().clone();
+    assert_eq!(rec.parts["head"].provenance.entries[0].op, "sdf.silhouettes");
+    assert_eq!(rec.parts["feather"].provenance.entries[0].path, "/parts/feather/shell");
+    // `top` is the surface above the part's center: the sloped edge there.
+    assert!((at(&tx, "axe/feather").y - 0.1164).abs() < 0.004, "on the head's top: {}", at(&tx, "axe/feather"));
+}

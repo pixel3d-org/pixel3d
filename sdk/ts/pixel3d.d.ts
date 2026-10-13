@@ -262,6 +262,12 @@ export type OriginMode = "center" | "bottom_center" | "bbox" | "point";
 /** Where a primitive's origin sits. */
 export type OriginParam = "center" | "bottom";
 
+/**
+ * An outline: SVG path data (`"M 0 0 C 0.02 0.03 ..."`, meters, y up) or
+ * points `[[x, y], ...]` forming one closed contour.
+ */
+export type OutlineParam = string | [Length, Length][];
+
 /** One JSON Patch operation. */
 export type PatchOp = {
   /** Source pointer of `move` and `copy`. */
@@ -1166,6 +1172,50 @@ export type SdfFromMeshParams = {
   target: string;
 };
 
+/** `sdf.silhouettes`: Builds a solid from two or three orthographic outlines (front, side, top), like a blueprint, with rounded edges. */
+export type SdfSilhouettesParams = {
+  /** Voxel size, about the edge length; a 64th of the largest side when omitted. */
+  detail?: Length | null;
+  /** Outline seen from the front (+Z): x right, y up. */
+  front: OutlineParam;
+  /** Object name; a free name such as `silhouettes_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Rounds every edge by this radius. */
+  round?: Length;
+  /** Outline seen from the side (+X): z right (front), y up; give side, top or both. */
+  side?: OutlineParam | null;
+  /** Outline seen from the top (+Y): x right, z up (front). */
+  top?: OutlineParam | null;
+};
+
+/** `gen.shell`: Builds a curved sheet from one outline (cup, bend, twist), as a card or a closed shell: ears, leaves, petals, wings, fins. */
+export type GenShellParams = {
+  /** The tip lifts toward +Z by this share of the length. */
+  bend?: number;
+  /** Edges curl toward +Z by this share of the half width (negative curls back). */
+  cup?: number;
+  /** Edge length of the sheet; a 16th of the outline's longer side when omitted. */
+  detail?: Length | null;
+  /** Outlines cut out of it. */
+  holes?: OutlineParam[];
+  /** Object name; a free name such as `shell_1` is picked when omitted. */
+  name?: string | null;
+  /** The outline in the shell's plane: x across, y along its length with the base at the lowest y. */
+  outline: OutlineParam;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space (the outline's origin). */
+  position?: [Length, Length, Length];
+  /** Thickness; 0 (the default) makes a one-sided card facing +Z. */
+  thickness?: Length;
+  /** Turn about the length axis at the tip. */
+  twist?: Angle;
+};
+
 /** `remesh.quad`: Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field. */
 export type RemeshQuadParams = {
   /** Target edge length; about a fortieth of the largest side when omitted. */
@@ -1821,6 +1871,8 @@ export interface OpParams {
   "gen.scatter": GenScatterParams;
   "sdf.mesh": SdfMeshParams;
   "sdf.from_mesh": SdfFromMeshParams;
+  "sdf.silhouettes": SdfSilhouettesParams;
+  "gen.shell": GenShellParams;
   "remesh.quad": RemeshQuadParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;

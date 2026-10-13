@@ -19,6 +19,7 @@ pub mod expect;
 pub mod generate;
 pub mod io;
 mod op;
+pub mod outline;
 pub mod params;
 pub mod prim;
 mod registry;

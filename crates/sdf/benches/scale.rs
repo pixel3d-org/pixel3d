@@ -33,6 +33,26 @@ fn scale(c: &mut Criterion) {
         g.bench_with_input(BenchmarkId::from_parameter(t), &voxel, |b, &voxel| b.iter(|| mesh(black_box(&sdf), &MeshSpec { voxel })));
     }
     g.finish();
+    // Silhouettes: a fixed 48-edge outline pair, so cost follows the voxels.
+    let front: Vec<glam::Vec2> = (0..32)
+        .map(|i| {
+            let a = i as f32 / 32.0 * std::f32::consts::TAU;
+            glam::Vec2::new(0.1 * a.cos(), 0.15 + 0.12 * a.sin())
+        })
+        .collect();
+    let side: Vec<glam::Vec2> = (0..16)
+        .map(|i| {
+            let a = i as f32 / 16.0 * std::f32::consts::TAU;
+            glam::Vec2::new(0.04 * a.cos(), 0.15 + 0.12 * a.sin())
+        })
+        .collect();
+    let field = p3d_sdf::OutlineField::new(&[(p3d_sdf::View::Front, vec![front]), (p3d_sdf::View::Side, vec![side])], 0.005).expect("valid outlines");
+    let mut g = c.benchmark_group("scale_sdf_silhouettes");
+    for &t in &scale_sizes(4_000, 100_000) {
+        let voxel = (2.0 * 0.06 / t as f32).sqrt();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &voxel, |b, &voxel| b.iter(|| mesh(black_box(&field), &MeshSpec { voxel })));
+    }
+    g.finish();
 }
 
 criterion_group! {

@@ -65,6 +65,12 @@ pub struct Part {
     pub extrude: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pipe: Option<Value>,
+    /// A curved sheet from one outline (`gen.shell`): ears, leaves, wings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<Value>,
+    /// A solid from front, side and top outlines (`sdf.silhouettes`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub silhouettes: Option<Value>,
     /// A mirrored copy of another part across a root plane (`plane`, x by
     /// default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -255,15 +261,22 @@ pub enum Kind<'a> {
 const PRIMITIVES: [&str; 11] = ["box", "cylinder", "cone", "quad_sphere", "uv_sphere", "ico_sphere", "torus", "tube", "capsule", "wedge", "plane"];
 
 /// Shape kind keys and the op each runs.
-pub const GENERATORS: [(&str, &str); 5] =
-    [("lathe", "gen.lathe"), ("sweep", "gen.sweep"), ("loft", "gen.loft"), ("extrude", "gen.extrude_shape"), ("pipe", "gen.pipe")];
+pub const GENERATORS: [(&str, &str); 7] = [
+    ("lathe", "gen.lathe"),
+    ("sweep", "gen.sweep"),
+    ("loft", "gen.loft"),
+    ("extrude", "gen.extrude_shape"),
+    ("pipe", "gen.pipe"),
+    ("shell", "gen.shell"),
+    ("silhouettes", "sdf.silhouettes"),
+];
 
 impl Part {
     /// The part's one shape kind, or an error naming what is wrong.
     ///
     /// Complexity: O(1).
     pub fn kind(&self, path: &str) -> Result<Kind<'_>, SpecError> {
-        let gens = [&self.lathe, &self.sweep, &self.loft, &self.extrude, &self.pipe];
+        let gens = [&self.lathe, &self.sweep, &self.loft, &self.extrude, &self.pipe, &self.shell, &self.silhouettes];
         let mut kinds: Vec<(&str, Kind<'_>)> = Vec::new();
         if let Some(s) = &self.sdf {
             kinds.push(("sdf", Kind::Sdf(s)));
@@ -294,9 +307,10 @@ impl Part {
         }
         match kinds.as_slice() {
             [(_, k)] => Ok(*k),
-            [] => {
-                Err(SpecError::new(path, "the part has no shape: give one of sdf, primitive, lathe, sweep, loft, extrude, pipe, mirror or instance"))
-            }
+            [] => Err(SpecError::new(
+                path,
+                "the part has no shape: give one of sdf, primitive, lathe, sweep, loft, extrude, pipe, shell, silhouettes, mirror or instance",
+            )),
             [(a, _), (b, _), ..] => Err(SpecError::new(path, format!("the part has two shapes (`{a}` and `{b}`); give one"))),
         }
     }

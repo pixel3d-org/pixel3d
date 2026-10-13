@@ -8,8 +8,10 @@
 
 pub mod from_mesh;
 pub mod mesh;
+mod outline;
 pub mod tree;
 
 pub use from_mesh::MeshField;
 pub use mesh::{BLOCK, Field, MeshSpec, SdfMesh, mesh};
+pub use outline::{MAX_OUTLINE_EDGES, OutlineError, OutlineField, View};
 pub use tree::{Combine, Item, MAX_DEPTH, MAX_ITEMS, Modifiers, Noise, Prim, Sdf, SdfError, Shape};

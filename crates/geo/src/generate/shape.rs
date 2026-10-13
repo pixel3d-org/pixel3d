@@ -96,14 +96,23 @@ pub(crate) fn fill(contours: &[Vec<DVec2>]) -> Result<Vec<Vec<u32>>, PrimError> 
 ///
 /// Complexity: O(n log n) in contour points.
 pub(crate) fn fill_tris(contours: &[Vec<DVec2>]) -> Result<Vec<[u32; 3]>, PrimError> {
+    fill_tris_with(contours, &[])
+}
+
+/// [`fill_tris`] with extra points inside the contours (Steiner points)
+/// indexed after the contours' points: a dense, even triangulation.
+///
+/// Complexity: O(n log n) in contour and extra points.
+pub(crate) fn fill_tris_with(contours: &[Vec<DVec2>], extra: &[DVec2]) -> Result<Vec<[u32; 3]>, PrimError> {
     let total: usize = contours.iter().map(Vec::len).sum();
-    let mut verts = Vec::with_capacity(total);
+    let mut verts = Vec::with_capacity(total + extra.len());
     let mut edges = Vec::with_capacity(total);
     for c in contours {
         let base = verts.len();
         verts.extend(c.iter().map(|p| Point2::new(p.x, p.y)));
         edges.extend((0..c.len()).map(|i| [base + i, base + (i + 1) % c.len()]));
     }
+    verts.extend(extra.iter().map(|p| Point2::new(p.x, p.y)));
     let mut crossing = false;
     let cdt = ConstrainedDelaunayTriangulation::<Point2<f64>>::try_bulk_load_cdt(verts, edges, |_| crossing = true)
         .map_err(|e| invalid("shape", "a point", format!("cannot be triangulated: {e}")))?;
@@ -111,7 +120,7 @@ pub(crate) fn fill_tris(contours: &[Vec<DVec2>]) -> Result<Vec<[u32; 3]>, PrimEr
         return Err(invalid("shape", "contours", "cross each other or themselves"));
     }
     // A point on another contour's edge splits that constraint: the contours touch.
-    if cdt.num_vertices() != total || cdt.num_constraints() != total {
+    if cdt.num_vertices() != total + extra.len() || cdt.num_constraints() != total {
         return Err(invalid("shape", "contours", "touch or repeat a point; keep them apart"));
     }
 

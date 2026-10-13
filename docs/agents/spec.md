@@ -17,6 +17,8 @@ Each part has exactly one shape:
 | `sdf` | blended SDF shapes, as in `sdf.mesh` | `"sdf": [{"ellipsoid": {"at": [0, 0.13, 0], "radii": [0.075, 0.105, 0.09]}, "name": "cranium"}]` |
 | `primitive` | one primitive by kind (`box`, `cylinder`, `cone`, `uv_sphere`, `quad_sphere`, `ico_sphere`, `torus`, `tube`, `capsule`, `wedge`, `plane`) | `"primitive": {"cylinder": {"radius": 0.1, "height": 0.02}}` |
 | `lathe`, `sweep`, `loft`, `extrude`, `pipe` | the `gen.*` op with these parameters (inline points) | `"lathe": {"preset": "barrel", "height": 0.9}` |
+| `shell` | a curved sheet from one outline (`gen.shell`: `cup`, `bend`, `twist`, `thickness`; a card when thin): ears, leaves, wings, fins | `"shell": {"outline": "M 0 0 C 0.03 0.02 0.025 0.07 0 0.1 C -0.025 0.07 -0.03 0.02 0 0 Z", "cup": 0.3}` |
+| `silhouettes` | a solid from front, side and top outlines (`sdf.silhouettes`), like a blueprint | `"silhouettes": {"front": "M ...", "side": [[-0.015, 0], [0.015, 0], [0.015, 0.2], [-0.015, 0.2]], "round": "3mm"}` |
 | `mirror` | a reflected copy of another part (`plane`: x by default) | `"ear_r": {"mirror": "ear_l"}` |
 | `instance` | another part's mesh, shared, at its own placement | `"post_2": {"instance": "post", "transform": {"position": [0.5, 0, 0]}}` |
 

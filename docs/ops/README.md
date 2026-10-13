@@ -67,6 +67,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`gen.array`](gen.array.md) | Repeats a mesh in a line, around an axis or along a curve, welding copies that touch. |
 | [`gen.mirror`](gen.mirror.md) | Adds the mirror image of a mesh across an axis plane, welding the seam; optionally bisects first. |
 | [`gen.scatter`](gen.scatter.md) | Places seeded, evenly spaced instances of an object over a surface, standing on it with random turns and scales. |
+| [`gen.shell`](gen.shell.md) | Builds a curved sheet from one outline (cup, bend, twist), as a card or a closed shell: ears, leaves, petals, wings, fins. |
 
 ## sdf
 
@@ -74,6 +75,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 |---|---|
 | [`sdf.mesh`](sdf.mesh.md) | Builds an organic shape from named primitives blended in order (smooth unions, cuts) into a closed quad mesh. |
 | [`sdf.from_mesh`](sdf.from_mesh.md) | Rebuilds a closed mesh from its distance field as even quads about `detail` apart (a voxel remesh). |
+| [`sdf.silhouettes`](sdf.silhouettes.md) | Builds a solid from two or three orthographic outlines (front, side, top), like a blueprint, with rounded edges. |
 
 ## remesh
 

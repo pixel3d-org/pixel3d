@@ -1161,3 +1161,34 @@ fn sdf_from_mesh_fuses_overlapping_parts() {
     assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "closed");
     assert!(m.faces().all(|f| m.face_len(f) == 4), "quads only");
 }
+
+#[test]
+fn gen_shell_makes_cards_and_closed_shells() {
+    let mut tx = Tx::new(Document::new());
+    let ear = "M 0 0 C 0.03 0.01 0.035 0.06 0.01 0.1 C -0.005 0.07 -0.02 0.03 0 0 Z";
+    let s = ok(&mut tx, "gen.shell", json!({ "name": "ear", "outline": ear, "thickness": "3mm", "cup": 0.4, "bend": 0.15, "detail": "4mm" }));
+    assert!(s.starts_with("created ear (o:1) shell"), "{s}");
+    let m = tx.doc().object_mesh(tx.resolve("ear", "/t").unwrap()).unwrap();
+    assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "closed");
+    assert!(m.group("rim").is_some());
+    ok(&mut tx, "gen.shell", json!({ "name": "card", "outline": [[0, 0], [0.05, 0], [0.05, 0.08], [0, 0.08]] }));
+    let c = tx.doc().object_mesh(tx.resolve("card", "/t").unwrap()).unwrap();
+    assert!(c.edges().any(|e| c.is_boundary_edge(e)), "a card is open");
+    let e = err(&mut tx, "gen.shell", json!({ "outline": "M 0 0 A 1 1 0 0 1 1 1" }));
+    assert_eq!(e.path.as_deref(), Some("/outline"));
+    assert!(e.message.contains("arcs"), "{}", e.message);
+}
+
+#[test]
+fn sdf_silhouettes_needs_two_views() {
+    let mut tx = Tx::new(Document::new());
+    let e = err(&mut tx, "sdf.silhouettes", json!({ "front": [[0, 0], [0.1, 0], [0.1, 0.1]] }));
+    assert!(e.message.contains("at least two views"), "{}", e.message);
+    ok(
+        &mut tx,
+        "sdf.silhouettes",
+        json!({ "name": "s", "front": [[0, 0], [0.1, 0], [0.05, 0.1]], "side": [[-0.02, 0], [0.02, 0], [0.02, 0.1], [-0.02, 0.1]], "detail": "3mm" }),
+    );
+    let m = tx.doc().object_mesh(tx.resolve("s", "/t").unwrap()).unwrap();
+    assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "closed");
+}

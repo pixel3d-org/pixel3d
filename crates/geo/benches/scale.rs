@@ -437,6 +437,22 @@ fn scale(c: &mut Criterion) {
         g.bench_with_input(BenchmarkId::from_parameter(t), &other, |b, other| b.iter(|| bvh.nearest(black_box(other), 10.0)));
     }
     g.finish();
+    // A shell over a 10 x 10 cm square: points grow as 1 / spacing^2.
+    let mut g = c.benchmark_group("scale_gen_shell");
+    let square = vec![glam::DVec2::ZERO, glam::DVec2::new(0.1, 0.0), glam::DVec2::new(0.1, 0.1), glam::DVec2::new(0.0, 0.1)];
+    for &t in &scale_sizes(1_000, 50_000) {
+        let spec = p3d_geo::generate::ShellSpec {
+            contours: vec![square.clone()],
+            spacing: 0.1 / (t as f64).sqrt(),
+            thickness: 0.002,
+            cup: 0.3,
+            bend: 0.2,
+            twist: 0.2,
+        };
+        g.bench_with_input(BenchmarkId::from_parameter(t), &spec, |b, spec| b.iter(|| p3d_geo::generate::shell(black_box(spec))));
+    }
+    g.finish();
+
     let mut g = c.benchmark_group("scale_geo_bvh_self_crossings");
     for (t, bvh) in &meshes {
         g.bench_with_input(BenchmarkId::from_parameter(t), bvh, |b, bvh| {

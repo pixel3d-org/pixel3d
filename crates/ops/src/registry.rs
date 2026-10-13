@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{boolean, cleanup, curve, deform, edit, element, expect, generate, io, prim, remesh, scene, sdf, select, shade, subd};
+use crate::{boolean, cleanup, curve, deform, edit, element, expect, generate, io, outline, prim, remesh, scene, sdf, select, shade, subd};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -76,6 +76,8 @@ impl Registry {
             Arc::new(Typed::<generate::ScatterOp>::new()),
             Arc::new(Typed::<sdf::SdfMesh>::new()),
             Arc::new(Typed::<sdf::FromMesh>::new()),
+            Arc::new(Typed::<outline::SdfSilhouettes>::new()),
+            Arc::new(Typed::<outline::GenShell>::new()),
             Arc::new(Typed::<remesh::QuadRemesh>::new()),
             Arc::new(Typed::<prim::Plane>::new()),
             Arc::new(Typed::<select::Save>::new()),
