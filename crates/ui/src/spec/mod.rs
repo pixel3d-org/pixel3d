@@ -222,11 +222,38 @@ pub struct SpecEditor {
     /// Whether the provenance label showed last frame (the status bar
     /// repeats it).
     prov_shown: bool,
+    /// The background preview of a dragged value: one compile at a time,
+    /// the newest patch waiting.
+    preview: Preview,
+}
+
+/// A finished preview compile: the document and how long it took.
+type PreviewRun = Result<(Arc<Document>, std::time::Duration), String>;
+
+/// A spec patch compiled in the background while a value is dragged.
+#[derive(Default)]
+struct Preview {
+    wanted: Option<OpCall>,
+    running: Option<std::sync::mpsc::Receiver<PreviewRun>>,
+    doc: Option<(Arc<Document>, u64)>,
+    counter: u64,
+    /// How long the last preview compile took.
+    last: Option<std::time::Duration>,
 }
 
 impl SpecEditor {
     pub fn busy(&self) -> bool {
-        self.commit.is_some() || self.queued.is_some()
+        self.commit.is_some() || self.queued.is_some() || self.preview.running.is_some()
+    }
+
+    /// The previewed document while a value is dragged.
+    pub fn preview_doc(&self) -> Option<(Arc<Document>, u64)> {
+        self.preview.doc.clone()
+    }
+
+    /// How long the last preview compile took (milliseconds).
+    pub fn preview_ms(&self) -> Option<f64> {
+        self.preview.last.map(|d| d.as_secs_f64() * 1000.0)
     }
 
     pub fn is_open(&self) -> bool {
@@ -422,6 +449,37 @@ impl PixelApp {
         Ok(json!({ "applied": name }))
     }
 
+    /// Previews a merge patch of the edited spec in the background (a
+    /// dragged value): one compile runs at a time and the newest patch
+    /// waits, so slow compiles (SDF features) only lower the preview rate.
+    pub(crate) fn spec_preview(&mut self, merge: Value) {
+        let Some(target) = self.spec_target() else { return };
+        self.spec.preview.wanted = Some(OpCall::new("spec.patch", json!({ "target": target, "merge": merge })));
+        self.spec_start_preview();
+    }
+
+    fn spec_start_preview(&mut self) {
+        if self.spec.preview.running.is_some() {
+            return;
+        }
+        let Some(call) = self.spec.preview.wanted.take() else { return };
+        let (tx, rx) = std::sync::mpsc::channel();
+        let registry = Arc::clone(self.session.registry());
+        let doc = Document::clone(self.session.doc());
+        let seed = self.session.seed();
+        let spawned = std::thread::Builder::new().name("spec preview".into()).spawn(move || {
+            let started = std::time::Instant::now();
+            let mut work = p3d_engine::Session::with_registry(registry);
+            work.set_seed(seed);
+            work.load(doc);
+            let r = work.execute(&[call], &Default::default()).map(|_| (Arc::clone(work.doc()), started.elapsed())).map_err(|e| e.error.to_string());
+            let _ = tx.send(r);
+        });
+        if spawned.is_ok() {
+            self.spec.preview.running = Some(rx);
+        }
+    }
+
     /// Per frame: takes in finished runs and follows the active object.
     ///
     /// Complexity: O(spec size) when the selection or revision changed.
@@ -449,8 +507,29 @@ impl PixelApp {
                     self.spec_start();
                 }
             }
-            if !self.spec.busy() && self.spec.pending.is_none() {
+            if self.spec.commit.is_none() && self.spec.queued.is_none() && self.spec.pending.is_none() {
                 self.spec.draft = None;
+                self.spec.preview.doc = None;
+            }
+        }
+        if let Some(rx) = &self.spec.preview.running {
+            match rx.try_recv() {
+                Ok(r) => {
+                    self.spec.preview.running = None;
+                    match r {
+                        // Shown while the drag (or its commit) is on.
+                        Ok((doc, took)) if self.spec.pending.is_some() || self.spec.commit.is_some() || self.spec.queued.is_some() => {
+                            self.spec.preview.counter += 1;
+                            self.spec.preview.doc = Some((doc, self.spec.preview.counter));
+                            self.spec.preview.last = Some(took);
+                        }
+                        Ok((_, took)) => self.spec.preview.last = Some(took),
+                        Err(e) => self.set_status(e),
+                    }
+                    self.spec_start_preview();
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.spec.preview.running = None,
             }
         }
         if self.spec.busy() {
@@ -760,6 +839,8 @@ impl PixelApp {
             "jsonError": self.spec.json_error.as_ref().map(issue),
             "jsonEdited": self.spec.json_edited,
             "picking": self.spec.picking,
+            "previewing": self.spec.preview.doc.is_some(),
+            "previewMs": self.spec.preview_ms(),
             "landmarksShown": self.ui.view.landmarks,
             "landmarks": landmarks,
             "onScreen": shown_part.map(|p| json!({ "part": p, "landmarks": shown })),
@@ -772,7 +853,7 @@ impl PixelApp {
 /// a new label is only checked against its neighbours (placed labels do
 /// not overlap, so a cell holds a few at most).
 #[derive(Default)]
-struct Placed(BTreeMap<(i32, i32), Vec<egui::Rect>>);
+pub(crate) struct Placed(BTreeMap<(i32, i32), Vec<egui::Rect>>);
 
 impl Placed {
     const CELL: f32 = 64.0;
@@ -785,12 +866,12 @@ impl Placed {
     }
 
     /// Complexity: O(labels in the cells the rectangle spans).
-    fn free(&self, r: egui::Rect) -> bool {
+    pub(crate) fn free(&self, r: egui::Rect) -> bool {
         Self::cells(r).all(|c| self.0.get(&c).is_none_or(|v| v.iter().all(|o| !o.intersects(r))))
     }
 
     /// Complexity: O(cells the rectangle spans x log cells).
-    fn add(&mut self, r: egui::Rect) {
+    pub(crate) fn add(&mut self, r: egui::Rect) {
         for c in Self::cells(r) {
             self.0.entry(c).or_default().push(r);
         }

@@ -52,6 +52,7 @@ fn part_icon(p: &PartInfo) -> Icon {
         "loft" => Icon::Loft,
         "extrude" => Icon::Extrude,
         "pipe" => Icon::Pipe,
+        "feature" => Icon::Features,
         "shell" => Icon::Leaf,
         "silhouettes" => Icon::Blueprint,
         _ => Icon::Empty,
@@ -111,6 +112,11 @@ fn form_value(schema: &Value, root: &Value, src: &Value) -> Value {
         }
     }
     Value::Object(out)
+}
+
+#[cfg(test)]
+pub(crate) fn form_value_for_tests(schema: &Value, root: &Value, src: &Value) -> Value {
+    form_value(schema, root, src)
 }
 
 /// The keys whose values differ between two form values, as a merge patch.
@@ -277,7 +283,11 @@ fn part_fields(app: &mut PixelApp, ui: &mut egui::Ui, p: &PartInfo, parts: &[Par
     let root = defs(app);
     panel(ui, "spec-part", &format!("{} {}", t("Part"), p.name), true, |ui| {
         info(ui, t("Shape"), &p.kind);
-        // Placement first: where the part sits is what specs are about.
+        // A feature's parameters are its shape: first.
+        if p.key == "feature" {
+            shape_form(app, ui, p, src, out);
+        }
+        // Placement next: where the part sits is what specs are about.
         if p.key == "mirror" {
             info(ui, t("Join"), format!("{} ({})", t(p.join), t("like its source")));
             note(ui, t("A mirror is placed and joined like its source."), tk.text_faint);
@@ -285,7 +295,9 @@ fn part_fields(app: &mut PixelApp, ui: &mut egui::Ui, p: &PartInfo, parts: &[Par
             anchor_fields(app, ui, p, parts, src, &root, out);
             join_fields(ui, src, &root, out);
         }
-        shape_form(app, ui, p, src, out);
+        if p.key != "feature" {
+            shape_form(app, ui, p, src, out);
+        }
         transform_fields(ui, src, &root, out);
         tags_field(ui, p, src, out);
     });
@@ -372,8 +384,37 @@ fn deform_fields(ui: &mut egui::Ui, p: &PartInfo, src: &Value, root: &Value, out
     });
 }
 
+/// A feature part's parameters, with the widgets of the Features panel
+/// (from the template's `ParamInfo`); an edit patches `params`.
+fn feature_form(app: &PixelApp, ui: &mut egui::Ui, p: &PartInfo, src: &Value, out: &mut Out) {
+    let tk = Tokens::get();
+    let Some(id) = src.get("feature").and_then(Value::as_str) else { return };
+    let Some(info) = crate::features::info(id) else {
+        note(ui, &format!("{} `{id}`", t("there is no feature")), tk.health_error);
+        return;
+    };
+    note(ui, info.summary, tk.text_faint);
+    let root = defs(app);
+    let schema = crate::features::schema(&info);
+    let params = src.get("params").cloned().unwrap_or(Value::Null);
+    let before = form_value(&schema, &root, &params);
+    let mut v = before.clone();
+    let o = schema_form::form(ui, egui::Id::new(("spec-feature", &p.name)), &schema, &root, &mut v, &[]);
+    out.dragging |= o.dragging;
+    if o.changed
+        && let Value::Object(mut m) = v
+    {
+        crate::features::clamp(&info, &mut m);
+        let fields = changed(&before, &Value::Object(m));
+        out.patch = Some((json!({ "params": fields }), t("Feature parameters").to_owned(), o.dragging));
+    }
+}
+
 /// The fields of a primitive or generator part, as the op's form.
 fn shape_form(app: &PixelApp, ui: &mut egui::Ui, p: &PartInfo, src: &Value, out: &mut Out) {
+    if p.key == "feature" {
+        return feature_form(app, ui, p, src, out);
+    }
     let (op, key, value) = match p.key {
         "primitive" => (format!("prim.{}", p.kind), p.kind.as_str(), src.get("primitive").and_then(|v| v.get(&p.kind))),
         "lathe" | "sweep" | "loft" | "extrude" | "pipe" => {
@@ -653,10 +694,12 @@ fn apply(app: &mut PixelApp, root: ObjectKey, out: Out) {
                 _ => part_source(app.doc(), root, &part).unwrap_or(Value::Null),
             };
             p3d_spec::patch::merge(&mut draft, &fields);
-            app.spec.draft = Some((root, part, draft));
+            app.spec.draft = Some((root, part.clone(), draft));
             let mut pending = app.spec.pending.take().map_or(Value::Object(Map::new()), |(v, _)| v);
             accumulate(&mut pending, &fields);
             if dragging {
+                // A live preview of the drag, compiled in the background.
+                app.spec_preview(json!({ "parts": { part.as_str(): pending.clone() } }));
                 app.spec.pending = Some((pending, label));
             } else if let Err(e) = app.spec_patch_part(pending, &label) {
                 app.set_status(e);

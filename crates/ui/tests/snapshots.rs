@@ -335,3 +335,29 @@ fn features_panel_light() {
     let mut h = features_app(ThemePref::Light);
     snapshot(&mut h, "features_light");
 }
+
+#[test]
+fn spec_tab_with_a_feature_part() {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = ThemePref::Dark;
+    a.run(
+        "spec.set",
+        json!({ "name": "elf", "spec": { "category": "humanoid_head", "parts": {
+            "head": { "feature": "head_base", "params": { "cheekbones": 0.8, "jaw": 0.7 }, "detail": "5mm" },
+            "nose": { "feature": "nose", "params": { "length": "4.2cm", "width": "3cm" }, "anchor": { "on": "head", "landmark": "nose_root" },
+                "join": "blend", "blend": "4mm" },
+            "ear_l": { "feature": "ear", "params": { "variant": "elf", "length": "8cm" }, "anchor": { "on": "head", "landmark": "ear_root_l" } },
+            "ear_r": { "mirror": "ear_l" }
+        } } }),
+    )
+    .unwrap();
+    a.run("ui.dock", json!({ "operation": "close", "panel": "health" })).unwrap();
+    a.run("ui.bottom", json!({ "on": false })).unwrap();
+    a.run("view.feature_landmarks", json!({ "on": true })).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("view.frame", Value::Null).unwrap();
+    h.state_mut().run("spec.select_part", json!({ "part": "ear_l" })).unwrap();
+    h.run_steps(20);
+    snapshot(&mut h, "spec_feature_dark");
+}

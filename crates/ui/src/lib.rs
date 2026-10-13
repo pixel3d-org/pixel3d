@@ -1815,7 +1815,8 @@ impl PixelApp {
                     .or_else(|| self.action_preview.doc.clone().map(|(d, n)| (d, n | (1 << 62))))
                     .or_else(|| self.sdf.preview_doc().map(|(d, n)| (d, n | (1 << 61))))
                     .or_else(|| self.outline.preview_doc().map(|(d, n)| (d, n | (1 << 60))))
-                    .or_else(|| self.handles.preview_doc().map(|(d, n)| (d, n | (1 << 59))));
+                    .or_else(|| self.handles.preview_doc().map(|(d, n)| (d, n | (1 << 59))))
+                    .or_else(|| self.spec.preview_doc().map(|(d, n)| (d, n | (1 << 58))));
                 let (doc, key) = match preview {
                     Some((d, n)) => (d, n),
                     None => (std::sync::Arc::clone(self.session.doc()), self.scene_key()),

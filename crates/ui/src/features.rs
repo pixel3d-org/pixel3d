@@ -97,13 +97,14 @@ pub fn schema(info: &FeatureInfo) -> Value {
         if let ParamKind::Choice(_) = p.kind {
             s["description"] = json!(format!("{} ({} {})", p.doc, t("default"), p.text(p.default)));
         }
+        s["default"] = default_value(p);
         props.insert(p.name.to_owned(), s);
     }
     json!({ "type": "object", "properties": props })
 }
 
 /// Values kept within each parameter's range (counts whole).
-fn clamp(info: &FeatureInfo, params: &mut Map<String, Value>) {
+pub(crate) fn clamp(info: &FeatureInfo, params: &mut Map<String, Value>) {
     for p in info.params {
         if let (Some(v), false) = (params.get(p.name).and_then(Value::as_f64), matches!(p.kind, ParamKind::Choice(_))) {
             let c = v.clamp(p.min, p.max);
@@ -249,23 +250,53 @@ impl PixelApp {
         }
     }
 
-    /// Feature landmarks (`lm.<name>` groups) of the selected objects, in
-    /// world space, found once per scene state.
+    /// Feature landmarks of the selected objects in world space: their
+    /// `lm.<name>` groups, and for selected Model Specs every feature part's
+    /// (SDF features have no groups: their landmarks come from the spec).
+    /// Found once per scene state and selection.
     ///
-    /// Complexity: O(selected objects x groups) when the scene changed.
+    /// Complexity: O(objects shown x groups) plus one landmark query per
+    /// SDF feature part, when the scene or selection changed.
     pub fn feature_landmarks(&mut self) -> Arc<Vec<Landmark>> {
-        let key = self.scene_key();
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.scene_key().hash(&mut h);
+        self.selection.hash(&mut h);
+        let key = h.finish();
         if let Some((k, m)) = &self.features.marks
             && *k == key
         {
             return Arc::clone(m);
         }
-        let doc = self.doc();
+        let doc = Arc::clone(self.session.doc());
+        // The selected objects, and every part object of selected specs.
+        let mut objects: std::collections::BTreeSet<ObjectKey> = self.selection.clone();
+        let roots: std::collections::BTreeSet<ObjectKey> =
+            self.selection.iter().filter_map(|&k| crate::spec::spec_of(&doc, k).map(|s| s.0)).collect();
+        let mut parts = Vec::new();
+        for &root in &roots {
+            for p in crate::spec::parts_of(&doc, root) {
+                objects.extend(p.object);
+                parts.push((root, p));
+            }
+        }
         let mut out = Vec::new();
-        for &k in &self.selection {
+        let mut baked = std::collections::BTreeSet::new();
+        for &k in &objects {
             let (Some(mesh), Some(w)) = (doc.object_mesh(k), doc.world_affine(k)) else { continue };
             for (name, p) in p3d_features::baked_landmarks(mesh) {
+                baked.insert(k);
                 out.push((k, name, w.transform_point3(p)));
+            }
+        }
+        // Feature parts without groups (SDF features): the spec's landmarks
+        // of the part, the template's names only.
+        for (root, p) in parts.into_iter().filter(|(_, p)| p.key == "feature" && p.object.is_none_or(|k| !baked.contains(&k))) {
+            let id = crate::spec::part_source(&doc, root, &p.name).and_then(|s| s.get("feature").and_then(Value::as_str).map(str::to_owned));
+            let Some(info) = id.as_deref().and_then(info) else { continue };
+            let Ok(points) = p3d_spec::part_landmarks(&doc, root, &p.name) else { continue };
+            for l in points.into_iter().filter(|l| info.landmarks.iter().any(|(n, _)| *n == l.name)) {
+                out.push((p.object.unwrap_or(root), l.name, l.point));
             }
         }
         let m = Arc::new(out);
@@ -440,6 +471,8 @@ pub fn overlay(app: &mut PixelApp, ui: &egui::Ui) {
     let tk = Tokens::get();
     let vp: Mat4 = app.viewport.camera.view_proj(rect.width() / rect.height().max(1.0));
     let p = ui.painter_at(rect);
+    // Dots always; labels where they fit (no pile-ups on dense heads).
+    let mut placed = crate::spec::Placed::default();
     for (_, name, at) in marks.iter() {
         let c = vp * at.extend(1.0);
         if c.w <= 1e-6 {
@@ -448,11 +481,14 @@ pub fn overlay(app: &mut PixelApp, ui: &egui::Ui) {
         let n = c.truncate() / c.w;
         let s = pos2(rect.left() + (n.x * 0.5 + 0.5) * rect.width(), rect.top() + (0.5 - n.y * 0.5) * rect.height());
         p.circle(s, 3.5, tk.icon_accent, Stroke::new(1.0, egui::Color32::from_black_alpha(160)));
+        app.features.screen.push((name.clone(), s));
         let g = p.layout_no_wrap(name.clone(), theme::small(), tk.text);
-        let label = egui::Rect::from_min_size(s + vec2(6.0, -g.size().y - 4.0), g.size() + vec2(6.0, 2.0));
+        let size = g.size() + vec2(6.0, 2.0);
+        let spots = [vec2(6.0, -size.y - 3.0), vec2(6.0, 3.0), vec2(-size.x - 6.0, -size.y - 3.0), vec2(-size.x - 6.0, 3.0)];
+        let Some(label) = spots.iter().map(|d| egui::Rect::from_min_size(s + *d, size)).find(|r| placed.free(*r)) else { continue };
+        placed.add(label);
         p.rect_filled(label, 3.0, tk.popup.gamma_multiply(0.8));
         p.galley(label.min + vec2(3.0, 1.0), g, tk.text);
-        app.features.screen.push((name.clone(), s));
     }
 }
 

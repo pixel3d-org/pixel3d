@@ -261,3 +261,80 @@ fn welded_parts_show_like_blended_ones() {
     a.spec_tick(&egui::Context::default());
     assert!(a.spec_highlight().is_some_and(|(o, _)| !o.faces.is_empty()));
 }
+
+/// The feature head of `docs/agents/examples/feature_head.json`, coarser.
+fn feature_head() -> PixelApp {
+    let mut a = PixelApp::new(p3d_engine::Session::new(), Services::default());
+    a.run(
+        "spec.set",
+        json!({ "name": "elf", "spec": { "category": "humanoid_head", "parts": {
+            "head": { "feature": "head_base", "params": { "cheekbones": 0.8, "jaw": 0.7 }, "detail": "5mm" },
+            "nose": { "feature": "nose", "params": { "length": "4.2cm", "width": "3cm" }, "anchor": { "on": "head", "landmark": "nose_root" },
+                "join": "blend", "blend": "4mm" },
+            "ear_l": { "feature": "ear", "params": { "variant": "elf", "length": "8cm" }, "anchor": { "on": "head", "landmark": "ear_root_l" } },
+            "ear_r": { "mirror": "ear_l" }
+        } } }),
+    )
+    .unwrap();
+    a
+}
+
+fn size_of(doc: &p3d_scene::Document, path: &str) -> f32 {
+    doc.object_mesh(doc.resolve(path).unwrap()).and_then(|m| m.bounds()).map_or(0.0, |(lo, hi)| (hi - lo).max_element())
+}
+
+#[test]
+fn feature_parts_preview_param_drags_and_commit_one_step() {
+    let mut a = feature_head();
+    select(&mut a, "elf/ear_l");
+    assert_eq!(a.spec.part.as_deref(), Some("ear_l"));
+    let steps = a.session.history().len();
+    let before = size_of(a.doc(), "elf/ear_l");
+    // A drag: the patch compiles in the background and shows as a preview.
+    let fields = json!({ "params": { "length": 0.11 } });
+    a.spec.pending = Some((fields.clone(), "Feature parameters".into()));
+    a.spec_preview(json!({ "parts": { "ear_l": fields.clone() } }));
+    let ctx = egui::Context::default();
+    for _ in 0..4000 {
+        a.spec_tick(&ctx);
+        if a.spec.preview_doc().is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let (preview, _) = a.spec.preview_doc().expect("a preview");
+    assert!(size_of(&preview, "elf/ear_l") > before + 0.02, "{before} -> {}", size_of(&preview, "elf/ear_l"));
+    assert_eq!(a.session.history().len(), steps, "nothing committed while dragging");
+    assert!(a.spec.preview_ms().is_some());
+    // Letting go: one step.
+    let (pending, label) = a.spec.pending.take().unwrap();
+    a.spec_patch_part(pending, &label).unwrap();
+    settle(&mut a);
+    assert_eq!(a.session.history().len(), steps + 1);
+    let root = a.doc().resolve("elf").unwrap();
+    assert_eq!(a.doc().spec(root).unwrap().source["parts"]["ear_l"]["params"]["length"], json!(0.11));
+    assert!(a.spec.preview_doc().is_none());
+}
+
+#[test]
+fn feature_forms_read_spec_params_with_defaults() {
+    let info = crate::features::info("ear").unwrap();
+    let schema = crate::features::schema(&info);
+    let root = p3d_ops::Registry::builtin().get("sdf.mesh").map(|o| o.params_schema()).unwrap_or(Value::Null);
+    let v = crate::spec::panel::form_value_for_tests(&schema, &root, &json!({ "length": "8cm", "variant": "elf" }));
+    assert_eq!((v["length"].clone(), v["variant"].clone()), (json!(0.08), json!("elf")));
+    assert_eq!(v.as_object().map(|m| m.len()), Some(info.params.len()), "every parameter, defaults filled");
+}
+
+#[test]
+fn sdf_feature_parts_show_their_landmarks() {
+    let mut a = feature_head();
+    select(&mut a, "elf");
+    a.run("view.feature_landmarks", json!({ "on": true })).unwrap();
+    let marks = a.feature_landmarks();
+    let names: Vec<&str> = marks.iter().map(|(_, n, _)| n.as_str()).collect();
+    // The head and nose are SDF features: from the spec; the ears' groups.
+    assert!(names.contains(&"crown") && names.contains(&"chin"), "{names:?}");
+    assert!(names.contains(&"ala_l") && names.contains(&"tip"), "{names:?}");
+    assert!(names.iter().all(|n| !n.starts_with("lm.")));
+}
