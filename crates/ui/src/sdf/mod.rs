@@ -725,4 +725,28 @@ mod tests {
         let k = a.doc().resolve("blob").unwrap();
         assert_eq!(source_of(a.doc(), k).unwrap().later.len(), 1, "the move keeps the mesh, the subdivision does not");
     }
+
+    #[test]
+    fn hovering_a_row_lights_its_faces_and_clicks_pick_proxies() {
+        let mut a = blob();
+        let k = a.doc().resolve("blob").unwrap();
+        let doc = Arc::clone(a.session.doc());
+        a.viewport.scene(&doc, a.scene_key(), &std::collections::BTreeSet::new());
+        assert!(a.sdf_highlight().is_none(), "nothing hovered");
+        // The panel saw the pointer on the head's row last frame.
+        a.sdf.hover_next = Some(vec![1]);
+        a.sdf_tick(&egui::Context::default());
+        let (o, _) = a.sdf_highlight().expect("the head's faces light up");
+        let head = doc.object_mesh(k).unwrap().group("head").unwrap().count();
+        // Each lit face is drawn as triangles (3 vertices each).
+        assert!(o.faces.len() >= head * 3, "{} vertices for {head} faces", o.faces.len());
+        // A click on the body's proxy selects the body, not an object.
+        a.viewport.rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 400.0));
+        a.viewport.camera.set_view(p3d_render::ViewKind::Front);
+        let world = Mat4::from(a.doc().world_affine(k).unwrap());
+        let vp = a.viewport.camera.view_proj(1.0);
+        let on = proxy::screen(&a.sdf.proxies(), world, vp, a.viewport.rect);
+        let at = on.iter().find(|(p, _, _)| p == &vec![0]).and_then(|(_, _, s)| s.first()).map(|[p, _]| *p).unwrap();
+        assert_eq!(proxy::pick(&on, at), Some(vec![0]));
+    }
 }
