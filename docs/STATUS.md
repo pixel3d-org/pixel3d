@@ -205,7 +205,7 @@ Acceptance:
 
 ## Phase 9: GUI tools
 
-- [ ] Contextual toolbar for all ops, live preview, Quick Properties, Dynamic Input
+- [x] Contextual toolbar for all ops, live preview, Quick Properties, Dynamic Input (`actions.rs`: the tool settings row offers every op that applies to the selection, generated from the registry's categories, flags and schemas (Object Mode meshes or curves, generators that take a curve, Edit Mode element ops), with a More menu by category; hovering an action previews it on a working copy on a background thread; tested in `actions::tests`. `quick.rs`: Adjust Last Operation card. `gizmo.rs`: typed values with units during gizmo drags and the modal G, R, S (`gizmo::tests::typed_values_and_constraints_override_the_pointer`, and the keyboard run in `apps/pixel3d/tests/control.rs`))
 - [ ] UV Editor
 - [ ] Health, Bake and Export panels
 - [ ] Workspaces

@@ -8,6 +8,7 @@
 //! and the control server see the same actions. Nothing here owns document
 //! data.
 
+pub mod actions;
 pub mod chrome;
 pub mod cmdline;
 pub mod commands;
@@ -285,6 +286,10 @@ pub struct PixelApp {
     pub edit: elements::EditState,
     /// The control server and the input and screenshots it asked for.
     pub remote: remote::Remote,
+    /// The hovered contextual action's preview, and the actions for the
+    /// current selection (generated from the registry, cached).
+    pub action_preview: actions::ActionPreview,
+    actions: Option<(u64, std::sync::Arc<Vec<actions::Action>>)>,
     /// The transform gizmo: its drag and the Edit Mode preview.
     pub gizmo: gizmo::GizmoState,
     /// The command palette while open.
@@ -329,6 +334,8 @@ impl PixelApp {
             curves: curves::CurveCache::default(),
             edit: elements::EditState::default(),
             remote: remote::Remote::default(),
+            action_preview: actions::ActionPreview::default(),
+            actions: None,
             gizmo: gizmo::GizmoState::default(),
             palette: None,
             cmdline: cmdline::CmdLine::default(),
@@ -573,6 +580,28 @@ impl PixelApp {
             self.edit.sync(mesh.and(editing), mesh, mode);
         }
         Ok(json!({ "mode": mode }))
+    }
+
+    /// The contextual actions for the current selection and mode, generated
+    /// again only when the document, the selection or the mode changed.
+    ///
+    /// Complexity: O(selected) to check; a rebuild as [`actions::for_context`].
+    pub fn contextual_actions(&mut self) -> std::sync::Arc<Vec<actions::Action>> {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.scene_key().hash(&mut h);
+        self.selection.hash(&mut h);
+        (self.ui.mode as u8).hash(&mut h);
+        self.edit.version.hash(&mut h);
+        let key = h.finish();
+        if let Some((k, a)) = &self.actions
+            && *k == key
+        {
+            return std::sync::Arc::clone(a);
+        }
+        let a = std::sync::Arc::new(actions::for_context(self));
+        self.actions = Some((key, std::sync::Arc::clone(&a)));
+        a
     }
 
     /// Object and element counts, selected and visible.
@@ -1314,8 +1343,14 @@ impl PixelApp {
             docking::Panel::Viewport => {
                 // While an Edit Mode gizmo drag runs, the viewport shows its
                 // preview document.
-                let (doc, key) = match &self.gizmo.preview {
-                    Some((d, n)) => (std::sync::Arc::clone(d), *n | (1 << 63)),
+                let preview = self
+                    .gizmo
+                    .preview
+                    .clone()
+                    .map(|(d, n)| (d, n | (1 << 63)))
+                    .or_else(|| self.action_preview.doc.clone().map(|(d, n)| (d, n | (1 << 62))));
+                let (doc, key) = match preview {
+                    Some((d, n)) => (d, n),
                     None => (std::sync::Arc::clone(self.session.doc()), self.scene_key()),
                 };
                 let style = theme::Tokens::get().view_style();
@@ -1328,7 +1363,7 @@ impl PixelApp {
                 let editing = if element_mode { self.active_object() } else { self.edit.object };
                 let part = editing.and_then(|k| self.viewport.part_of(k));
                 // The preview mesh keeps the element ids: no resync then.
-                let previewing = self.gizmo.preview.is_some();
+                let previewing = self.gizmo.preview.is_some() || self.action_preview.doc.is_some();
                 if !previewing {
                     self.edit.sync(part.as_ref().and(editing), part.as_ref().map(|p| &p.1), self.ui.mode);
                 }
