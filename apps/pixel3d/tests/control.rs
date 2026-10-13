@@ -181,3 +181,51 @@ fn booleans_imports_and_cleanup_in_the_app() {
     assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
     let _ = c.call("ui.command", json!({ "id": "app.quit" }));
 }
+
+#[test]
+#[ignore = "needs a display and a GPU"]
+fn sculpt_an_sdf_shape_with_the_gizmo() {
+    let dir = temp_dir("sdf");
+    let (_app, mut c) = start(&["--command".to_owned(), "ui.start on=false".to_owned()]);
+    // An SDF object: selecting it opens the editor.
+    c.call(
+        "ui.command",
+        json!({ "id": "gen.sdf", "params": { "name": "blob", "detail": 0.02, "shapes": [
+        { "name": "body", "sphere": { "at": [0, 0.2, 0], "radius": 0.2 } },
+        { "name": "head", "smooth_union": 0.05, "sphere": { "at": [0, 0.45, 0], "radius": 0.12 } }
+    ] } }),
+    )
+    .unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["shapes"]["object"].is_string()));
+    assert_eq!(s["shapes"]["shapes"].as_array().map(Vec::len), Some(2));
+    let revision = |c: &mut Client| inspect(c)["scene"]["revision"].clone();
+    let head_x = |c: &mut Client| inspect(c)["shapes"]["selectedShape"]["sphere"]["at"][0].as_f64().unwrap_or(f64::NAN);
+    // Select the head, frame it, take the Move tool: the gizmo sits on the shape.
+    c.call("ui.command", json!({ "id": "shapes.select", "params": { "name": "head" } })).unwrap();
+    c.call("ui.command", json!({ "id": "view.frame" })).unwrap();
+    c.call("ui.command", json!({ "id": "ui.tool", "params": { "tool": "move" } })).unwrap();
+    let gizmo = wait_for(30, || inspect(&mut c)["gizmo"].as_object().cloned());
+    let (cx, cy) = (gizmo["center"][0].as_f64().unwrap(), gizmo["center"][1].as_f64().unwrap());
+    let (tx, ty) = (gizmo["x"][0].as_f64().unwrap(), gizmo["x"][1].as_f64().unwrap());
+    let len = ((tx - cx).powi(2) + (ty - cy).powi(2)).sqrt();
+    let before = revision(&mut c);
+    // Drag the X arrow and hold: the mesh previews coarsely, nothing commits.
+    let from = [cx + (tx - cx) * 0.8, cy + (ty - cy) * 0.8];
+    let to = [from[0] + (tx - cx) / len * 80.0, from[1] + (ty - cy) / len * 80.0];
+    c.call("ui.drag", json!({ "from": from, "to": to, "steps": 10, "hold": true })).unwrap();
+    wait_for(30, || Some(inspect(&mut c)).filter(|s| s["shapes"]["previewing"] == json!(true)));
+    assert_eq!(revision(&mut c), before, "nothing is committed while dragging");
+    // Enter confirms: one undo step at full detail, the head moved along +X.
+    c.call("ui.key", json!({ "key": "Enter" })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["scene"]["revision"] != before && s["shapes"]["busy"] == json!(false)));
+    assert_eq!(s["shapes"]["previewing"], json!(false));
+    let moved = head_x(&mut c);
+    assert!(moved > 0.01, "the head moved along +X: {moved}");
+    let shot = dir.join("sdf.png");
+    c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
+    assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    // Undo puts the shapes back in the editor.
+    c.call("ui.command", json!({ "id": "edit.undo" })).unwrap();
+    wait_for(30, || Some(head_x(&mut c)).filter(|x| x.abs() < 1e-6));
+    let _ = c.call("ui.command", json!({ "id": "app.quit" }));
+}
