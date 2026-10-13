@@ -20,14 +20,18 @@ struct SurfaceOut {
     @builtin(position) clip: vec4<f32>,
     @location(0) normal: vec3<f32>,
     @location(1) @interpolate(flat) part: u32,
+    // Non-negative on two-sided cards (hair, leaves): their back faces are
+    // lit like fronts instead of showing the inside-out warning tint.
+    @location(2) strand: f32,
 };
 
 @vertex
-fn vs_surface(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) part: u32) -> SurfaceOut {
+fn vs_surface(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) part: u32, @location(3) strand: f32) -> SurfaceOut {
     var o: SurfaceOut;
     o.clip = g.view_proj * vec4<f32>(pos, 1.0);
     o.normal = normal;
     o.part = part;
+    o.strand = strand;
     return o;
 }
 
@@ -69,7 +73,7 @@ fn fs_surface(i: SurfaceOut, @builtin(front_facing) front: bool) -> @location(0)
     let sky = mix(vec3<f32>(0.20, 0.19, 0.18), vec3<f32>(0.36, 0.38, 0.42), n.y * 0.5 + 0.5);
     // Back faces (inside-out surfaces) show in a warning tint.
     var color = base * (sky + vec3<f32>(0.85) * key);
-    if (!front) {
+    if (!front && i.strand < 0.0) {
         color = vec3<f32>(0.80, 0.06, 0.08) * (0.5 + 0.5 * key);
     }
     return vec4<f32>(color, 1.0);

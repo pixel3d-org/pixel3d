@@ -32,6 +32,7 @@ pub mod shade;
 pub mod strands;
 pub mod subd;
 mod tx;
+pub mod vegetation;
 
 pub use dynop::{Applied, DynOp, Typed, parse_params};
 pub use error::{ErrorCode, OpError};

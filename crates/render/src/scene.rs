@@ -84,12 +84,14 @@ pub fn prepare(doc: &Document, root: Option<ObjectKey>) -> RenderScene {
         let tb = mesh.to_tri_buffers(&TriOptions { normals: true, uvs: false, colors: false });
         let base = s.vertices.len() as u32;
         let (mut lo, mut hi) = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
+        // Cards (hair, foliage) are drawn two-sided.
+        let strand = if obj.tags.iter().any(|t| t == "strands" || t == "vegetation") { 0.0 } else { NOT_STRAND };
         for (p, n) in tb.positions.iter().zip(&tb.normals) {
             let w = world.transform_point3(*p);
             lo = lo.min(w);
             hi = hi.max(w);
             let wn = (normal_m * *n).normalize_or_zero();
-            s.vertices.push(Vertex { pos: w.to_array(), normal: wn.to_array(), part, strand: NOT_STRAND });
+            s.vertices.push(Vertex { pos: w.to_array(), normal: wn.to_array(), part, strand });
         }
         // A mirroring transform flips the winding; keep triangles facing out.
         let flip = world.matrix3.determinant() < 0.0;

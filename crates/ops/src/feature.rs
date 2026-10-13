@@ -105,6 +105,12 @@ impl Op for GenFeature {
         let m = feature_mesh(&p.feature, &p.params, p.detail.map(|d| d.0 as f32), ctx)?;
         let marks: Vec<String> = p3d_features::baked_landmarks(&m).into_keys().collect();
         let key = create_mesh_object(tx, Some(p.name.as_deref().unwrap_or(&p.feature)), &p.feature, p.parent.as_deref(), &p.position, m)?;
+        if p3d_features::vegetation::is_vegetation(&p.feature)
+            && let Some(o) = tx.doc_mut().object_mut(key)
+        {
+            // Card meshes: drawn two-sided, open by design.
+            o.tags.push(p3d_features::vegetation::TAG.into());
+        }
         let mut out = created_summary(tx, key, &format!("{} feature", p.feature));
         out.summary.push_str(&format!("; landmarks {}", marks.join(", ")));
         Ok(out)

@@ -145,7 +145,7 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": true
         },
-        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief or dna, as compact text.",
+        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief, dna or vegetation, as compact text.",
         "inputSchema": {
           "$defs": {
             "Aspect": {
@@ -203,6 +203,11 @@ expression: tools
                 {
                   "const": "dna",
                   "description": "Visual DNA: form genes measured against the spec's `dna` (or `dna` given here) and the art-direction critique.",
+                  "type": "string"
+                },
+                {
+                  "const": "vegetation",
+                  "description": "Trees and plants: crown size and proportions, fork and trunk, cards, silhouette coverage and gaps, overdraw, trunk visibility.",
                   "type": "string"
                 }
               ]
@@ -293,6 +298,17 @@ expression: tools
                 },
                 "variation": {
                   "description": "Seed, asymmetry and variants."
+                },
+                "vegetation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/VegetationGene"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The vegetation archetype: a species word (`broadleaf`, `conifer`,\n`palm`, `birch`, `stylized`) or ranges (crate::vegetation)."
                 }
               },
               "type": "object"
@@ -494,6 +510,122 @@ expression: tools
               "required": [
                 "on"
               ],
+              "type": "object"
+            },
+            "VegetationGene": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/VegetationGenes"
+                }
+              ],
+              "description": "The `vegetation` gene: a preset word or ranges."
+            },
+            "VegetationGenes": {
+              "additionalProperties": false,
+              "description": "The vegetation archetype's genes (ADR 0011): proportions of a tree,\nmeasured back from its mesh. A preset word gives the reference ranges\nof a species; written ranges override them.",
+              "properties": {
+                "coverage": {
+                  "description": "Covered share of the crown silhouette.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "crown_base": {
+                  "description": "Height of the crown's lowest point over the tree's height.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "crown_ratio": {
+                  "description": "Crown width over the tree's height.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "fork": {
+                  "description": "Height of the first fork over the tree's height.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "limbs": {
+                  "description": "Scaffold limbs.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "preset": {
+                  "description": "`broadleaf`, `conifer`, `palm`, `birch` or `stylized`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "root_spread": {
+                  "description": "Root flare width over the trunk diameter.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "trunk": {
+                  "description": "Trunk diameter at breast height over the tree's height.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              },
               "type": "object"
             },
             "ViewDir": {
@@ -950,6 +1082,70 @@ expression: tools
                     "watertight"
                   ],
                   "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "description": "A tree or plant (an object with a `foliage` or `trunk` group): crown size, silhouette coverage and overdraw.",
+                  "properties": {
+                    "vegetation": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "coverage": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/ShareRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Covered share of the crown silhouette (front and side mean), for example `{\"min\": 0.85}`."
+                        },
+                        "crown_height": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LengthRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Crown height."
+                        },
+                        "crown_width": {
+                          "anyOf": [
+                            {
+                              "$ref": "#/$defs/LengthRange"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ],
+                          "description": "Crown width (the larger of its X and Z extents)."
+                        },
+                        "max_overdraw": {
+                          "description": "Overdraw budget: most card layers per covered pixel on average.",
+                          "format": "double",
+                          "type": [
+                            "number",
+                            "null"
+                          ]
+                        },
+                        "target": {
+                          "description": "Object (name, path or id).",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "target"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "vegetation"
+                  ],
+                  "type": "object"
                 }
               ]
             },
@@ -1011,6 +1207,29 @@ expression: tools
                   "type": "string"
                 }
               ]
+            },
+            "ShareRange": {
+              "additionalProperties": false,
+              "description": "A range of shares from 0 to 1; either end may be left open.",
+              "properties": {
+                "max": {
+                  "description": "Highest share.",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "min": {
+                  "description": "Lowest share.",
+                  "format": "double",
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
             }
           },
           "$schema": "https://json-schema.org/draft/2020-12/schema",

@@ -81,6 +81,9 @@ export type CapsulePrim = {
   radius_b?: Length | null;
 };
 
+/** Clump shading. */
+export type ClumpShading = "smooth" | "faceted";
+
 /** Advanced cone settings. */
 export type ConeAdvanced = {
   /** Segments along the height. */
@@ -172,6 +175,19 @@ export type ExpectArgs = {
   };
 } | {
   watertight: {
+    /** Object (name, path or id). */
+    target: string;
+  };
+} | {
+  vegetation: {
+    /** Covered share of the crown silhouette (front and side mean), for example `{"min": 0.85}`. */
+    coverage?: ShareRange | null;
+    /** Crown height. */
+    crown_height?: LengthRange | null;
+    /** Crown width (the larger of its X and Z extents). */
+    crown_width?: LengthRange | null;
+    /** Overdraw budget: most card layers per covered pixel on average. */
+    max_overdraw?: number | null;
     /** Object (name, path or id). */
     target: string;
   };
@@ -436,6 +452,14 @@ export type ShapeBevel = {
   width: Length;
 };
 
+/** A range of shares from 0 to 1; either end may be left open. */
+export type ShareRange = {
+  /** Highest share. */
+  max?: number | null;
+  /** Lowest share. */
+  min?: number | null;
+};
+
 /** Advanced settings of `edit.smooth`. */
 export type SmoothAdvanced = {
   /** Keep open-border vertices in place. */
@@ -475,6 +499,25 @@ export type TorusPrim = {
   /** Radius of the ring's cross-section. */
   minor: Length;
 };
+
+/**
+ * The crown hull: a shape word, or an outline of `[radius share, height
+ * share]` points from the crown base (0) to the top (1), turned around
+ * the trunk.
+ */
+export type TreeCrown = TreeCrownShape | [number, number][];
+
+/** A crown hull shape. */
+export type TreeCrownShape = "dome" | "sphere" | "ellipsoid" | "cone" | "umbrella" | "column";
+
+/** What the leaves become. */
+export type TreeFoliage = "cards" | "clumps" | "shell" | "none";
+
+/** A growth preset. */
+export type TreeSpecies = "broadleaf" | "conifer" | "palm" | "birch" | "stylized";
+
+/** A look. */
+export type TreeStyle = "realistic" | "painted" | "low_poly";
 
 /** Advanced settings of `edit.tris_to_quads`. */
 export type TrisToQuadsAdvanced = {
@@ -1334,6 +1377,90 @@ export type GenStrandsParams = {
   width?: Length | null;
 };
 
+/** `gen.tree`: Grows a tree from a species preset (broadleaf, conifer, palm, birch, stylized) toward a crown hull, with buttress roots, swept wood and leaf cards, clumps or a crown shell. */
+export type GenTreeParams = {
+  /** Angle of branches from their parent; scaffold limbs from vertical. */
+  branch_angle?: Angle | null;
+  /** Growth step of the branches (conifer: whorl spacing). */
+  branch_spacing?: Length | null;
+  /** Triangle budget at LOD0; the wood takes about a third. */
+  budget?: number | null;
+  /** Cluster card (or clump) size. */
+  card_size?: Length | null;
+  /** Clumps `faceted` (low poly) or `smooth`. */
+  clump_shading?: ClumpShading | null;
+  /** Silhouette coverage target of the crown (0.05 to 1); cards are added until it is reached. */
+  coverage?: number | null;
+  /** Crown hull: `dome`, `sphere`, `ellipsoid`, `cone`, `umbrella`, `column`, or an outline `[[radius share, height share], ...]` from the crown base up. */
+  crown?: TreeCrown | null;
+  /** Height share of the crown's lowest point; derived from the fork when omitted. */
+  crown_base?: number | null;
+  /** Lumps of the crown's outline as a share of its radius (0 smooth to 0.5). */
+  crown_lumps?: number | null;
+  /** Crown diameter (broadleaf: about the height). */
+  crown_width?: Length | null;
+  /** Gravity droop of the cards, growing toward the twig tips (0 to 1). */
+  droop?: number | null;
+  /** What the leaves become: `cards`, `clumps`, `shell` or `none`. */
+  foliage?: TreeFoliage | null;
+  /** Height share of the first fork (crown base for conifer and birch, trunk top for palm). */
+  fork?: number | null;
+  /** Random bends and curves (0 straight to 1 gnarled). */
+  gnarl?: number | null;
+  /** Crown gradient: darker and cooler inside, warmer outside, ambient occlusion (0 to 1). */
+  gradient?: number | null;
+  /** Total height (broadleaf 12 m, conifer 15, palm 9, birch 14, stylized 5). */
+  height?: Length | null;
+  /** Per-card hue variation in vertex color (0 to 1). */
+  hue_jitter?: number | null;
+  /** Share of single-leaf cards at the silhouette. */
+  leaf_cards?: number | null;
+  /** Lean of the trunk from vertical (0 to 45 degrees). */
+  lean?: Angle | null;
+  /** Heading of the lean: 0 toward +X, 90 toward +Z. */
+  lean_toward?: Angle | null;
+  /** Branch levels built as wood after the trunk (1 to 3). */
+  levels?: number | null;
+  /** Scaffold limbs from the fork, branches per whorl (conifer) or fronds (palm). */
+  limbs?: number | null;
+  /** Object name; `tree` when omitted. */
+  name?: string | null;
+  /** Crown normal transfer: 0 keeps the card normals, 1 shades like the hull. */
+  normal_blend?: number | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Turn between successive cards around a twig (137.5 degrees). */
+  phyllotaxis?: Angle | null;
+  /** Base position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Root flare width at the ground over the trunk diameter (1: no flare). */
+  root_spread?: number | null;
+  /** Buttress roots blended into the trunk base (0 to 12). */
+  roots?: number | null;
+  /** Variation: another seed grows another tree of the same kind. */
+  seed?: number | null;
+  /** Cards get smaller toward the silhouette (0 to 1). */
+  size_falloff?: number | null;
+  /** Growth preset: `broadleaf` (default), `conifer`, `palm`, `birch` or `stylized`. */
+  species?: TreeSpecies | null;
+  /** Angle of the cards from their twig. */
+  spread?: Angle | null;
+  /** Look: `realistic`, `painted` or `low_poly`; the species' own when omitted. */
+  style?: TreeStyle | null;
+  /** Turn of the cards toward the sky (0 to 1). */
+  sun_bias?: number | null;
+  /** Radius ratio of a branch to its parent at an even split (0.3 to 0.98). */
+  taper?: number | null;
+  /** Trunk radius at breast height; the species' share of the height when omitted. */
+  trunk_radius?: Length | null;
+  /** Twist of the trunk and scaffold limbs along their length. */
+  twist?: Angle | null;
+  /** Per-card brightness variation in vertex color (0 to 1). */
+  value_jitter?: number | null;
+  /** Atlas variants the cards pick from (1 to 4). */
+  variants?: number | null;
+};
+
 /** `remesh.quad`: Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field. */
 export type RemeshQuadParams = {
   /** Flow along an object axis (limbs, blades, tails). */
@@ -1919,7 +2046,7 @@ export type CleanupReportParams = {
 
 /** `expect.add`: Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. */
 export type ExpectAddParams = {
-  /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight. */
+  /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight, vegetation. */
   expect: ExpectArgs;
   /** Name; `E1`, `E2`, ... when omitted. */
   name?: string | null;
@@ -2025,6 +2152,7 @@ export interface OpParams {
   "gen.shell": GenShellParams;
   "gen.feature": GenFeatureParams;
   "gen.strands": GenStrandsParams;
+  "gen.tree": GenTreeParams;
   "remesh.quad": RemeshQuadParams;
   "remesh.isotropic": RemeshIsotropicParams;
   "prim.plane": PrimPlaneParams;

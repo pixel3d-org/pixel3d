@@ -104,6 +104,10 @@ pub struct DnaSpec {
     /// Seed, asymmetry and variants.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variation: Option<serde_json::Value>,
+    /// The vegetation archetype: a species word (`broadleaf`, `conifer`,
+    /// `palm`, `birch`, `stylized`) or ranges (crate::vegetation).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vegetation: Option<crate::vegetation::VegetationGene>,
 }
 
 /// Targets after presets: every gene that has a target.
@@ -211,6 +215,9 @@ pub fn targets(d: &DnaSpec) -> Result<Targets, (String, String)> {
         Some(other) => return Err(("/rhythm".into(), format!("`{other}` is not a rhythm; use varied or regular"))),
     }
     t.proportions = d.proportions.clone();
+    if let Some(v) = &d.vegetation {
+        crate::vegetation::gene_targets(v)?;
+    }
     Ok(t)
 }
 
@@ -624,6 +631,12 @@ pub fn report(view: &View, spec: &DnaSpec) -> Result<Report, (String, String)> {
                 lines.push(format!("{name} {v:.2}{t} {s}"));
             }
             None => lines.push(format!("{name}: parts not found")),
+        }
+    }
+    if let Some(v) = &spec.vegetation {
+        for (s, l) in crate::vegetation::gene_lines(view, v)? {
+            count(s);
+            lines.push(l);
         }
     }
     let label = match (spec.culture.as_deref(), spec.style.as_deref()) {

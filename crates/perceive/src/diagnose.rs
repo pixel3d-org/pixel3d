@@ -229,8 +229,9 @@ fn geometry(view: &View, i: usize, out: &mut Vec<Draft>) {
     let m = part.mesh;
     let topo = part.topology();
     let flat = part.size().min_element() < 1e-3_f32.max(0.01 * part.size().max_element());
-    // Strands (hair cards, clumps, shells) are open, crossing and thin by design.
-    let strands = tagged(view, part, "strands");
+    // Strands (hair cards, clumps, shells) and vegetation (leaf cards,
+    // overlapping branch tubes) are open, crossing and thin by design.
+    let strands = tagged(view, part, "strands") || tagged(view, part, "vegetation");
     let draft = |code, severity, at, message: String| Draft::new(code, severity, i, at, message);
 
     // Inward-facing closed pieces.

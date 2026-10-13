@@ -69,7 +69,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("anim", l(2, 2)),
     ("sdf", l(2, 2)),
     ("remesh", l(2, 2)),
-    ("features", l(2, 3)),
+    ("vegetation", l(2, 3)),
+    ("features", l(2, 4)),
     ("strands", l(2, 3)),
     ("render", Class::Isolated { layer: 2 }),
     // L3 IO and analysis
