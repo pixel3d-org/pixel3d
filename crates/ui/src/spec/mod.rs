@@ -115,6 +115,7 @@ pub fn parts_of(doc: &Document, root: ObjectKey) -> Vec<PartInfo> {
                 Ok(Kind::Mirror(src)) => (format!("{} {src}", t("mirror of")), "mirror"),
                 Ok(Kind::Instance(src)) => (format!("{} {src}", t("instance of")), "instance"),
                 Ok(Kind::Feature(f, _)) => (format!("{} {f}", t("feature")), "feature"),
+                Ok(Kind::Strands(k, _)) => (format!("{} {k}", t("strands")), "strands"),
                 Err(_) => ("?".to_owned(), ""),
             };
             let (join, on) = effective(name);

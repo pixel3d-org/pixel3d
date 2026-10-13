@@ -324,6 +324,14 @@ impl<'a> Compiler<'a> {
     }
 
     fn place(&mut self, name: &str, part: &'a Part, path: &str) -> Result<Trs, OpError> {
+        if let Kind::Strands(_, params) = part.kind(path).map_err(spec_err)? {
+            if part.anchor.is_some() || part.transform.is_some() {
+                return Err(err(path, "strands grow where their surface is: leave out anchor and transform"));
+            }
+            let on = strands_on(name, params, path)?;
+            self.part(on, &format!("{path}/params/on"))?;
+            return self.placement(on);
+        }
         if let Kind::Mirror(src) = part.kind(path).map_err(spec_err)? {
             if part.anchor.is_some() || part.transform.is_some() {
                 return Err(err(path, "a mirror sits opposite its source: leave out anchor and transform"));
@@ -754,7 +762,85 @@ impl<'a> Compiler<'a> {
             Kind::Op(key, op, args) => self.build_op(name, part, path, op, args, &format!("{path}/{key}"), key),
             Kind::Feature(..) if part.is_sdf() => self.build_sdf(name, part, path),
             Kind::Feature(id, params) => self.build_feature(name, part, path, id, params),
+            Kind::Strands(kind, params) => self.build_strands(name, part, path, kind, params),
         }
+    }
+
+    /// A strands part: strands grown on its `on` part's final mesh (in that
+    /// part's space, where the strands part is placed), then the edits.
+    /// Region and anchor names are landmarks of `on`; coordinates are in
+    /// the root's space.
+    ///
+    /// Complexity: the parent's mesh, landmark lookups, then the strands
+    /// kernel's O(guides x segments x log F).
+    fn build_strands(&mut self, name: &str, part: &'a Part, path: &str, kind: &str, params: &Value) -> Result<Arc<Built>, OpError> {
+        let ppath = format!("{path}/params");
+        if p3d_strands::Kind::parse(kind).is_none() {
+            let words = p3d_strands::Kind::ALL.map(p3d_strands::Kind::as_str);
+            let mut e = err(&format!("{path}/strands"), format!("`{kind}` is not a strands kind; use one of {}", words.join(", ")));
+            e.suggestions = p3d_scene::name::suggest(kind, words, 3);
+            return Err(e);
+        }
+        let Value::Object(map) = params else {
+            return Err(err(&ppath, "give the parameters as an object with \"on\": the part the strands grow on"));
+        };
+        for k in ["name", "kind"] {
+            if map.contains_key(k) {
+                return Err(err(&format!("{ppath}/{k}"), format!("the spec sets `{k}` from the part: leave it out")));
+            }
+        }
+        let mut args = map.clone();
+        args.insert("kind".into(), Value::String(kind.to_owned()));
+        let p: p3d_ops::strands::StrandsParams = serde_path_to_error::deserialize(Value::Object(args))
+            .map_err(|e| err(&format!("{ppath}{}", crate::model::pointer(&e.path().to_string())), e.inner().to_string()))?;
+        if p.on == name {
+            return Err(err(&format!("{ppath}/on"), "strands cannot grow on themselves"));
+        }
+        self.part(&p.on, &format!("{ppath}/on"))?;
+        let parent = self.mesh(&p.on)?;
+        let to_part = self.placement(&p.on)?.to_affine().inverse();
+        let seed = self.seed(name);
+        let on = p.on.clone();
+        let mut points: Vec<Vec3> = Vec::new();
+        let mut resolve = |q: &p3d_ops::deform::PointParam, sub: &str| -> Result<Vec3, OpError> {
+            let at = match q {
+                p3d_ops::deform::PointParam::At(c) => to_part.transform_point3(v3(c)),
+                p3d_ops::deform::PointParam::Group(n) => to_part.transform_point3(self.landmark(&on, n, &format!("{ppath}{sub}"), 0)?.point),
+            };
+            points.push(at);
+            Ok(at)
+        };
+        let spec = p3d_ops::strands::strand_spec(&p, seed, &mut resolve).map_err(|mut e| {
+            if !e.path.as_deref().is_some_and(|x| x.starts_with("/spec")) {
+                e.path = Some(format!("/spec{ppath}{}", e.path.as_deref().unwrap_or("")));
+            }
+            e
+        })?;
+        let mut h = Hasher::new();
+        h.bytes(b"strands");
+        h.bytes(kind.as_bytes());
+        h.json(params);
+        h.u64(parent.hash);
+        h.floats(&points.iter().flat_map(|v| v.to_array()).collect::<Vec<f32>>());
+        h.json(&part.edits);
+        h.json(&part.deform);
+        h.u64(seed);
+        let hash = h.0;
+        if let Some(c) = self.cached(name, hash) {
+            return Ok(c);
+        }
+        let grown = p3d_strands::generate(&parent.mesh, &spec).map_err(|e| {
+            let mut o = p3d_ops::strands::strands_error(e);
+            o.path = Some(format!("/spec{ppath}{}", o.path.as_deref().unwrap_or("")));
+            o
+        })?;
+        if let Some(c) = grown.report.coverage.filter(|c| *c < 0.9) {
+            self.warnings.push(format!("{name}: the strands cover {:.0}% of their region; raise clumps or width", c * 100.0));
+        }
+        let mut tx = Tx::new(Document::new());
+        let pk = tx.doc_mut().create_mesh_object("part", None, grown.mesh).map_err(|e| OpError::internal(e.to_string()))?;
+        let entries = vec![ProvEntry { path: format!("/parts/{name}/strands"), op: "gen.strands".into() }];
+        self.edit_and_finish(name, part, path, tx, pk, entries, Vec::new(), hash)
     }
 
     /// A designed-mesh feature part: the template's mesh, then the part's
@@ -1374,6 +1460,30 @@ fn leaf_groups(shapes: &[SdfShapeParam], path: &str, prefix: &str, leaf: &mut us
     }
 }
 
+/// The part strands grow on (`params.on`).
+fn strands_on<'v>(name: &str, params: &'v Value, path: &str) -> Result<&'v str, OpError> {
+    match params.get("on") {
+        Some(Value::String(on)) if on == name => Err(err(&format!("{path}/params/on"), "strands cannot grow on themselves")),
+        Some(Value::String(on)) => Ok(on),
+        _ => Err(err(&format!("{path}/params/on"), "say which part the strands grow on, for example \"on\": \"head\"")),
+    }
+}
+
+/// Whether a part is strands, or a mirror of strands.
+///
+/// Complexity: O(mirror chain).
+fn grows_strands(spec: &ModelSpec, name: &str) -> bool {
+    let mut n = name;
+    for _ in 0..=spec.parts.len() {
+        match spec.parts.get(n) {
+            Some(p) if p.strands.is_some() => return true,
+            Some(Part { mirror: Some(src), .. }) => n = src,
+            _ => return false,
+        }
+    }
+    false
+}
+
 /// Face group names of every prim of SDF items in leaf order, all with
 /// one spec path (an SDF feature's).
 ///
@@ -1401,6 +1511,9 @@ fn blend_targets(spec: &ModelSpec) -> Result<(Children, Children), OpError> {
     for (name, part) in &spec.parts {
         let path = format!("/parts/{name}");
         part.kind(&path).map_err(spec_err)?;
+        if part.strands.is_some() && part.join.is_some_and(|j| j != Join::Separate) {
+            return Err(err(&format!("{path}/join"), "strands are their own object: leave out join"));
+        }
         if part.mirror.is_some() && part.join.is_some() {
             return Err(err(&format!("{path}/join"), "a mirror joins like its source: leave out join"));
         }
@@ -1544,6 +1657,7 @@ fn kind_name(part: &Part) -> String {
         Ok(Kind::Mirror(s)) => format!("mirror of {s}"),
         Ok(Kind::Instance(s)) => format!("instance of {s}"),
         Ok(Kind::Feature(f, _)) => format!("feature {f}"),
+        Ok(Kind::Strands(k, _)) => format!("strands {k}"),
         Err(_) => "?".into(),
     }
 }
@@ -1646,6 +1760,9 @@ fn apply(tx: &mut Tx, root: ObjectKey, spec: &ModelSpec, record: &SpecRecord, pl
         let mut tags: Vec<String> = part.tags.clone();
         if decal {
             tags.push("decal".into());
+        }
+        if grows_strands(spec, name) && !tags.iter().any(|t| t == "strands") {
+            tags.push("strands".into());
         }
         o.tags = tags.into_iter().collect();
         let id = o.id();

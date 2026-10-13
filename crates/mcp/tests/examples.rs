@@ -46,3 +46,24 @@ fn feature_head() {
 fn battle_axe() {
     replay(include_str!("../../../docs/agents/examples/battle_axe.json"));
 }
+
+/// Acceptance T11: an elf head with ears, hair cards and eyebrows in at
+/// most 6 calls and no image calls, answering its brief in full.
+#[test]
+fn t11_elf_head_with_hair_answers_its_brief() {
+    let session: Value = serde_json::from_str(include_str!("../../../docs/agents/examples/feature_head.json")).unwrap();
+    let calls = session["calls"].as_array().unwrap();
+    assert!(calls.len() <= 6 && calls.iter().all(|c| c["tool"] != "render"));
+    let mut agent = Agent::new(Session::new());
+    let mut last = String::new();
+    for call in calls {
+        let out = agent.call(call["tool"].as_str().unwrap(), call["args"].clone());
+        assert!(!out.is_error, "{}", out.text);
+        last = out.text;
+    }
+    assert!(last.contains("brief elf 8/8"), "{last}");
+    let d = agent.call("diagnose", json!({})).text;
+    for code in ["OPEN_BOUNDARY", "FLOATING_PART", "SELF_INTERSECTION"] {
+        assert!(!d.contains(code), "{code} on strands: {d}");
+    }
+}

@@ -1,12 +1,28 @@
 {
- "prompt": "Elf head blockout with high cheekbones, a narrow jaw, pointed ears, a nose and eyes, from feature templates",
+ "prompt": "Elf ranger head with high cheekbones, a narrow jaw, pointed ears, swept-back hair and eyebrows, from feature templates and strands",
  "calls": [
+  {
+   "tool": "brief",
+   "args": {
+    "action": "set",
+    "name": "elf",
+    "brief": {
+     "title": "Elf ranger head",
+     "category": "humanoid_head",
+     "style": "stylized",
+     "asset_class": "character",
+     "budget": { "tris": [20000, 150000] },
+     "must_have": [{ "feature": "ear", "count": 2 }]
+    }
+   }
+  },
   {
    "tool": "spec",
    "args": {
     "action": "set",
     "target": "elf",
     "spec": {
+     "brief": "elf",
      "category": "humanoid_head",
      "parts": {
       "head": { "feature": "head_base", "params": { "cheekbones": 0.8, "jaw": 0.7 }, "detail": "2.5mm" },
@@ -14,7 +30,10 @@
       "ear_l": { "feature": "ear", "params": { "variant": "elf", "length": "8cm" }, "anchor": { "on": "head", "landmark": "ear_root_l" } },
       "ear_r": { "mirror": "ear_l" },
       "eye_l": { "feature": "eye", "anchor": { "on": "head", "landmark": "eye_l" } },
-      "eye_r": { "mirror": "eye_l" }
+      "eye_r": { "mirror": "eye_l" },
+      "hair": { "strands": "hair", "params": { "on": "head", "region": ["hairline_front", "temple_l", "nape", "temple_r"], "length": "22cm", "clumps": 90 } },
+      "brow_l": { "strands": "eyebrows", "params": { "on": "head", "region": { "groups": ["brow_ridge_l"] } } },
+      "brow_r": { "mirror": "brow_l" }
      }
     }
    }

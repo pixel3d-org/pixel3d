@@ -54,6 +54,28 @@ fn push_out(bvh: &TriBvh, p: Vec3, off: f32, fallback: Vec3) -> (Vec3, Vec3) {
     }
 }
 
+/// Pulls `p` back down onto the surface (at `off`) where the surface does
+/// not face down: draping hair rests on the scalp and sides of a head and
+/// only hangs free past them.
+///
+/// Complexity: one closest-point query.
+/// Also says whether the point rests on the surface.
+fn hug(bvh: &TriBvh, p: Vec3, off: f32, n0: Vec3) -> (Vec3, Vec3, bool) {
+    match bvh.closest(p, f32::INFINITY) {
+        Some(c) => {
+            let n = bvh.normal(c.tri);
+            let d = (p - c.point).dot(n);
+            if n.y > -0.3 { (p - n * (d - off).max(0.0), n, true) } else { (p, n, d <= off * 1.01 + 1e-5) }
+        }
+        None => (p, n0, false),
+    }
+}
+
+/// Whether a style lies along the surface (and so hugs it).
+fn drapes(style: Style) -> bool {
+    matches!(style, Style::SweptBack | Style::Parted(_) | Style::Straight | Style::Combed { .. } | Style::Ponytail(_))
+}
+
 /// The style's direction at a root with normal `n`.
 fn style_dir(style: Style, p: Vec3, n: Vec3, center: Vec3) -> Vec3 {
     let along = |v: Vec3| (v - n * v.dot(n)).try_normalize();
@@ -98,6 +120,7 @@ fn integrate(bvh: &TriBvh, root: Vec3, n: Vec3, center: Vec3, spec: &StrandSpec,
     let mut p = root + n * g.lift;
     let mut dir = (base + jitter).normalize_or(base);
     let mut out_n = n;
+    let mut free = false;
     let mut points = Vec::with_capacity(m + 1);
     let mut outward = Vec::with_capacity(m + 1);
     points.push(p);
@@ -116,7 +139,8 @@ fn integrate(bvh: &TriBvh, root: Vec3, n: Vec3, center: Vec3, spec: &StrandSpec,
             let th = phase + TAU * spec.curl_turns * t;
             want = (want + (u * th.cos() + v * th.sin()) * spec.curl * 1.5).normalize_or(want);
         }
-        let pull = spec.gravity * t;
+        // Draping strands that leave the surface fall.
+        let pull = if free { (spec.gravity * t).max(0.5 + 0.5 * spec.gravity) } else { spec.gravity * t };
         want = (want * (1.0 - pull) + Vec3::NEG_Y * pull).normalize_or(want);
         dir = (dir + want).normalize_or(want);
         let off = g.lift + spec.volume * t;
@@ -124,6 +148,13 @@ fn integrate(bvh: &TriBvh, root: Vec3, n: Vec3, center: Vec3, spec: &StrandSpec,
         // Keep the step length after the push.
         dir = (q - p).normalize_or(dir);
         let (q, nq) = push_out(bvh, p + dir * seg, off, nq);
+        let (q, nq) = if drapes(spec.style) {
+            let (q, nq, rests) = hug(bvh, q, off, nq);
+            free = !rests;
+            (q, nq)
+        } else {
+            (q, nq)
+        };
         p = q;
         out_n = nq;
         points.push(p);

@@ -75,7 +75,12 @@ pub struct Part {
     /// from `params`; SDF features (`nose`) blend like `sdf` parts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feature: Option<String>,
-    /// The feature's parameters, for example `{"variant": "elf"}`.
+    /// Strands grown on another part: `hair`, `fur`, `eyebrows`, `beard`
+    /// or `grass`, shaped by `params` (`on`, `region`, `style`, ...).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strands: Option<String>,
+    /// The parameters of a `feature` (`{"variant": "elf"}`) or of
+    /// `strands` (`{"on": "head", "region": [...]}`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params: Option<Value>,
     /// A mirrored copy of another part across a root plane (`plane`, x by
@@ -299,6 +304,8 @@ pub enum Kind<'a> {
     Instance(&'a str),
     /// A feature template id and its parameters.
     Feature(&'a str, &'a Value),
+    /// A strands kind and its parameters.
+    Strands(&'a str, &'a Value),
 }
 
 const NO_PARAMS: &Value = &Value::Null;
@@ -344,10 +351,15 @@ impl Part {
                 kinds.push((key, Kind::Op(key, op, v)));
             }
         }
-        match (&self.feature, &self.params) {
-            (Some(f), p) => kinds.push(("feature", Kind::Feature(f, p.as_ref().unwrap_or(NO_PARAMS)))),
-            (None, Some(_)) => return Err(SpecError::new(&format!("{path}/params"), "params belong to a feature part: give \"feature\" too")),
-            (None, None) => {}
+        let params = self.params.as_ref().unwrap_or(NO_PARAMS);
+        if let Some(f) = &self.feature {
+            kinds.push(("feature", Kind::Feature(f, params)));
+        }
+        if let Some(k) = &self.strands {
+            kinds.push(("strands", Kind::Strands(k, params)));
+        }
+        if self.params.is_some() && self.feature.is_none() && self.strands.is_none() {
+            return Err(SpecError::new(&format!("{path}/params"), "params belong to a feature or strands part: give \"feature\" or \"strands\" too"));
         }
         if let Some(m) = &self.mirror {
             kinds.push(("mirror", Kind::Mirror(m)));
@@ -359,7 +371,7 @@ impl Part {
             [(_, k)] => Ok(*k),
             [] => Err(SpecError::new(
                 path,
-                "the part has no shape: give one of sdf, primitive, lathe, sweep, loft, extrude, pipe, shell, silhouettes, feature, mirror or instance",
+                "the part has no shape: give one of sdf, primitive, lathe, sweep, loft, extrude, pipe, shell, silhouettes, feature, strands, mirror or instance",
             )),
             [(a, _), (b, _), ..] => Err(SpecError::new(path, format!("the part has two shapes (`{a}` and `{b}`); give one"))),
         }

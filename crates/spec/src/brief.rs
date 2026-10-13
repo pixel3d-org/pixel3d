@@ -512,7 +512,7 @@ impl Asset<'_> {
     }
 
     /// Bounds of the main part without the faces blended in from other
-    /// parts (ears do not widen the skull).
+    /// parts (ears do not widen the skull) and without its neck.
     fn skull_bounds(&self, main: &str) -> (Vec3, Vec3) {
         let Some(&k) = self.objects.get(main) else { return (Vec3::ZERO, Vec3::ZERO) };
         let (Some(m), Some(w)) = (self.doc.object_mesh(k), self.doc.world_affine(k)) else { return (Vec3::ZERO, Vec3::ZERO) };
@@ -520,7 +520,8 @@ impl Asset<'_> {
             self.spec.parts.iter().filter(|(_, p)| p.join() == Join::Blend || p.mirror.is_some()).map(|(n, _)| format!("{n}.")).collect();
         let mut skip = vec![false; m.face_slots()];
         for (name, g) in m.groups() {
-            if g.kind() == p3d_mesh::ElementKind::Face && blended.iter().any(|b| name.starts_with(b.as_str())) {
+            // A head_base neck does not lengthen the skull either.
+            if g.kind() == p3d_mesh::ElementKind::Face && (name == "neck" || blended.iter().any(|b| name.starts_with(b.as_str()))) {
                 for f in g.iter() {
                     skip[f as usize] = true;
                 }

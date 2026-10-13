@@ -3419,6 +3419,7 @@ dependencies = [
  "p3d-perceive",
  "p3d-scene",
  "p3d-sdf",
+ "p3d-strands",
  "schemars",
  "serde",
  "serde_json",

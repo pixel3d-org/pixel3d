@@ -20,6 +20,7 @@ Phase 3c adds strands (project spec 17.6): hair, fur, eyebrows, beards and grass
   - `ponytail`: toward an anchor, then hanging.
 - The direction is blended toward gravity along the length, with seeded noise and a helical curl.
 - After each step the point is pushed out of the parent to a growing offset (`lift` at the root, plus `volume` toward the tip), using the closest point on a triangle BVH. Strands never penetrate. Cost: O(guides x segments x log F).
+- Draping styles (swept back, parted, straight, combed, ponytail) also hug: where the surface does not face down, a point above its offset is pulled back onto it, so hair rests on the scalp and sides. Once a strand leaves the surface it falls (gravity at least 0.5). Spiky, upright and wind-blown styles stand free.
 - Child strands within a clump (for groom export) come later. v1 output needs clump curves and widths only.
 
 **Outputs.**

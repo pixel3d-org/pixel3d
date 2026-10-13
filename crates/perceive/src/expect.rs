@@ -121,8 +121,14 @@ fn run(doc: &Document, c: &Check) -> Result<(bool, String), String> {
                 None => {
                     let pa = path(doc, a)?;
                     let view = View::new(doc, Some(&pa)).map_err(|e| e.message)?;
-                    let all: Vec<usize> = (0..view.parts.len()).collect();
-                    let plane = at.map_or((view.lo[k] + view.hi[k]) / 2.0, |v| v as f32);
+                    // Strands are random by nature: a hierarchy is symmetric without them.
+                    let strands = |i: usize| doc.object(view.parts[i].key).is_some_and(|o| o.tags.iter().any(|t| t == "strands"));
+                    let solid: Vec<usize> = (0..view.parts.len()).filter(|&i| !strands(i)).collect();
+                    let all: Vec<usize> = if solid.is_empty() { (0..view.parts.len()).collect() } else { solid };
+                    let (lo, hi) = all.iter().fold((glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN)), |(l, h), &i| {
+                        (l.min(view.parts[i].lo), h.max(view.parts[i].hi))
+                    });
+                    let plane = at.map_or((lo[k] + hi[k]) / 2.0, |v| v as f32);
                     let cap = view.diagonal() * 0.1 + tol;
                     let d = mirror_deviation(&view, &all, &all, k, plane, cap);
                     let over = if d >= cap { "over " } else { "" };

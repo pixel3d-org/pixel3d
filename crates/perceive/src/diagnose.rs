@@ -361,6 +361,10 @@ fn relation_findings(view: &View, rel: &Relations, out: &mut Vec<Draft>) {
     let tol = rel.tolerance;
     for f in &rel.floating {
         let part = &view.parts[f.part];
+        // Strands hover over their surface on purpose (lift and volume).
+        if view.doc.object(part.key).is_some_and(|o| o.tags.iter().any(|t| t == "strands")) {
+            continue;
+        }
         let (message, fixes, at, other, gap) = match &f.nearest {
             Some(n) => (
                 format!("touches nothing: {} mm from {}", mm(n.gap), view.parts[n.part].label),

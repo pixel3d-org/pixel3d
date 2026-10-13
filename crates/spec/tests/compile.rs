@@ -494,3 +494,61 @@ fn feature_part_errors_point_at_the_parameters() {
     .unwrap_err();
     assert!(e.message.contains("SDF parts on both sides"), "{e:?}");
 }
+
+fn groomed(hair_length: &str) -> Value {
+    json!({ "name": "elf", "spec": { "parts": {
+        "head": { "feature": "head_base", "detail": "4mm" },
+        "hair": { "strands": "hair", "params": { "on": "head", "region": ["hairline_front", "temple_l", "nape", "temple_r"], "length": hair_length } },
+        "brow_l": { "strands": "eyebrows", "params": { "on": "head", "region": { "groups": ["brow_ridge_l"] } } },
+        "brow_r": { "mirror": "brow_l" }
+    } } })
+}
+
+#[test]
+fn strands_parts_grow_on_their_surface_between_landmarks() {
+    let mut tx = Tx::new(Document::new());
+    let s = ok(&mut tx, "spec.set", groomed("14cm"));
+    assert!(s.contains("4 parts, 4 built"), "{s}");
+    let hair = key(&tx, "elf/hair");
+    let o = tx.doc().object(hair).unwrap();
+    assert!(o.tags.iter().any(|t| t == "strands"), "tagged");
+    assert_eq!(o.transform, tx.doc().object(key(&tx, "elf/head")).unwrap().transform, "placed with the head");
+    assert!(tx.doc().object(key(&tx, "elf/brow_r")).unwrap().tags.iter().any(|t| t == "strands"), "mirrors are strands too");
+    let rec = tx.doc().spec(key(&tx, "elf")).unwrap().clone();
+    assert_eq!(rec.parts["hair"].provenance.entries[0].op, "gen.strands");
+    assert_eq!(rec.parts["hair"].provenance.entries[0].path, "/parts/hair/strands");
+    let m = tx.doc().object_mesh(hair).unwrap();
+    assert!(m.group("cap").is_some() && m.group("cards.0").is_some());
+    // The brows sit on the left brow ridge, the mirror on the right.
+    let bl = tx.doc().object_mesh(key(&tx, "elf/brow_l")).unwrap().bounds().unwrap();
+    let br = tx.doc().object_mesh(key(&tx, "elf/brow_r")).unwrap().bounds().unwrap();
+    let (cl, cr) = ((bl.0 + bl.1) * 0.5, (br.0 + br.1) * 0.5);
+    assert!(cl.x > 0.01 && (cl.x + cr.x).abs() < 1e-4, "{cl} {cr}");
+    // Longer hair rebuilds only the hair; a wider head rebuilds the strands on it too.
+    let s = ok(&mut tx, "spec.patch", json!({ "target": "elf", "merge": { "parts": { "hair": { "params": { "length": "20cm" } } } } }));
+    assert!(s.contains("1 built, 3 unchanged"), "{s}");
+    let s = ok(&mut tx, "spec.patch", json!({ "target": "elf", "merge": { "parts": { "head": { "params": { "width": 0.7 } } } } }));
+    assert!(s.contains("4 built, 0 unchanged"), "{s}");
+}
+
+#[test]
+fn strands_part_errors_point_into_the_params() {
+    let mut tx = Tx::new(Document::new());
+    let with = |hair: Value| json!({ "name": "m", "spec": { "parts": { "head": { "feature": "head_base", "detail": "8mm" }, "hair": hair } } });
+    let e = run(&mut tx, "spec.set", with(json!({ "strands": "hair" }))).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/spec/parts/hair/params/on"), "{e:?}");
+    let e = run(&mut tx, "spec.set", with(json!({ "strands": "hiar", "params": { "on": "head" } }))).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/spec/parts/hair/strands"), "{e:?}");
+    assert!(e.suggestions.contains(&"hair".to_owned()), "{e:?}");
+    let e =
+        run(&mut tx, "spec.set", with(json!({ "strands": "hair", "params": { "on": "head", "region": ["hairline_front", "tempel_l", "nape"] } })))
+            .unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/spec/parts/hair/params/region/1"), "{e:?}");
+    assert!(e.suggestions.contains(&"temple_l".to_owned()), "{e:?}");
+    let e = run(&mut tx, "spec.set", with(json!({ "strands": "hair", "params": { "on": "head", "clumps": 0 } }))).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/spec/parts/hair/params/clumps"), "{e:?}");
+    let e = run(&mut tx, "spec.set", with(json!({ "strands": "hair", "params": { "on": "head", "lenght": 0.1 } }))).unwrap_err();
+    assert!(e.path.as_deref().is_some_and(|p| p.starts_with("/spec/parts/hair/params")), "{e:?}");
+    let e = run(&mut tx, "spec.set", with(json!({ "strands": "hair", "params": { "on": "head" }, "join": "blend" }))).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/spec/parts/hair/join"), "{e:?}");
+}

@@ -119,7 +119,7 @@ Acceptance:
 ## Phase 3c: Feature library, strands, full diagnostics
 
 - [x] `features` v1: `ear`, `nose`, `eye`, `head_base`, `hand`, `horn`, `bolt`, `rivet`, `vent_grille`, `panel_inset`, `molding` (ADR 0012), with `gen.feature` and spec `feature` parts
-- [ ] `strands`: hair, fur, eyebrows, grass, cables as cards, clumps and shells (ADR 0013; kernel `crates/strands` done: loop, group or whole-surface regions, 8 styles, cards with cap, layers and flyaways, lens clumps, shells, coverage report; op `gen.strands` with landmark loops and coverage in its summary, diagnostics skip open, crossing and thin checks on `strands` objects; next spec `strands` parts; cables later)
+- [ ] `strands`: hair, fur, eyebrows, grass, cables as cards, clumps and shells (ADR 0013; kernel `crates/strands` done: loop, group or whole-surface regions, 8 styles, cards with cap, layers and flyaways, lens clumps, shells, coverage report; op `gen.strands` with landmark loops and coverage in its summary, diagnostics skip open, crossing, thin and floating checks on `strands` objects; spec `strands` parts grown on `params.on` with landmark loops; draping styles hug the scalp and fall past it; cables later)
 - [ ] Vegetation (ADR 0009): `tree` feature and `gen.tree` (species presets, crown hull, branch levels, roots), styles realistic, stylized painted and solid low poly; foliage as `clumps`, `cards` (cluster and single-leaf cards with leaf angle, repetition and coverage parameters) or `shell`, crown normal transfer, wind data per engine, `flower` and `grass_cards`, `vegetation` perception aspect and expectations
 - [ ] Full diagnostics: intent, edge flow, shading, detail scale, with predicted fixes
 - [ ] Visual DNA archetypes (ADR 0011): skeletons for weapon centerlines, humanoid races with anatomy kits, wings (feathered, membrane), vegetation; grooming genes on strands (braids, beads, clumps); ornament along paths; the full art-direction critique set
@@ -127,7 +127,7 @@ Acceptance:
 
 Acceptance:
 
-- [ ] T11 geometry built in at most 6 agent calls with no image calls
+- [x] T11 geometry built in at most 6 agent calls with no image calls (`docs/agents/examples/feature_head.json`: brief plus one spec call, brief 8/8)
 - [ ] The diagnostics corpus passes
 - [x] Feature templates keep clean topology across their parameter ranges (property tests)
 
