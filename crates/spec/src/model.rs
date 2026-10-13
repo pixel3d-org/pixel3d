@@ -35,7 +35,7 @@ pub struct ModelSpec {
     pub seed: u64,
     pub parts: BTreeMap<String, Part>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub constraints: Vec<Value>,
+    pub constraints: Vec<crate::constraints::Constraint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expect: Vec<Value>,
 }

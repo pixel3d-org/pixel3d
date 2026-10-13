@@ -230,9 +230,14 @@ struct Compiler<'a> {
     trs: BTreeMap<String, Trs>,
     items: BTreeMap<String, Arc<Vec<Item>>>,
     surfaces: BTreeMap<String, Arc<Surface>>,
+    /// Surfaces at the identity placement, moved by [`Surface::placed`].
+    bases: BTreeMap<String, Surface>,
     built: BTreeMap<String, Arc<Built>>,
     /// Where anchored parts sit: the surface point and normal.
     anchors: BTreeMap<String, Hit>,
+    /// Constraint moves and scales added to placements.
+    moves: BTreeMap<String, Vec3>,
+    scales: BTreeMap<String, f32>,
     /// Nodes being resolved, for loop detection.
     active: Vec<String>,
     warnings: Vec<String>,
@@ -293,7 +298,13 @@ impl<'a> Compiler<'a> {
         self.enter(format!("place {name}"), &path)?;
         let r = self.place(name, part, &path);
         self.leave();
-        let t = r?;
+        let mut t = r?;
+        if let Some(m) = self.moves.get(name) {
+            t.translation += *m;
+        }
+        if let Some(s) = self.scales.get(name) {
+            t.scale *= *s;
+        }
         if !t.is_finite() {
             return Err(err(&path, "the placement is not finite"));
         }
@@ -477,20 +488,27 @@ impl<'a> Compiler<'a> {
         let part = self.part(name, &path)?;
         let place = self.placement(name)?.to_affine();
         part.kind(&path).map_err(spec_err)?;
-        let s = match self.sdf_source(name) {
-            // An SDF part (or its mirror) is queried on its own field
-            // (blended children left out), so anchoring on it needs no mesh.
-            Some(_) => {
-                let items = self.items(name)?;
-                let sdf = Sdf::new((*items).clone()).map_err(|e| err(&format!("{path}/sdf"), e.to_string()))?;
-                Surface::of_sdf(Arc::new(sdf), place)
-            }
-            _ => {
-                let b = self.mesh(name)?;
-                Surface::of_mesh(&b.mesh, place).ok_or_else(|| err(&path, "the part has no faces to anchor on"))?
+        let base = match self.bases.get(name) {
+            Some(b) => b.clone(),
+            None => {
+                let b = match self.sdf_source(name) {
+                    // An SDF part (or its mirror) is queried on its own field
+                    // (blended children left out), so anchoring on it needs no mesh.
+                    Some(_) => {
+                        let items = self.items(name)?;
+                        let sdf = Sdf::new((*items).clone()).map_err(|e| err(&format!("{path}/sdf"), e.to_string()))?;
+                        Surface::of_sdf(Arc::new(sdf), Affine3A::IDENTITY)
+                    }
+                    _ => {
+                        let b = self.mesh(name)?;
+                        Surface::of_mesh(&b.mesh, Affine3A::IDENTITY).ok_or_else(|| err(&path, "the part has no faces to anchor on"))?
+                    }
+                };
+                self.bases.insert(name.to_owned(), b.clone());
+                b
             }
         };
-        let s = Arc::new(s);
+        let s = Arc::new(base.placed(place));
         self.surfaces.insert(name.to_owned(), Arc::clone(&s));
         Ok(s)
     }
@@ -782,6 +800,232 @@ impl<'a> Compiler<'a> {
     }
 }
 
+/// Gauss-Seidel rounds of the constraint solver.
+const SOLVER_ROUNDS: usize = 32;
+/// A constraint is met within this distance (meters).
+const SOLVER_TOLERANCE: f32 = 1e-4;
+/// Samples per part when measuring gaps between parts.
+const GAP_SAMPLES: usize = 96;
+
+/// What one constraint asks for this round.
+enum Correction {
+    Move(Vec<(String, Vec3)>),
+    Scale(String, f32),
+}
+
+impl Compiler<'_> {
+    /// Forgets placements so the next queries see the latest moves.
+    fn replace(&mut self) {
+        self.trs.clear();
+        self.surfaces.clear();
+        self.anchors.clear();
+    }
+
+    /// A `part.landmark` reference.
+    fn landmark_ref(&mut self, r: &str, path: &str) -> Result<(String, Hit), OpError> {
+        let (part, mark) = crate::constraints::split_landmark(r).ok_or_else(|| err(path, format!("`{r}` is not part.landmark")))?;
+        self.part(part, path)?;
+        let hit = self.landmark(part, mark, path, 0)?;
+        Ok((part.to_owned(), hit))
+    }
+
+    fn point_ref(&mut self, r: &crate::constraints::PointRef, path: &str) -> Result<Vec3, OpError> {
+        match r {
+            crate::constraints::PointRef::At(p) => Ok(v3(p)),
+            crate::constraints::PointRef::Landmark(l) => Ok(self.landmark_ref(l, path)?.1.point),
+        }
+    }
+
+    /// Smallest gap from `a` to `b` (negative inside `b`) and the
+    /// direction that opens it, from samples of `a`.
+    fn gap(&mut self, a: &str, b: &str, path: &str) -> Result<(f32, Vec3), OpError> {
+        let (sa, sb) = (self.surface(a)?, self.surface(b)?);
+        let mut best: Option<(f32, Vec3)> = None;
+        for p in sa.samples(GAP_SAMPLES) {
+            let Some(h) = sb.nearest(p) else { continue };
+            let d = p - h.point;
+            let signed = if d.dot(h.normal) < 0.0 { -d.length() } else { d.length() };
+            if best.is_none_or(|(g, _)| signed < g) {
+                best = Some((signed, h.normal));
+            }
+        }
+        best.ok_or_else(|| err(path, format!("cannot measure the gap between `{a}` and `{b}`")))
+    }
+
+    fn movable(&self, name: &str, path: &str) -> Result<(), OpError> {
+        let part = self.part(name, path)?;
+        if let Some(src) = &part.mirror {
+            return Err(err(path, format!("`{name}` mirrors `{src}`: constrain `{src}` instead")));
+        }
+        Ok(())
+    }
+
+    fn extent(&mut self, r: &str, path: &str) -> Result<(String, f32), OpError> {
+        let (part, dim) =
+            crate::constraints::split_landmark(r).ok_or_else(|| err(path, format!("`{r}` is not part.height, .width, .depth or .length")))?;
+        let s = self.surface(part)?;
+        let (lo, hi) = s.root_bounds();
+        let size = hi - lo;
+        let v = match dim {
+            "width" => size.x,
+            "height" => size.y,
+            "depth" => size.z,
+            "length" => size.max_element(),
+            other => return Err(err(path, format!("`{other}` is not height, width, depth or length"))),
+        };
+        Ok((part.to_owned(), v))
+    }
+
+    /// The correction one constraint asks for at the current placements.
+    fn correction(&mut self, c: &crate::constraints::Constraint, path: &str) -> Result<Correction, OpError> {
+        use crate::constraints::{Constraint, CoordRef, Spacing};
+        Ok(match c {
+            Constraint::Align { a, b, axis, offset } => {
+                let (part, ha) = self.landmark_ref(a, &format!("{path}/a"))?;
+                self.movable(&part, &format!("{path}/a"))?;
+                let target = match b {
+                    CoordRef::Value(v) => v.0 as f32,
+                    CoordRef::Landmark(l) => self.landmark_ref(l, &format!("{path}/b"))?.1.point[axis.index()],
+                } + offset.0 as f32;
+                let mut v = Vec3::ZERO;
+                v[axis.index()] = target - ha.point[axis.index()];
+                Correction::Move(vec![(part, v)])
+            }
+            Constraint::RestOn { part, on } => {
+                self.movable(part, &format!("{path}/part"))?;
+                let s = self.surface(part)?;
+                let low = s.extreme(Vec3::NEG_Y).ok_or_else(|| err(&format!("{path}/part"), "the part has no surface"))?;
+                let support = if on == "ground" {
+                    0.0
+                } else {
+                    self.part(on, &format!("{path}/on"))?;
+                    let t = self.surface(on)?;
+                    let (lo, hi) = s.root_bounds();
+                    let (tlo, thi) = t.root_bounds();
+                    let above = Vec3::new((lo.x + hi.x) * 0.5, thi.y + (thi - tlo).length() + 1.0, (lo.z + hi.z) * 0.5);
+                    match t.ray(above, Vec3::NEG_Y) {
+                        Some(h) => h.point.y,
+                        None => t.extreme(Vec3::Y).map_or(thi.y, |p| p.y),
+                    }
+                };
+                Correction::Move(vec![(part.clone(), Vec3::new(0.0, support - low.y, 0.0))])
+            }
+            Constraint::Symmetric { a, b, axis } => {
+                self.movable(b, &format!("{path}/b"))?;
+                let ta = self.placement(a)?.translation;
+                let tb = self.placement(b)?.translation;
+                Correction::Move(vec![(b.clone(), ta * reflection(*axis) - tb)])
+            }
+            Constraint::Distribute { parts, from, to, spacing } => {
+                if parts.len() < 2 {
+                    return Err(err(&format!("{path}/parts"), "distribute needs at least two parts"));
+                }
+                let p0 = self.point_ref(from, &format!("{path}/from"))?;
+                let p1 = self.point_ref(to, &format!("{path}/to"))?;
+                let n = parts.len();
+                let mut moves = Vec::with_capacity(n);
+                for (i, part) in parts.iter().enumerate() {
+                    self.movable(part, &format!("{path}/parts/{i}"))?;
+                    let mut t = i as f32 / (n - 1) as f32;
+                    if *spacing == Spacing::Varied && i > 0 && i + 1 < n {
+                        // A fixed rhythm (long, short, ...) of 15% of a step.
+                        t += if i % 2 == 1 { 0.15 } else { -0.15 } / (n - 1) as f32;
+                    }
+                    let at = self.placement(part)?.translation;
+                    moves.push((part.clone(), p0 + (p1 - p0) * t - at));
+                }
+                Correction::Move(moves)
+            }
+            Constraint::Clearance { a, b, min } => {
+                self.movable(a, &format!("{path}/a"))?;
+                let (g, n) = self.gap(a, b, path)?;
+                let need = min.0 as f32 - g;
+                Correction::Move(vec![(a.clone(), if need > 0.0 { n * need } else { Vec3::ZERO })])
+            }
+            Constraint::Attach { part, to, gap } => {
+                self.movable(part, &format!("{path}/part"))?;
+                let (g, n) = self.gap(part, to, path)?;
+                Correction::Move(vec![(part.clone(), n * (gap.0 as f32 - g))])
+            }
+            Constraint::Inside { part, container } => {
+                self.movable(part, &format!("{path}/part"))?;
+                let (lo, hi) = self.surface(part)?.root_bounds();
+                let (clo, chi) = self.surface(container)?.root_bounds();
+                let mut v = Vec3::ZERO;
+                for k in 0..3 {
+                    if hi[k] - lo[k] > chi[k] - clo[k] {
+                        // Too big to fit: center it.
+                        v[k] = (clo[k] + chi[k] - lo[k] - hi[k]) * 0.5;
+                    } else if lo[k] < clo[k] {
+                        v[k] = clo[k] - lo[k];
+                    } else if hi[k] > chi[k] {
+                        v[k] = chi[k] - hi[k];
+                    }
+                }
+                Correction::Move(vec![(part.clone(), v)])
+            }
+            Constraint::Offset { part, from, by } => {
+                self.movable(part, &format!("{path}/part"))?;
+                let (_, h) = self.landmark_ref(from, &format!("{path}/from"))?;
+                let at = self.placement(part)?.translation;
+                Correction::Move(vec![(part.clone(), h.point + v3(by) - at)])
+            }
+            Constraint::Proportion { a, b, ratio } => {
+                let (part, va) = self.extent(a, &format!("{path}/a"))?;
+                self.movable(&part, &format!("{path}/a"))?;
+                let (_, vb) = self.extent(b, &format!("{path}/b"))?;
+                if !(ratio.is_finite() && *ratio > 0.0) || va <= 0.0 {
+                    return Err(err(&format!("{path}/ratio"), "the ratio and both sizes must be positive"));
+                }
+                Correction::Scale(part, (*ratio as f32 * vb / va).clamp(0.01, 100.0))
+            }
+        })
+    }
+
+    /// Moves and scales parts until every constraint holds (or the rounds
+    /// run out; unmet constraints become warnings).
+    ///
+    /// Complexity: O(rounds x constraints x query cost); queries are surface
+    /// rays and nearest points (O(log n) each) or part extremes (O(n)).
+    fn solve(&mut self, constraints: &[crate::constraints::Constraint]) -> Result<(), OpError> {
+        if constraints.is_empty() {
+            return Ok(());
+        }
+        let mut residual = vec![0.0f32; constraints.len()];
+        for _ in 0..SOLVER_ROUNDS {
+            for (i, c) in constraints.iter().enumerate() {
+                let path = format!("/constraints/{i}");
+                match self.correction(c, &path)? {
+                    Correction::Move(moves) => {
+                        residual[i] = moves.iter().map(|(_, v)| v.length()).fold(0.0, f32::max);
+                        for (p, v) in moves {
+                            *self.moves.entry(p).or_insert(Vec3::ZERO) += v;
+                        }
+                    }
+                    Correction::Scale(p, f) => {
+                        residual[i] = (f - 1.0).abs();
+                        *self.scales.entry(p).or_insert(1.0) *= f;
+                    }
+                }
+                self.replace();
+            }
+            if residual.iter().all(|r| *r < SOLVER_TOLERANCE) {
+                return Ok(());
+            }
+        }
+        for (i, c) in constraints.iter().enumerate() {
+            if residual[i] >= 1e-3 {
+                self.warnings.push(format!(
+                    "constraint {i} {} is {} mm off: other constraints pull against it",
+                    c.label(),
+                    (residual[i] * 1000.0).round()
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 fn spec_err(e: crate::SpecError) -> OpError {
     err(&e.path, e.message)
 }
@@ -894,11 +1138,19 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
             trs: BTreeMap::new(),
             items: BTreeMap::new(),
             surfaces: BTreeMap::new(),
+            bases: BTreeMap::new(),
             built: BTreeMap::new(),
             anchors: BTreeMap::new(),
+            moves: BTreeMap::new(),
+            scales: BTreeMap::new(),
             active: Vec::new(),
             warnings: Vec::new(),
         };
+        for name in spec.parts.keys() {
+            c.placement(name)?;
+        }
+        c.solve(&spec.constraints)?;
+        // The solver leaves placements to recompute with its moves.
         for name in spec.parts.keys() {
             c.placement(name)?;
         }
@@ -1109,8 +1361,11 @@ fn query<'a>(doc: &'a Document, root: ObjectKey, spec: &'a ModelSpec, record: &'
         trs: BTreeMap::new(),
         items: BTreeMap::new(),
         surfaces: BTreeMap::new(),
+        bases: BTreeMap::new(),
         built: BTreeMap::new(),
         anchors: BTreeMap::new(),
+        moves: BTreeMap::new(),
+        scales: BTreeMap::new(),
         active: Vec::new(),
         warnings: Vec::new(),
     })

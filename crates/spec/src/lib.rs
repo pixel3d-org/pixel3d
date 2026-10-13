@@ -9,6 +9,7 @@ use p3d_ops::{Registry, Typed};
 
 pub mod brief;
 pub mod compile;
+pub mod constraints;
 pub mod landmarks;
 pub mod model;
 pub mod ops;
