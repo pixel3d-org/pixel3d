@@ -14,6 +14,7 @@ use p3d_mesh::{ElementKind, Mesh};
 use p3d_sdf::Item;
 use serde_json::Value;
 
+mod cable;
 mod ear;
 mod eye;
 mod hand;
@@ -243,6 +244,7 @@ pub fn library() -> Vec<Box<dyn Feature>> {
         Box::new(hard::Molding),
         Box::new(head::HeadBase),
         Box::new(hand::Hand),
+        Box::new(cable::Cable),
     ];
     v.sort_by_key(|f| f.info().id);
     v

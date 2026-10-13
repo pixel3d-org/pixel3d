@@ -130,7 +130,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "features",
-            description: "Feature templates (head bases, hands, ears, eyes, noses, horns, bolts, rivets, vents, panels, moldings) built from semantic parameters: list, search or describe one with its parameters and landmarks.",
+            description: "Feature templates (head bases, hands, ears, eyes, noses, horns, cables, bolts, rivets, vents, panels, moldings) built from semantic parameters: list, search or describe one with its parameters and landmarks.",
             schema: schema::<FeaturesArgs>(),
         },
         ToolInfo {

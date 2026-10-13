@@ -1255,11 +1255,11 @@ export type GenShellParams = {
   twist?: Angle;
 };
 
-/** `gen.feature`: Builds a feature template (head base, hand, ear, eye, nose, horn, bolt, rivet, vent grille, panel inset, molding) from semantic parameters. */
+/** `gen.feature`: Builds a feature template (head base, hand, ear, eye, nose, horn, cable, bolt, rivet, vent grille, panel inset, molding) from semantic parameters. */
 export type GenFeatureParams = {
   /** Voxel size for SDF features (`nose`); a 48th of the size when omitted. */
   detail?: Length | null;
-  /** The template: `head_base`, `hand`, `ear`, `eye`, `nose`, `horn`, `bolt`, `rivet`, `vent_grille`, `panel_inset` or `molding` (the `features` tool describes them). */
+  /** The template: `head_base`, `hand`, `ear`, `eye`, `nose`, `horn`, `cable`, `bolt`, `rivet`, `vent_grille`, `panel_inset` or `molding` (the `features` tool describes them). */
   feature: string;
   /** Object name; the feature's id is used when omitted. */
   name?: string | null;
