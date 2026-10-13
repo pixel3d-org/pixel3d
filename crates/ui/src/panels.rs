@@ -1,7 +1,7 @@
 //! Dock panel bodies: Outliner, Properties, History and Console.
 //! Panels read the session and act only through [`PixelApp::run`].
 
-use egui::{Align2, Sense, pos2, vec2};
+use egui::{Align2, RichText, Sense, pos2, vec2};
 use serde_json::Value;
 
 use crate::PixelApp;
@@ -15,6 +15,18 @@ const ROW: f32 = 22.0;
 /// entry undoes back to the state after it; redo brings later ones back.
 pub fn history(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
+    // Bisect: find the transaction that broke a test.
+    ui.horizontal(|ui| {
+        let open = app.bisect.open;
+        let b = ui.selectable_label(open, RichText::new(t("Bisect")).font(theme::small()));
+        crate::control::record_widget(ui, &b, t("Bisect"), "button", Some(open));
+        if b.on_hover_text(t("Find the change that made an expectation, a finding or a brief item fail")).clicked() {
+            app.bisect.open = !open;
+        }
+    });
+    if app.bisect.open {
+        crate::bisect::card(app, ui);
+    }
     let entries = app.session.history();
     let mut undo_to: Option<usize> = None;
     egui::ScrollArea::vertical().id_salt("history").auto_shrink([false, false]).stick_to_bottom(true).show_rows(

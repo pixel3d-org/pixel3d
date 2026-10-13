@@ -9,6 +9,7 @@
 //! data.
 
 pub mod actions;
+pub mod bisect;
 pub mod chrome;
 pub mod cmdline;
 pub mod commands;
@@ -300,6 +301,8 @@ pub struct PixelApp {
     pub outline: outline::OutlineEditor,
     /// The Handles tool (sculpting by numbers in the viewport).
     pub handles: handles::HandleTool,
+    /// The History panel's bisect card.
+    pub bisect: bisect::BisectState,
     /// The run card of a long op (remesh) and its background run.
     pub job_card: jobcard::JobCard,
     /// Poles of the shown meshes, for the pole overlay.
@@ -375,6 +378,7 @@ impl PixelApp {
             spec: spec::SpecEditor::default(),
             outline: outline::OutlineEditor::default(),
             handles: handles::HandleTool::default(),
+            bisect: bisect::BisectState::default(),
             job_card: jobcard::JobCard::default(),
             poles: poles::PoleCache::default(),
             coalesce: None,
@@ -873,6 +877,7 @@ impl PixelApp {
         self.spec = spec::SpecEditor::default();
         self.outline = outline::OutlineEditor::default();
         self.handles = handles::HandleTool::default();
+        self.bisect = bisect::BisectState::default();
         self.job_card = jobcard::JobCard::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
@@ -1028,6 +1033,12 @@ impl PixelApp {
             outline_cmd if outline_cmd.starts_with("outline.") => self.outline_command(outline_cmd, params),
             // The Handles tool: place, pin and pull points; its radius.
             handles_cmd if handles_cmd.starts_with("handles.") => self.handles_command(handles_cmd, params),
+            // Bisect the history for the change that broke a test; go back before it.
+            "history.bisect" | "history.jump" => self.bisect_command(id, params),
+            "history.bisect_card" => {
+                self.bisect.open = params.get("on").and_then(Value::as_bool).unwrap_or(!self.bisect.open);
+                Ok(json!({ "open": self.bisect.open }))
+            }
             // The Spec tab: starters, parts, the raw source, landmarks.
             "spec.starter" | "spec.select_part" | "spec.json" | "spec.pick_landmark" | "spec.set_landmark" | "landmarks.toggle"
             | "view.landmarks" => self.spec_command(id, params),
