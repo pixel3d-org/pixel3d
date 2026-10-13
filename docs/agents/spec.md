@@ -44,6 +44,8 @@ Optional keys:
 - `ray`: `{"from": "+x", "height": 0.15}`, the first hit from that side;
 - `nearest`: `[x, y, z]`, the closest surface point.
 
+A skeleton is a named set of joints (`"skeletons": {"rig": {"joints": {"knee": {"at": [0.1, 0.5, 0], "axis": [0, -1, 0], "parent": "hip"}}}}`; archetypes make them for you). Its name works like a part name and its joints are its landmarks: `{"on": "rig", "landmark": "knee"}` puts the part's origin on the joint, and `"orient": "normal"` turns the part into the joint's frame (+Y along `axis`, +X along `side`). Constraints reach joints as `rig.knee`. A part placed on a joint can still blend or weld into a part: `"into": "body"` names it (by default a blend merges into the part its anchor is on).
+
 Landmarks of every part: `top`, `bottom`, `front`, `back`, `left` (+X, the character's left), `right`, `center`, the names of its SDF shapes, and a feature part's own landmarks (an ear's `root`, `tip`, `lobe` and `rim_back`; mirrors reflect them). Category `humanoid_head` adds `crown`, `chin`, `forehead`, `nose_root`, `nose_base`, `mouth`, `eye_l/r`, `brow_l/r`, `cheek_l/r`, `jaw_l/r`, `ear_root_l/r`, `temple_l/r`, `hairline_front`, `nape` and `back_of_head`. Anchors re-resolve when the parent changes: lengthen the lamp's pole and the shade moves up without a rebuild.
 
 ## Sculpting by numbers

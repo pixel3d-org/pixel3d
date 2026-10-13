@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use p3d_ops::{Registry, Typed};
 
+pub mod archetype;
 pub mod brief;
 pub mod compile;
 pub mod constraints;
@@ -29,7 +30,9 @@ pub fn dna_of(doc: &p3d_scene::Document, root: p3d_scene::ObjectKey) -> Option<p
     let brief = doc.brief(spec.brief.as_deref()?)?;
     parse_brief(brief).ok()?.dna
 }
-pub use compile::{CompileReport, LandmarkPoint, PartReport, PartStatus, compile, face_provenance, fingerprint, part_landmarks};
+pub use compile::{
+    CompileReport, JointPoint, LandmarkPoint, PartReport, PartStatus, compile, face_provenance, fingerprint, part_landmarks, skeleton_joints,
+};
 pub use model::{ModelSpec, Part, parse};
 
 /// A problem in a spec, at a JSON pointer into it.

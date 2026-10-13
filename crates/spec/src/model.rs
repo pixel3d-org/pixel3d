@@ -33,6 +33,14 @@ pub struct ModelSpec {
     /// Seed of every random choice in the spec (noise, scatter).
     #[serde(default)]
     pub seed: u64,
+    /// Archetype instances (ADR 0016): each expands into a skeleton named
+    /// after it and generated parts when the spec is parsed.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub archetypes: BTreeMap<String, ArchetypeUse>,
+    /// Named skeletons: joints that parts anchor to like landmarks.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub skeletons: BTreeMap<String, Skeleton>,
+    #[serde(default)]
     pub parts: BTreeMap<String, Part>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub constraints: Vec<crate::constraints::Constraint>,
@@ -102,6 +110,11 @@ pub struct Part {
     /// How the part joins its anchor parent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub join: Option<Join>,
+    /// The part a `blend` or `weld` join merges into, when that is not the
+    /// part the anchor is on (a limb placed on a skeleton joint blends into
+    /// the torso).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub into: Option<String>,
     /// Fillet size of a `blend` join.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blend: Option<Length>,
@@ -122,6 +135,93 @@ pub struct Part {
     /// the spec's), or named surface coordinates of this part.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub landmarks: Option<Landmarks>,
+}
+
+/// A named skeleton (ADR 0016): joints with frames and curves through them.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Skeleton {
+    pub joints: BTreeMap<String, Joint>,
+    /// Named chains of joints, such as `spine` or `arm_l`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub curves: BTreeMap<String, Vec<String>>,
+}
+
+/// One joint: a point in the root's space and a frame.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Joint {
+    pub at: [Length; 3],
+    /// The joint's +Y (along the bone toward its child); up when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axis: Option<[f64; 3]>,
+    /// The joint's +X, made perpendicular to `axis`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub side: Option<[f64; 3]>,
+    /// The joint it hangs from.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+}
+
+impl Joint {
+    /// The joint's point and frame (+Y along `axis`, +X along `side`).
+    ///
+    /// Complexity: O(1).
+    pub fn frame(&self) -> (glam::Vec3, glam::Quat) {
+        use glam::Vec3;
+        let v = |a: [f64; 3]| Vec3::new(a[0] as f32, a[1] as f32, a[2] as f32);
+        let y = self.axis.map(v).and_then(Vec3::try_normalize).unwrap_or(Vec3::Y);
+        let x = self.side.map(v).and_then(|s| (s - y * s.dot(y)).try_normalize()).unwrap_or_else(|| {
+            // Keep +X as close to the root's +X as the axis allows.
+            (Vec3::X - y * y.x).try_normalize().unwrap_or_else(|| y.any_orthonormal_vector())
+        });
+        let z = x.cross(y);
+        let at = Vec3::new(self.at[0].0 as f32, self.at[1].0 as f32, self.at[2].0 as f32);
+        (at, glam::Quat::from_mat3(&glam::Mat3::from_cols(x, y, z)).normalize())
+    }
+}
+
+/// An archetype instance in a spec (ADR 0016).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ArchetypeUse {
+    /// The archetype: `human`, `elf`, `dwarf`, `orc`, `halfling`, `sword`,
+    /// `dagger`, `axe`, `hammer`, `spear`, `feathered_wings` or
+    /// `membrane_wings` (the `features` tool describes them).
+    pub kind: String,
+    /// Its parameters; defaults for the rest.
+    #[serde(default, skip_serializing_if = "Value::is_null")]
+    pub params: Value,
+    /// Joint edits: `{"elbow_r": {"by": [0, 0.05, 0]}}` moves a joint and
+    /// the joints below it; `at` sets its position.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub joints: BTreeMap<String, JointEdit>,
+    /// Another instance's joint (`dwarf.grip_r`) where this instance's root
+    /// joint goes, taking that joint's frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<String>,
+    /// Placement in the root's space when there is no `at`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<PartTransform>,
+    /// Put before every generated part name (`axe_`), so two instances can
+    /// share part names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prefix: Option<String>,
+    /// Generated parts to leave out.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub omit: Vec<String>,
+}
+
+/// A change to one generated joint.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JointEdit {
+    /// The new position in the instance's space.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<[Length; 3]>,
+    /// An offset, carried by every joint below it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<[Length; 3]>,
 }
 
 /// The part's landmark set.
@@ -388,13 +488,23 @@ impl Part {
     pub fn join(&self) -> Join {
         self.join.unwrap_or_default()
     }
+
+    /// The part a `blend` or `weld` join merges into: `into`, else the part
+    /// the anchor is on.
+    ///
+    /// Complexity: O(1).
+    pub fn merge_target(&self) -> Option<&str> {
+        self.into.as_deref().or_else(|| self.anchor.as_ref().and_then(|a| a.on.as_deref()))
+    }
 }
 
 /// Parses a spec, with errors at the JSON pointer of the offending value.
+/// Archetype instances are expanded first (ADR 0016).
 ///
-/// Complexity: O(size of the spec).
+/// Complexity: O(size of the expanded spec).
 pub fn parse(source: &Value) -> Result<ModelSpec, SpecError> {
-    let spec: ModelSpec = serde_path_to_error::deserialize(source).map_err(|e| {
+    let expanded = crate::archetype::expand(source)?;
+    let spec: ModelSpec = serde_path_to_error::deserialize(expanded.as_ref()).map_err(|e| {
         let path = pointer(&e.path().to_string());
         SpecError::new(&path, e.inner().to_string())
     })?;
@@ -407,6 +517,25 @@ pub fn parse(source: &Value) -> Result<ModelSpec, SpecError> {
     for name in spec.parts.keys() {
         p3d_scene::name::check_name(name)
             .map_err(|e| SpecError::new(&format!("/parts/{name}"), format!("`{name}` is not a valid part name: {e}")))?;
+    }
+    for (name, sk) in &spec.skeletons {
+        let path = format!("/skeletons/{name}");
+        p3d_scene::name::check_name(name).map_err(|e| SpecError::new(&path, format!("`{name}` is not a valid skeleton name: {e}")))?;
+        if spec.parts.contains_key(name) {
+            return Err(SpecError::new(&path, format!("`{name}` names both a skeleton and a part; rename one")));
+        }
+        for (j, joint) in &sk.joints {
+            if let Some(p) = &joint.parent
+                && !sk.joints.contains_key(p)
+            {
+                return Err(SpecError::new(&format!("{path}/joints/{j}/parent"), format!("`{name}` has no joint `{p}`")));
+            }
+        }
+        for (c, chain) in &sk.curves {
+            if let Some((i, j)) = chain.iter().enumerate().find(|(_, j)| !sk.joints.contains_key(*j)) {
+                return Err(SpecError::new(&format!("{path}/curves/{c}/{i}"), format!("`{name}` has no joint `{j}`")));
+            }
+        }
     }
     Ok(spec)
 }
