@@ -44,6 +44,9 @@ pub enum Input {
     Sections,
     /// `source` and `target`: each other selected mesh onto the active one.
     SourceOnActive,
+    /// `target` and `tool`: the active mesh, worked on with the other
+    /// selected meshes (booleans).
+    ToolsOnActive,
     /// `target` and `select`: the picked elements.
     Elements,
 }
@@ -60,10 +63,39 @@ pub struct Action {
     pub category: Category,
     pub icon: Icon,
     pub input: Input,
+    /// Parameters the action sets (a boolean's `operation`), or null.
+    pub preset: Value,
+    /// The order of an op's variants (difference, union, intersect).
+    pub variant: u8,
 }
+
+impl Action {
+    /// A key unique among the actions (the op and its variant).
+    pub fn key(&self) -> String {
+        if self.preset.is_null() { self.op.to_owned() } else { format!("{}#{}", self.op, self.variant) }
+    }
+}
+
+/// One value of a parameter offered as its own action: the value, label,
+/// icon and what it does.
+pub type Variant = (&'static str, &'static str, Icon, &'static str);
+
+/// Ops offered once per value of one parameter: the op, the parameter,
+/// and the values.
+type Variants = (&'static str, &'static str, &'static [Variant]);
+
+/// The boolean operations, as the menus, shortcuts and actions offer them.
+pub const BOOLEANS: &[Variant] = &[
+    ("difference", "Difference", Icon::BoolDifference, "Cut the other selected meshes out of the active one"),
+    ("union", "Union", Icon::BoolUnion, "Merge the other selected meshes into the active one"),
+    ("intersect", "Intersect", Icon::BoolIntersect, "Keep only where the active mesh and the others overlap"),
+];
+
+const VARIANTS: &[Variants] = &[("edit.boolean", "operation", BOOLEANS)];
 
 /// Ops shown first, in this order, when they apply.
 const FIRST: &[&str] = &[
+    "edit.boolean",
     "edit.extrude",
     "edit.inset",
     "edit.bevel",
@@ -88,6 +120,8 @@ fn category_icon(c: Category) -> Icon {
         Category::Shade => Icon::ShadeSolid,
         Category::Subd => Icon::Subdivide,
         Category::Deform => Icon::Smooth,
+        Category::Cleanup => Icon::CleanUp,
+        Category::Io => Icon::Import,
         _ => Icon::Command,
     }
 }
@@ -124,6 +158,10 @@ fn op_icon(id: &str, c: Category) -> Icon {
         "gen.scatter" => Icon::Scatter,
         "gen.lathe" => Icon::Tube,
         "gen.extrude_shape" => Icon::Extrude,
+        "edit.boolean" => Icon::BoolDifference,
+        "cleanup.auto" => Icon::CleanUp,
+        "cleanup.report" => Icon::Report,
+        "io.import" => Icon::Import,
         _ => category_icon(c),
     }
 }
@@ -138,6 +176,8 @@ pub fn category_label(c: Category) -> &'static str {
         Category::Shade => "Shading",
         Category::Subd => "Subdivision",
         Category::Deform => "Deform",
+        Category::Cleanup => "Clean up",
+        Category::Io => "File",
         _ => "Other",
     }
 }
@@ -149,6 +189,8 @@ pub fn selection_hint(app: &PixelApp, op: &str) -> String {
     let needs = required(&schema);
     let what = if needs.contains(&"source") {
         "select the meshes to place and, last, the mesh to place them on"
+    } else if needs.contains(&"tool") {
+        "select the meshes to work with and, last, the mesh that keeps the result"
     } else if needs.contains(&"sections") {
         "select two curves or more"
     } else if needs.contains(&"path") || o.meta().category == Category::Curve {
@@ -209,6 +251,8 @@ pub fn for_context(app: &PixelApp) -> Vec<Action> {
             Some(Input::Sections)
         } else if mesh_pair && needs.len() == 2 && only(&["source", "target"]) {
             Some(Input::SourceOnActive)
+        } else if mesh_pair && needs.contains(&"tool") && only(&["target", "tool"]) {
+            Some(Input::ToolsOnActive)
         } else if has("target") && only(&["target"]) && !needs.contains(&"select") {
             let curve_op = meta.category == Category::Curve;
             // Generators that make new objects need more than a target.
@@ -217,19 +261,41 @@ pub fn for_context(app: &PixelApp) -> Vec<Action> {
         } else {
             None
         };
-        if let Some(input) = input {
-            out.push(Action {
-                op: op.id(),
-                label: meta.label.to_owned(),
-                summary: meta.summary.to_owned(),
-                category: meta.category,
-                icon: op_icon(op.id(), meta.category),
-                input,
-            });
+        let Some(input) = input else { continue };
+        let base = Action {
+            op: op.id(),
+            label: meta.label.to_owned(),
+            summary: meta.summary.to_owned(),
+            category: meta.category,
+            icon: op_icon(op.id(), meta.category),
+            input,
+            preset: Value::Null,
+            variant: 0,
+        };
+        match VARIANTS.iter().find(|(id, _, _)| *id == op.id()) {
+            Some((_, param, values)) => {
+                for (i, (value, label, icon, desc)) in values.iter().enumerate() {
+                    out.push(Action {
+                        label: crate::i18n::t(label).to_owned(),
+                        summary: crate::i18n::t(desc).to_owned(),
+                        icon: *icon,
+                        preset: json!({ *param: value }),
+                        variant: u8::try_from(i).unwrap_or(u8::MAX),
+                        ..base.clone()
+                    });
+                }
+            }
+            None => out.push(base),
         }
     }
     let rank = |a: &Action| FIRST.iter().position(|f| *f == a.op).unwrap_or(FIRST.len());
-    out.sort_by(|a, b| rank(a).cmp(&rank(b)).then(category_label(a.category).cmp(category_label(b.category))).then(a.label.cmp(&b.label)));
+    out.sort_by(|a, b| {
+        rank(a)
+            .cmp(&rank(b))
+            .then(category_label(a.category).cmp(category_label(b.category)))
+            .then(a.variant.cmp(&b.variant))
+            .then(a.label.cmp(&b.label))
+    });
     out
 }
 
@@ -281,6 +347,7 @@ pub fn calls(app: &PixelApp, a: &Action) -> Result<Vec<OpCall>, String> {
                 .collect();
             if calls.is_empty() { Err(crate::i18n::t("select another mesh besides the active one").to_owned()) } else { Ok(calls) }
         }
+        Input::ToolsOnActive => app.tools_on_active_call(a.op, &a.preset).map(|(_, c)| vec![c]),
         Input::Elements => {
             let select = app.element_op_state(a.op)?.ok_or_else(|| crate::i18n::t("Select vertices, edges or faces first.").to_owned())?;
             let id = app.edit.object.and_then(|k| doc.object(k)).map(|o| o.public_id()).ok_or(crate::i18n::t("nothing to edit"))?;
@@ -294,6 +361,9 @@ pub fn run(app: &mut PixelApp, a: &Action) -> Result<Value, String> {
     app.action_preview.clear();
     if a.input == Input::Elements {
         return app.run_element_op(a.op);
+    }
+    if a.input == Input::ToolsOnActive {
+        return app.run_tools_on_active(a.op, &a.preset);
     }
     let calls = calls(app, a)?;
     app.execute(&calls)
@@ -330,10 +400,11 @@ pub fn hover(app: &mut PixelApp, hovered: Option<&Action>, ctx: &egui::Context) 
         return;
     };
     let revision = app.session.revision();
-    let same = app.action_preview.hovered.as_ref().is_some_and(|(op, _, r)| op == a.op && *r == revision);
+    let key = a.key();
+    let same = app.action_preview.hovered.as_ref().is_some_and(|(k, _, r)| *k == key && *r == revision);
     if !same {
         app.action_preview.clear();
-        app.action_preview.hovered = Some((a.op.to_owned(), Instant::now(), revision));
+        app.action_preview.hovered = Some((key, Instant::now(), revision));
     }
     if let Some(rx) = &app.action_preview.running {
         match rx.try_recv() {
@@ -452,6 +523,26 @@ mod tests {
         let before = app.doc().object_count();
         run(&mut app, &loft).unwrap();
         assert_eq!(app.doc().object_count(), before + 1);
+    }
+
+    #[test]
+    fn two_meshes_offer_the_booleans_first() {
+        let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        app.run("prim.box", json!({ "name": "crate" })).unwrap();
+        assert!(!for_context(&app).iter().any(|a| a.op == "edit.boolean"), "one mesh: no boolean");
+        app.run("prim.box", json!({ "name": "lid", "position": [0, 0.5, 0] })).unwrap();
+        let (c, l) = (app.doc().resolve("crate").unwrap(), app.doc().resolve("lid").unwrap());
+        app.selection = [c, l].into_iter().collect();
+        app.active = Some(c);
+        let acts = for_context(&app);
+        let first: Vec<(&str, &str)> = acts.iter().take(3).map(|a| (a.op, a.label.as_str())).collect();
+        assert_eq!(first, [("edit.boolean", "Difference"), ("edit.boolean", "Union"), ("edit.boolean", "Intersect")]);
+        let union = acts[1].clone();
+        assert_eq!((union.input.clone(), union.key()), (Input::ToolsOnActive, "edit.boolean#1".to_owned()));
+        assert_eq!(calls(&app, &union).unwrap()[0].args, json!({ "operation": "union", "target": "o:1", "tool": ["o:2"] }));
+        run(&mut app, &union).unwrap();
+        assert_eq!(app.doc().object_count(), 1);
+        assert_eq!(app.selection, [c].into_iter().collect());
     }
 
     #[test]

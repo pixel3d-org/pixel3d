@@ -55,8 +55,16 @@ fn app_aliases(label: &str) -> &'static [&'static str] {
         "Reset panel layout" => &["reset layout", "default layout"],
         "Fill holes" => &["fill", "close holes"],
         "Apply transform" => &["apply all transforms", "freeze transformations", "reset xform", "ctrl a"],
+        "Difference" => &["boolean difference", "subtract", "cut", "carve", "bool tool", "ctrl minus", "polycbooldifference"],
+        "Union" => &["boolean union", "merge meshes", "combine", "bool tool", "ctrl plus", "polycboolunion"],
+        "Intersect" => &["boolean intersect", "intersection", "overlap", "bool tool", "ctrl asterisk", "polycboolintersection"],
         _ => &[],
     }
+}
+
+/// What app commands do, by label, for those whose label alone may not say.
+fn app_desc(label: &str) -> &'static str {
+    crate::actions::BOOLEANS.iter().find(|(_, l, _, _)| *l == label).map_or("", |(_, _, _, d)| d)
 }
 
 /// App commands that are not in the menus: tools and selection modes.
@@ -131,7 +139,7 @@ pub fn index(app: &PixelApp) -> Vec<Command> {
             }
             // An op behind a menu entry lends it its summary and aliases.
             let meta = app.session.registry().get(it.command).ok().map(|op| op.meta());
-            let desc = meta.as_ref().map(|m| m.summary.to_owned()).unwrap_or_default();
+            let desc = meta.as_ref().map_or_else(|| t(app_desc(it.label)).to_owned(), |m| m.summary.to_owned());
             let op_aliases = meta.as_ref().map_or(&[][..], |m| m.aliases);
             out.push(Command {
                 id: it.command,
@@ -152,7 +160,12 @@ pub fn index(app: &PixelApp) -> Vec<Command> {
             continue;
         }
         let meta = op.meta();
-        let on_selection = op.params_schema().pointer("/properties/target").is_some();
+        // Ops that need only a target run on each selected object; ops that
+        // need more (a boolean's tools) take it from the selection their own way.
+        let schema = op.params_schema();
+        let required: Vec<&str> =
+            schema.get("required").and_then(Value::as_array).map(|r| r.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        let on_selection = schema.pointer("/properties/target").is_some() && required.iter().all(|r| *r == "target");
         out.push(Command {
             id: op.id(),
             params: null,

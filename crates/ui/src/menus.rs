@@ -9,6 +9,9 @@ use serde_json::{Value, json};
 use crate::PixelApp;
 use crate::icons::Icon;
 
+/// Whether an item can run now, or why not.
+pub type Ready = fn(&PixelApp) -> Result<(), String>;
+
 /// One menu item. An item without a command is a section header.
 #[derive(Clone, Copy)]
 pub struct MenuItem {
@@ -19,6 +22,8 @@ pub struct MenuItem {
     pub icon: Option<Icon>,
     /// Whether the item shows a check mark (toggles and choices).
     pub checked: Option<fn(&PixelApp) -> bool>,
+    /// Whether the item can run now, or why not (shown on hover).
+    pub enabled: Option<Ready>,
 }
 
 impl MenuItem {
@@ -43,7 +48,32 @@ const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
 }
 
 fn entry(label: &'static str, command: &'static str, params: fn() -> Value, shortcut: Option<KeyboardShortcut>) -> MenuItem {
-    MenuItem { label, command, params, shortcut, icon: None, checked: None }
+    MenuItem { label, command, params, shortcut, icon: None, checked: None, enabled: None }
+}
+
+/// Cmd+* (Ctrl+* off macOS) as egui sees it: `*` is Shift+8 on most
+/// keyboards and egui has no key of its own for it.
+pub const ASTERISK: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Num8);
+
+/// A shortcut as menus and the palette write it, with Cmd+Shift+8 as
+/// `Ctrl+*` (`Cmd*` on macOS).
+pub fn shortcut_text(ctx: &egui::Context, s: &KeyboardShortcut) -> String {
+    if *s == ASTERISK {
+        let mut text = ctx.format_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Num8));
+        text.pop();
+        text.push('*');
+        return text;
+    }
+    ctx.format_shortcut(s)
+}
+
+/// Whether a boolean can run on the selection, or why not.
+fn boolean_ready(app: &PixelApp) -> Result<(), String> {
+    app.tools_on_active().map(|_| ())
+}
+
+fn when(state: Ready, it: Option<MenuItem>) -> Option<MenuItem> {
+    it.map(|it| MenuItem { enabled: Some(state), ..it })
 }
 
 fn item(label: &'static str, command: &'static str) -> Option<MenuItem> {
@@ -233,6 +263,23 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::Pipe, with("Pipe along curve", "selection.action", || json!({ "op": "gen.pipe" }))),
                 icon(Icon::Loft, with("Loft through curves", "selection.action", || json!({ "op": "gen.loft" }))),
                 None,
+                header("Boolean"),
+                when(
+                    boolean_ready,
+                    icon(
+                        Icon::BoolDifference,
+                        Some(entry("Difference", "selection.boolean", || json!({ "operation": "difference" }), key(cmd, Key::Minus))),
+                    ),
+                ),
+                when(
+                    boolean_ready,
+                    icon(Icon::BoolUnion, Some(entry("Union", "selection.boolean", || json!({ "operation": "union" }), key(cmd, Key::Plus)))),
+                ),
+                when(
+                    boolean_ready,
+                    icon(Icon::BoolIntersect, Some(entry("Intersect", "selection.boolean", || json!({ "operation": "intersect" }), Some(ASTERISK)))),
+                ),
+                None,
                 icon(Icon::Trash, keyed("Delete", "edit.delete", key(Modifiers::NONE, Key::Delete))),
             ],
         },
@@ -272,6 +319,30 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn boolean_items_say_why_they_cannot_run() {
+        let mut app = crate::PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        let object = menus().into_iter().find(|m| m.label == "Object").unwrap();
+        let booleans: Vec<MenuItem> = object.entries.into_iter().flatten().filter(|it| it.command == "selection.boolean").collect();
+        assert_eq!(booleans.iter().map(|it| it.label).collect::<Vec<_>>(), ["Difference", "Union", "Intersect"]);
+        let state = |app: &crate::PixelApp| booleans.iter().map(|it| (it.enabled.unwrap())(app)).collect::<Vec<_>>();
+        app.run("prim.box", serde_json::json!({ "name": "crate" })).unwrap();
+        assert!(state(&app).iter().all(|s| s.as_ref().is_err_and(|e| e.contains("two or more meshes"))));
+        app.run("prim.box", serde_json::json!({ "name": "lid", "position": [0, 0.5, 0] })).unwrap();
+        app.run("edit.select_all", Value::Null).unwrap();
+        assert!(state(&app).iter().all(Result::is_ok));
+        app.run("ui.mode", serde_json::json!({ "mode": "face" })).unwrap();
+        assert!(state(&app).iter().all(|s| s.as_ref().is_err_and(|e| e.contains("Object Mode"))));
+        // Cmd+* is written as such.
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let minus = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
+            assert!(shortcut_text(ui.ctx(), &ASTERISK).ends_with('*'));
+            assert_eq!(shortcut_text(ui.ctx(), &minus), ui.ctx().format_shortcut(&minus));
+        });
+        out.textures_delta.clear();
     }
 
     #[test]

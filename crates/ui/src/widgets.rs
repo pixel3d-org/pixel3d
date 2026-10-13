@@ -318,7 +318,9 @@ pub fn menu_row(
 ) -> egui::Response {
     let tk = Tokens::get();
     let (rect, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
-    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.08);
+    // A row that cannot run now is dimmed and does not light up.
+    let enabled = ui.is_enabled();
+    let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), enabled && resp.hovered(), 0.08);
     let checked = on == Some(true);
     let p = ui.painter();
     if hot > 0.0 {
@@ -328,12 +330,18 @@ pub fn menu_row(
     if icon_column {
         if let Some(icon) = icon {
             let ir = Rect::from_center_size(pos2(x + 8.0, rect.center().y), vec2(16.0, 16.0));
-            let color = if checked { tk.icon_accent } else { mix(tk.icon, tk.text, hot) };
+            let color = if !enabled {
+                tk.text_faint
+            } else if checked {
+                tk.icon_accent
+            } else {
+                mix(tk.icon, tk.text, hot)
+            };
             crate::icons::paint_colored(p, ir, icon, color, tk.accent);
         }
         x += 28.0;
     }
-    p.text(pos2(x, rect.center().y), Align2::LEFT_CENTER, label, theme::body(), tk.text);
+    p.text(pos2(x, rect.center().y), Align2::LEFT_CENTER, label, theme::body(), if enabled { tk.text } else { tk.text_faint });
     let mut right = rect.right() - 10.0;
     if checked {
         let c = pos2(right - 5.0, rect.center().y);

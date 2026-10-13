@@ -371,11 +371,17 @@ fn menu_body(app: &PixelApp, ui: &mut egui::Ui, menu: &crate::menus::Menu) -> Op
     clicked
 }
 
-/// One dropdown row: icon, label, shortcut and a check mark when on.
+/// One dropdown row: icon, label, shortcut and a check mark when on. An
+/// item that cannot run now is dimmed and says why on hover.
 fn menu_item(ui: &mut egui::Ui, app: &PixelApp, it: &crate::menus::MenuItem, icon_column: bool) -> egui::Response {
     let on = it.checked.map(|f| f(app));
-    let keys = it.shortcut.as_ref().map(|s| ui.ctx().format_shortcut(s));
-    crate::widgets::menu_row(ui, it.icon, t(it.label), keys.as_deref(), on, icon_column)
+    let keys = it.shortcut.as_ref().map(|s| crate::menus::shortcut_text(ui.ctx(), s));
+    let state = it.enabled.map_or(Ok(()), |f| f(app));
+    let resp = ui.add_enabled_ui(state.is_ok(), |ui| crate::widgets::menu_row(ui, it.icon, t(it.label), keys.as_deref(), on, icon_column)).inner;
+    match state {
+        Err(why) => resp.on_disabled_hover_text(why),
+        Ok(()) => resp,
+    }
 }
 
 /// Size of a button in a segmented group, and the group's inner padding.
@@ -689,6 +695,7 @@ fn mode_menu(app: &PixelApp, ui: &mut egui::Ui, left: f32, cy: f32) -> (f32, Opt
                 shortcut: None,
                 icon: Some(Icon::ModeObject),
                 checked: Some(|a| !a.ui.mode.is_edit()),
+                enabled: None,
             },
             crate::menus::MenuItem {
                 label: "Edit Mode",
@@ -697,6 +704,7 @@ fn mode_menu(app: &PixelApp, ui: &mut egui::Ui, left: f32, cy: f32) -> (f32, Opt
                 shortcut: Some(KeyboardShortcut::new(Modifiers::NONE, Key::Tab)),
                 icon: Some(Icon::ModeVert),
                 checked: Some(|a| a.ui.mode.is_edit()),
+                enabled: None,
             },
         ];
         for it in &entries {
@@ -1036,6 +1044,13 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(Modifiers::NONE, Key::O), "ui.transform", || json!({ "proportional": "toggle" })),
         (KeyboardShortcut::new(cmd, Key::K), "ui.palette", || Value::Null),
         (KeyboardShortcut::new(Modifiers::NONE, Key::F3), "ui.palette", || Value::Null),
+        // Booleans on the selection (Blender's Bool Tool keys; the numpad
+        // keys arrive as the same keys). They take Cmd+Minus and Cmd+Plus
+        // from egui's interface zoom.
+        (crate::menus::ASTERISK, "selection.boolean", || json!({ "operation": "intersect" })),
+        (KeyboardShortcut::new(cmd, Key::Minus), "selection.boolean", || json!({ "operation": "difference" })),
+        (KeyboardShortcut::new(cmd, Key::Plus), "selection.boolean", || json!({ "operation": "union" })),
+        (KeyboardShortcut::new(cmd, Key::Equals), "selection.boolean", || json!({ "operation": "union" })),
     ];
     // Edit Mode keys come first (E extrudes there, as in Blender).
     if app.ui.mode.is_edit() {

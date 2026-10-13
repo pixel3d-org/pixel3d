@@ -132,7 +132,7 @@ fn result_row(ui: &mut egui::Ui, c: &Command, selected: bool) -> egui::Response 
     let x = icon_box.right() + 12.0;
     let mut right = rect.right() - 12.0;
     if let Some(s) = &c.shortcut {
-        let g = p.layout_no_wrap(ui.ctx().format_shortcut(s), theme::small(), tk.text_faint);
+        let g = p.layout_no_wrap(crate::menus::shortcut_text(ui.ctx(), s), theme::small(), tk.text_faint);
         right -= g.size().x;
         p.galley(pos2(right, rect.center().y - g.size().y / 2.0), g, tk.text_faint);
         right -= 12.0;

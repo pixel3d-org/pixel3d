@@ -285,20 +285,39 @@ fn mesh_tab(app: &mut PixelApp, ui: &mut egui::Ui, key: ObjectKey) {
         }
         info(ui, t("UV layers"), m.uv_layer_count().to_string());
     });
+    // The group a boolean just cut stands out; clicking a group edits it.
+    let fresh = app.edit_focus.as_ref().filter(|(rev, k, _)| *rev == app.session.revision() && *k == key).map(|(_, _, n)| n.clone());
+    let mut pick: Option<String> = None;
     panel(ui, "groups", t("Groups"), true, |ui| {
         if m.group_count() == 0 {
             ui.label(RichText::new(t("No groups.")).color(tk.text_dim));
         }
         for (name, g) in m.groups() {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(g.kind().as_str()).font(theme::small()).color(tk.text_faint));
-                ui.add(egui::Label::new(name).truncate());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(chrome::thousands(g.count())).color(tk.text_dim));
-                });
-            });
+            let new = fresh.as_deref() == Some(name);
+            let bg = ui.painter().add(egui::Shape::Noop);
+            let row = ui
+                .horizontal(|ui| {
+                    ui.label(RichText::new(g.kind().as_str()).font(theme::small()).color(tk.text_faint));
+                    ui.add(egui::Label::new(RichText::new(name).color(if new { tk.icon_accent } else { tk.text })).truncate());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(chrome::thousands(g.count())).color(tk.text_dim));
+                    });
+                })
+                .response
+                .interact(egui::Sense::click());
+            if row.hovered() {
+                ui.painter().set(bg, egui::epaint::RectShape::filled(row.rect.expand(2.0), 4.0, tk.control));
+            }
+            crate::control::record_widget(ui, &row, &format!("{} {name}", t("Select group")), "listitem", Some(new));
+            let tip = if new { t("Made by the last operation. Click to select it in Edit Mode.") } else { t("Click to select it in Edit Mode.") };
+            if row.on_hover_text(tip).clicked() {
+                pick = Some(name.to_owned());
+            }
         }
     });
+    if let Some(name) = pick {
+        let _ = app.select_group(key, &name);
+    }
 }
 
 #[cfg(test)]

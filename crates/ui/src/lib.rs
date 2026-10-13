@@ -287,6 +287,9 @@ pub struct PixelApp {
     /// The revision of an edit still being dragged: the next change of the
     /// same drag replaces it, so one drag is one undo step.
     coalesce: Option<u64>,
+    /// A group to select when Edit Mode starts on its object (the faces a
+    /// boolean cut), while the document is still at that revision.
+    pub edit_focus: Option<(u64, ObjectKey, String)>,
     pub services: Services,
     /// The file the document was opened from or saved to.
     pub path: Option<PathBuf>,
@@ -349,6 +352,7 @@ impl PixelApp {
             result: None,
             jobs: Vec::new(),
             coalesce: None,
+            edit_focus: None,
             services,
             path: None,
             files: files::FileRoots::default(),
@@ -592,9 +596,10 @@ impl PixelApp {
     /// Switches between Object mode and the element modes. Edit mode needs
     /// an active mesh object.
     pub fn set_mode(&mut self, mode: SelectMode) -> Result<Value, String> {
+        let was_edit = self.ui.mode.is_edit();
         if mode.is_edit() {
             let mesh = self.active_object().is_some_and(|k| self.doc().object_mesh(k).is_some());
-            if !mesh && !self.ui.mode.is_edit() {
+            if !mesh && !was_edit {
                 return Err(t("Select a mesh object to edit it").to_owned());
             }
             self.ui.element_mode = mode;
@@ -609,8 +614,88 @@ impl PixelApp {
             let editing = self.active_object().or(self.edit.object);
             let mesh = editing.and_then(|k| doc.object(k)?.mesh_key()).and_then(|m| doc.mesh_arc(m));
             self.edit.sync(mesh.and(editing), mesh, mode);
+            // Right after a boolean, Edit Mode starts with the faces it cut.
+            if !was_edit
+                && let Some((revision, k, name)) = self.edit_focus.take()
+                && revision == self.session.revision()
+                && editing == Some(k)
+            {
+                return self.select_group(k, &name);
+            }
         }
         Ok(json!({ "mode": mode }))
+    }
+
+    /// Edits object `k` with its group `name` selected, in the group's
+    /// element mode (faces, edges or vertices).
+    ///
+    /// Complexity: O(g log g) for a group of g elements, plus a mode change.
+    pub fn select_group(&mut self, k: ObjectKey, name: &str) -> Result<Value, String> {
+        let doc = std::sync::Arc::clone(self.session.doc());
+        let mesh = doc.object(k).and_then(|o| o.mesh_key()).and_then(|m| doc.mesh_arc(m)).cloned().ok_or(t("not a mesh object"))?;
+        let g = mesh.group(name).ok_or_else(|| format!("{} `{name}`", t("no group")))?;
+        let mode = match g.kind() {
+            p3d_mesh::ElementKind::Face => SelectMode::Face,
+            p3d_mesh::ElementKind::Edge => SelectMode::Edge,
+            p3d_mesh::ElementKind::Vert => SelectMode::Vert,
+        };
+        let ids: Vec<u32> = g.iter().collect();
+        let count = ids.len();
+        self.selection = [k].into_iter().collect();
+        self.active = Some(k);
+        self.ui.mode = mode;
+        self.ui.element_mode = mode;
+        if self.ui.tool == Tool::Knife {
+            self.ui.tool = Tool::Select;
+        }
+        self.edit.sync(Some(k), Some(&mesh), mode);
+        self.edit.apply_box(ids, mode, elements::BoxOp::Set);
+        self.set_status(format!("{} {name}: {count} {}", t("Selected"), t("elements")));
+        Ok(json!({ "mode": mode, "group": name, "elements": count }))
+    }
+
+    /// The target (the active mesh) and the tools (the other selected
+    /// meshes) of an op that combines objects, such as a boolean, or why
+    /// the selection does not give them.
+    ///
+    /// Complexity: O(selected objects).
+    pub fn tools_on_active(&self) -> Result<(ObjectKey, Vec<ObjectKey>), String> {
+        if self.ui.mode.is_edit() {
+            return Err(t("Works on whole objects: switch to Object Mode (Tab).").to_owned());
+        }
+        let doc = self.doc();
+        let is_mesh = |k: &ObjectKey| doc.object(*k).is_some_and(|o| o.mesh_key().is_some());
+        if self.selection.iter().filter(|k| is_mesh(k)).count() < 2 {
+            return Err(t("Select two or more meshes: the active one (selected last) keeps the result, the others act on it.").to_owned());
+        }
+        let target = self.active_object().filter(is_mesh).ok_or(t("Make a mesh active (click it last): it keeps the result."))?;
+        let tools = self.selection.iter().copied().filter(|k| *k != target && is_mesh(k)).collect();
+        Ok((target, tools))
+    }
+
+    /// The call of an op that takes the active mesh as its `target` and the
+    /// other selected meshes as its `tool`, with `preset` parameters.
+    ///
+    /// Complexity: O(selected objects).
+    pub fn tools_on_active_call(&self, op: &str, preset: &Value) -> Result<(ObjectKey, OpCall), String> {
+        let (target, tools) = self.tools_on_active()?;
+        let doc = self.doc();
+        let id = |k: ObjectKey| doc.object(k).map(|o| o.public_id());
+        let mut args = preset.as_object().cloned().unwrap_or_default();
+        args.insert("target".into(), json!(id(target)));
+        args.insert("tool".into(), json!(tools.into_iter().filter_map(id).collect::<Vec<_>>()));
+        Ok((target, OpCall::new(op, Value::Object(args))))
+    }
+
+    /// Runs an op on the active mesh with the other selected meshes as its
+    /// tools, as Blender's booleans do (one undo step). The target stays
+    /// selected; entering Edit Mode next selects the faces a cut made.
+    pub fn run_tools_on_active(&mut self, op: &str, preset: &Value) -> Result<Value, String> {
+        let (target, call) = self.tools_on_active_call(op, preset)?;
+        let r = self.execute(&[call])?;
+        self.selection = [target].into_iter().collect();
+        self.active = Some(target);
+        Ok(r)
     }
 
     /// The contextual actions for the current selection and mode, generated
@@ -1030,6 +1115,17 @@ impl PixelApp {
                     None => Err(actions::selection_hint(self, &op)),
                 }
             }
+            // A boolean on the selection: the active mesh is the target, the
+            // other selected meshes are the tools (`operation`: difference,
+            // union or intersect; also `keep_tool` and `weld`).
+            "selection.boolean" => self.run_tools_on_active("edit.boolean", params),
+            "edit.boolean" if params.get("target").is_none() => self.run_tools_on_active("edit.boolean", params),
+            "edit.select_group" => {
+                let target = str_param("target").ok_or("target is required: the mesh object")?;
+                let group = str_param("group").ok_or("group is required: a group name, for example boolean_1.cut")?;
+                let k = self.doc().resolve(&target).map_err(|e| e.to_string())?;
+                self.select_group(k, &group)
+            }
             "view.modal" => {
                 // G, R, S: a transform that follows the pointer until a click.
                 let kind = match params.get("kind").and_then(Value::as_str) {
@@ -1182,6 +1278,7 @@ impl PixelApp {
                 self.active = created.first().copied();
                 self.selection = created.into_iter().collect();
             }
+            self.note_cut_group(r);
         }
         self.result = Some(result);
         self.ui.start_page = false;
@@ -1191,6 +1288,15 @@ impl PixelApp {
             out["warnings"] = json!(all);
         }
         out
+    }
+
+    /// Remembers the faces a cut made (a group named `*.cut`, as booleans
+    /// make), so Edit Mode can start with them selected.
+    ///
+    /// Complexity: O(groups the batch made).
+    fn note_cut_group(&mut self, r: &p3d_engine::BatchResult) {
+        self.edit_focus =
+            r.results.iter().flat_map(|x| &x.output.groups).find(|g| g.name.ends_with(".cut")).map(|g| (r.revision, g.object, g.name.clone()));
     }
 
     /// Starts op calls in the background as one transaction (imports, which
@@ -1290,6 +1396,7 @@ impl PixelApp {
                     self.last_op = Some(LastOp { op: last.op, params: one.params.clone(), revision: r.revision, error: None });
                 }
                 self.result = Some(results::LastResult::from_batch(&r, self.session.registry()));
+                self.note_cut_group(&r);
                 self.prune_selection();
                 Ok(())
             }
@@ -1838,6 +1945,79 @@ mod tests {
         assert_eq!(a.doc().object_count(), 2);
         for d in [dir, other] {
             let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    /// A box with a thin cylinder through it; the cylinder is selected
+    /// first, the box last (active).
+    fn crate_and_drill() -> (PixelApp, ObjectKey, ObjectKey) {
+        let mut a = app();
+        a.run("prim.box", json!({ "name": "crate" })).unwrap();
+        a.run("prim.cylinder", json!({ "name": "drill", "radius": 0.2, "height": 2.0 })).unwrap();
+        let (c, d) = (a.doc().resolve("crate").unwrap(), a.doc().resolve("drill").unwrap());
+        a.selection = [c, d].into_iter().collect();
+        a.active = Some(c);
+        (a, c, d)
+    }
+
+    #[test]
+    fn booleans_cut_the_active_mesh_with_the_other_selected_ones() {
+        let (mut a, c, d) = crate_and_drill();
+        a.selection = [d].into_iter().collect();
+        let refused = a.run("selection.boolean", json!({ "operation": "difference" })).unwrap_err();
+        assert!(refused.contains("two or more meshes"), "{refused}");
+        a.selection = [c, d].into_iter().collect();
+        a.active = Some(c);
+        let steps = a.session.history().len();
+        a.run("selection.boolean", json!({ "operation": "difference" })).unwrap();
+        assert_eq!((a.doc().object_count(), a.session.history().len()), (1, steps + 1), "the drill is used up, one undo step");
+        assert_eq!(a.selection, [c].into_iter().collect(), "the crate stays selected");
+        // Adjust Last Operation: keep the drill; still one undo step.
+        let mut params = a.last_op.as_ref().map(|l| l.params.clone()).unwrap();
+        assert_eq!(a.last_op.as_ref().map(|l| l.op.as_str()), Some("edit.boolean"));
+        params["keep_tool"] = json!(true);
+        quick::adjust(&mut a, params).unwrap();
+        assert_eq!((a.doc().object_count(), a.session.history().len()), (2, steps + 1));
+        // Tab: Edit Mode starts with the faces the cut made.
+        a.run("ui.edit", Value::Null).unwrap();
+        assert_eq!(a.ui.mode, SelectMode::Face);
+        let mesh = a.doc().object_mesh(c).unwrap();
+        let (name, cut) = mesh.groups().find(|(n, _)| n.ends_with(".cut")).map(|(n, g)| (n.to_owned(), g.iter().collect::<BTreeSet<u32>>())).unwrap();
+        assert!(!cut.is_empty());
+        assert_eq!(a.edit.picked(), (&cut, Some(SelectMode::Face)));
+        // The group can be picked again by name (the Properties group list).
+        a.run("ui.mode", json!({ "mode": "object" })).unwrap();
+        a.run("edit.select_group", json!({ "target": "crate", "group": name })).unwrap();
+        assert_eq!(a.edit.picked().0, &cut);
+        // Without a target the op itself takes the selection too (palette, command line).
+        a.run("ui.mode", json!({ "mode": "object" })).unwrap();
+        a.selection = [c, d].into_iter().collect();
+        a.active = Some(c);
+        a.run("edit.boolean", json!({ "operation": "union" })).unwrap();
+        assert_eq!(a.doc().object_count(), 1);
+    }
+
+    #[test]
+    fn boolean_keys_run_on_the_selection() {
+        let ctx = egui::Context::default();
+        let press = |a: &mut PixelApp, key: egui::Key, modifiers: egui::Modifiers| {
+            let ev = egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+            ctx.begin_pass(egui::RawInput { events: vec![ev], ..Default::default() });
+            chrome::shortcuts(a, &ctx);
+            ctx.end_pass().textures_delta.clear();
+        };
+        let cmd = egui::Modifiers::COMMAND;
+        for (key, modifiers, op) in [
+            (egui::Key::Minus, cmd, "difference"),
+            (egui::Key::Plus, cmd, "union"),
+            (egui::Key::Equals, cmd, "union"),
+            (egui::Key::Num8, cmd | egui::Modifiers::SHIFT, "intersect"),
+        ] {
+            let (mut a, _, _) = crate_and_drill();
+            press(&mut a, key, modifiers);
+            let ran = a.last_op.as_ref().map(|l| (l.op.clone(), l.params["operation"].clone()));
+            assert_eq!(ran, Some(("edit.boolean".to_owned(), json!(op))), "{key:?}");
+            assert_eq!(a.doc().object_count(), 1);
         }
     }
 
