@@ -3362,6 +3362,19 @@ dependencies = [
 [[package]]
 name = "p3d-sdf"
 version = "0.1.0"
+dependencies = [
+ "criterion 0.8.2",
+ "glam",
+ "p3d-geo",
+ "p3d-mesh",
+ "p3d-testdata",
+ "proptest",
+ "rayon",
+ "rustc-hash 2.1.3",
+ "smallvec",
+ "thiserror 2.0.21",
+ "tracing",
+]
 
 [[package]]
 name = "p3d-spec"
