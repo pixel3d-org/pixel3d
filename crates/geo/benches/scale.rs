@@ -231,6 +231,28 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Rings of 64 points stacked up, 4 smooth rows between sections, capped.
+    let mut g = c.benchmark_group("scale_gen_loft");
+    for &t in &sizes {
+        let n = (t / 512).max(2);
+        let sections: Vec<Vec<glam::DVec3>> = (0..n)
+            .map(|i| {
+                let r = 0.5 + 0.1 * (i as f64 * 0.7).sin();
+                (0..64)
+                    .map(|k| {
+                        let a = std::f64::consts::TAU * k as f64 / 64.0;
+                        glam::DVec3::new(a.cos() * r, i as f64 * 0.1, -a.sin() * r)
+                    })
+                    .collect()
+            })
+            .collect();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &sections, |b, sections| {
+            let spec = p3d_geo::generate::LoftSpec { sections, sections_closed: true, points: 0, steps: 4, smooth: true, closed: false, caps: true };
+            b.iter(|| p3d_geo::generate::loft(black_box(&spec)))
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)

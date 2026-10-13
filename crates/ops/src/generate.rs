@@ -1199,3 +1199,177 @@ impl Op for PipeOp {
         Ok(created_summary(tx, key, "pipe"))
     }
 }
+
+// ---- gen.loft ----------------------------------------------------------------------------
+
+fn one_step() -> u32 {
+    1
+}
+
+/// Parameters of `gen.loft`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoftParams {
+    /// Object name; a free name such as `loft_1` is picked when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Parent object (name, path or id); top level when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// Cross sections in order: point lists `[x, y, z]` or `{"curve": name}`.
+    pub sections: Vec<PathParam>,
+    /// Whether inline point sections are closed loops (curves carry their own flag).
+    #[serde(default = "yes")]
+    pub sections_closed: bool,
+    /// Points per section after even resampling; sections keep their points when their counts already match.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub points: Option<u32>,
+    /// Rows from one section to the next.
+    #[serde(default = "one_step")]
+    pub steps: u32,
+    /// Curves through the sections instead of straight bands (use with steps > 1).
+    #[serde(default)]
+    pub smooth: bool,
+    /// Joins the last section back to the first (rings).
+    #[serde(default)]
+    pub closed: bool,
+    /// Fills the first and last closed sections.
+    #[serde(default = "yes")]
+    pub caps: bool,
+    /// Segments per curved span of Bezier curves.
+    #[serde(default = "gen_resolution")]
+    pub resolution: u32,
+    /// Origin position in the parent's space. With curve sections, the result takes the first curve's place
+    /// (parent and transform) unless `parent` or `position` is given; other curves keep their world places.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<[Length; 3]>,
+}
+
+impl Default for LoftParams {
+    fn default() -> Self {
+        let sq = |y: f64, h: f64| {
+            PathParam::Points(vec![
+                [Length(-h), Length(y), Length(-h)],
+                [Length(h), Length(y), Length(-h)],
+                [Length(h), Length(y), Length(h)],
+                [Length(-h), Length(y), Length(h)],
+            ])
+        };
+        LoftParams {
+            name: None,
+            parent: None,
+            sections: vec![sq(0.0, 0.5), sq(1.0, 0.25)],
+            sections_closed: true,
+            points: None,
+            steps: 1,
+            smooth: false,
+            closed: false,
+            caps: true,
+            resolution: GEN_RESOLUTION,
+            position: None,
+        }
+    }
+}
+
+/// `gen.loft`.
+pub struct LoftOp;
+
+impl Op for LoftOp {
+    const ID: &'static str = "gen.loft";
+    type Params = LoftParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Loft",
+            category: Category::Gen,
+            summary: "Builds a surface through a sequence of cross sections, resampling them so their point counts match.",
+            docs: "Sections can differ in shape and point count (a square base blending into a round top): they are resampled \
+                   evenly by length to one count, wound the same way and started at matching points so the surface does not \
+                   twist. Sections whose counts already match keep their points and corners. `steps` adds rows between \
+                   sections, straight or, with `smooth`, on curves through all sections. `closed` joins the last section to the \
+                   first.\n\n\
+                   **Sections:** point lists `[x, y, z]` or `{\"curve\": name}`; with curves, the result takes the first curve's \
+                   place and the others keep their world places.\n\n\
+                   **Groups:** `side`, `band_<i>` (section i to the next), `cap_start`, `cap_end`.\n\n\
+                   **Use for** vases and bottles from rings, boat hulls, horns, transitions (square duct to round), bananas, \
+                   tapering limbs.",
+            examples: &[OpExample {
+                args: r#"{"name": "duct", "sections": [[[-0.2, 0, -0.2], [0.2, 0, -0.2], [0.2, 0, 0.2], [-0.2, 0, 0.2]], [[0.15, 0.5, 0], [0, 0.5, -0.15], [-0.15, 0.5, 0], [0, 0.5, 0.15]]], "points": 16, "caps": false}"#,
+                result: "created duct (o:4) loft 0.4 x 0.5 x 0.4 m: 16 faces (32 tris; budget 6,000)",
+            }],
+            aliases: &["loft", "skin", "bridge sections", "loft sections", "through curves"],
+            complexity: "O(sections x points x steps) plus O(p log p) per cap",
+            flags: FLAGS,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &LoftParams) -> Result<(), OpError> {
+        check_new_object(doc, p.name.as_deref(), p.parent.as_deref())?;
+        check_count("/resolution", p.resolution, 1, MAX_RESOLUTION)?;
+        check_count("/steps", p.steps, 1, p3d_geo::generate::MAX_LOFT_STEPS)?;
+        if let Some(n) = p.points {
+            check_count("/points", n, 2, 100_000)?;
+        }
+        let min = if p.closed { 3 } else { 2 };
+        if p.sections.len() < min || p.sections.len() > p3d_geo::generate::MAX_SECTIONS {
+            return Err(OpError::invalid("/sections", format!("{} sections; a loft needs at least {min}", p.sections.len())));
+        }
+        for (i, s) in p.sections.iter().enumerate() {
+            match s {
+                PathParam::Points(pts) if pts.len() < 2 => {
+                    return Err(OpError::invalid(&format!("/sections/{i}"), "a section needs at least 2 points"));
+                }
+                PathParam::Curve { curve } => {
+                    curve_target(doc, curve, &format!("/sections/{i}/curve"))?;
+                }
+                PathParam::Points(_) => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &LoftParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let mut sections = Vec::with_capacity(p.sections.len());
+        let mut closed_flags = Vec::with_capacity(p.sections.len());
+        let mut first_curve: Option<ObjectKey> = None;
+        for s in &p.sections {
+            let path = resolve_path(tx.doc(), s, false, p.sections_closed, p.resolution)?;
+            let mut pts = path.points;
+            if let Some(src) = path.source {
+                // Curves come into the space of the first curve section.
+                match first_curve {
+                    None => first_curve = Some(src),
+                    Some(first) => {
+                        let doc = tx.doc();
+                        let (a, b) = (doc.world_affine(first), doc.world_affine(src));
+                        if let (Some(a), Some(b)) = (a, b) {
+                            let rel = a.inverse() * b;
+                            for q in &mut pts {
+                                *q = rel.transform_point3(q.as_vec3()).as_dvec3();
+                            }
+                        }
+                    }
+                }
+            }
+            closed_flags.push(path.closed);
+            sections.push(pts);
+        }
+        let sections_closed = closed_flags[0];
+        if let Some(i) = closed_flags.iter().position(|&c| c != sections_closed) {
+            return Err(OpError::invalid(&format!("/sections/{i}"), "sections must all be closed or all be open"));
+        }
+        let spec = p3d_geo::generate::LoftSpec {
+            sections: &sections,
+            sections_closed,
+            points: p.points.unwrap_or(0) as usize,
+            steps: p.steps,
+            smooth: p.smooth,
+            closed: p.closed,
+            caps: p.caps,
+        };
+        let mesh = p3d_geo::generate::loft(&spec).map_err(gen_error)?;
+        let key = create_gen(tx, p.name.as_deref(), "loft", p.parent.as_deref(), p.position.as_ref(), first_curve, mesh)?;
+        Ok(created_summary(tx, key, "loft"))
+    }
+}

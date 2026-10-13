@@ -2,7 +2,7 @@
 
 use glam::{DQuat, DVec2, DVec3};
 use p3d_geo::edit::Axis;
-use p3d_geo::generate::{LatheSpec, ShapeSpec, SweepCaps, SweepSpec, extrude_shape, lathe, round_profile, sweep};
+use p3d_geo::generate::{LatheSpec, LoftSpec, ShapeSpec, SweepCaps, SweepSpec, extrude_shape, lathe, loft, round_profile, sweep};
 use p3d_geo::prim::{CapKind, PrimError};
 use p3d_mesh::Mesh;
 use proptest::prelude::*;
@@ -142,5 +142,34 @@ proptest! {
         let m = sweep(&spec).map_err(|e| TestCaseError::fail(e.to_string()))?;
         check(&m, caps != SweepCaps::None)?;
         prop_assert_eq!(m.group("side").map(|g| g.count()), Some((path.len() - 1) * profile.len()));
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn lofts_through_stacked_stars(
+        stars in prop::collection::vec((star(0.3, 1.0, 3), any::<bool>(), -1.0f64..1.0), 2..6),
+        points in prop::option::of(8usize..40),
+        steps in 1u32..5,
+        smooth in any::<bool>(),
+    ) {
+        // Star sections stacked 0.5 m apart, some wound the other way, each turned a little.
+        let sections: Vec<Vec<DVec3>> = stars
+            .iter()
+            .enumerate()
+            .map(|(i, (s, flip, turn))| {
+                let mut ring: Vec<DVec3> = s.iter().map(|p| {
+                    let q = DVec2::from_angle(*turn).rotate(*p);
+                    DVec3::new(q.x, i as f64 * 0.5, -q.y)
+                }).collect();
+                if *flip { ring.reverse(); }
+                ring
+            })
+            .collect();
+        let spec = LoftSpec { sections: &sections, sections_closed: true, points: points.unwrap_or(24), steps, smooth, closed: false, caps: true };
+        let m = loft(&spec).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        check(&m, true)?;
     }
 }

@@ -900,6 +900,35 @@ export type GenPipeParams = {
   smooth_path?: boolean;
 };
 
+/** `gen.loft`: Builds a surface through a sequence of cross sections, resampling them so their point counts match. */
+export type GenLoftParams = {
+  /** Fills the first and last closed sections. */
+  caps?: boolean;
+  /** Joins the last section back to the first (rings). */
+  closed?: boolean;
+  /** Object name; a free name such as `loft_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Points per section after even resampling; sections keep their points when their counts already match. */
+  points?: number | null;
+  /**
+   * Origin position in the parent's space. With curve sections, the result takes the first curve's place
+   * (parent and transform) unless `parent` or `position` is given; other curves keep their world places.
+   */
+  position?: [Length, Length, Length] | null;
+  /** Segments per curved span of Bezier curves. */
+  resolution?: number;
+  /** Cross sections in order: point lists `[x, y, z]` or `{"curve": name}`. */
+  sections: Path[];
+  /** Whether inline point sections are closed loops (curves carry their own flag). */
+  sections_closed?: boolean;
+  /** Curves through the sections instead of straight bands (use with steps > 1). */
+  smooth?: boolean;
+  /** Rows from one section to the next. */
+  steps?: number;
+};
+
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
 export type PrimPlaneParams = {
   /** Rarely needed settings. */
@@ -1435,6 +1464,7 @@ export interface OpParams {
   "gen.extrude_shape": GenExtrudeShapeParams;
   "gen.sweep": GenSweepParams;
   "gen.pipe": GenPipeParams;
+  "gen.loft": GenLoftParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

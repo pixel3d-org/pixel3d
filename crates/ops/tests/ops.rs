@@ -847,6 +847,24 @@ fn sweeps_and_pipes_follow_paths() {
 }
 
 #[test]
+fn lofts_between_placed_curves() {
+    let mut tx = curve_fixture();
+    // A rounded square base blending into a smaller circle 40 cm above it.
+    ok(&mut tx, "curve.rectangle", json!({ "name": "base", "size": [0.4, 0.4], "corner_radius": "2cm", "position": [1, 0, 0] }));
+    ok(&mut tx, "curve.circle", json!({ "name": "top", "radius": "10cm", "segments": 12, "position": [1, 0.4, 0] }));
+    ok(&mut tx, "gen.loft", json!({ "name": "vase", "sections": [{ "curve": "base" }, { "curve": "top" }], "points": 24, "steps": 3 }));
+    assert!(topo(&tx, "vase").is_watertight());
+    let key = tx.doc().resolve("vase").unwrap();
+    assert_eq!(tx.doc().object(key).unwrap().transform.translation, Vec3::new(1.0, 0.0, 0.0), "the base curve's place");
+    let (lo, hi) = tx.doc().object_mesh(key).unwrap().bounds().unwrap();
+    assert!(lo.y.abs() < 1e-5 && (hi.y - 0.4).abs() < 1e-5, "the top curve keeps its world height: {lo} {hi}");
+    let e = err(&mut tx, "gen.loft", json!({ "sections": [{ "curve": "base" }, { "curve": "path" }] }));
+    assert!(e.message.contains("all be closed"), "{}", e.message);
+    let e = err(&mut tx, "gen.loft", json!({ "sections": [{ "curve": "base" }] }));
+    assert_eq!(e.path.as_deref(), Some("/sections"));
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));
