@@ -88,8 +88,8 @@ Acceptance:
 
 Acceptance:
 
-- [ ] Generated op docs
-- [ ] Every op has tests and a bench
+- [x] Generated op docs (`cargo xtask codegen` writes `docs/ops/<id>.md` and the op index from each op's metadata and schema; CI fails when they are stale)
+- [x] Every op has tests and a bench (every op needs an example, and `every_example_produces_its_documented_result` runs each one against its category's fixture; behaviour and property tests per op family; `crates/ops/benches/ops.rs` benches every registered op through its examples on the same fixtures, the slowest being `edit.boolean` at 0.21 ms; kernel scaling in `cargo xtask bench-scale`)
 - [ ] The geometry of T1, T2, T4 and T5 can be modelled through MCP
 
 ## Phase 3b: Brief, Model Spec and SDF
