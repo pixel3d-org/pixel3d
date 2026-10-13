@@ -1,0 +1,622 @@
+{
+ "prompt": "Stylized low-poly tree: tapered trunk with root flares and branches, faceted clump crown",
+ "calls": [
+  {
+   "tool": "run",
+   "args": {
+    "ops": [
+     {
+      "op": "scene.create_empty",
+      "args": {
+       "name": "tree"
+      }
+     },
+     {
+      "op": "gen.sweep",
+      "args": {
+       "name": "trunk",
+       "parent": "tree",
+       "profile": {
+        "circle": 0.17
+       },
+       "segments": 8,
+       "scale": [
+        1,
+        0.42
+       ],
+       "smooth_path": true,
+       "path": [
+        [
+         0,
+         -0.05,
+         0
+        ],
+        [
+         0.04,
+         0.8,
+         0.02
+        ],
+        [
+         -0.06,
+         1.6,
+         0
+        ],
+        [
+         0.03,
+         2.4,
+         -0.03
+        ],
+        [
+         0,
+         3,
+         0
+        ]
+       ]
+      }
+     },
+     {
+      "op": "gen.sweep",
+      "args": {
+       "name": "root_0",
+       "parent": "tree",
+       "profile": {
+        "circle": 0.085
+       },
+       "segments": 6,
+       "scale": [
+        1,
+        0.25
+       ],
+       "smooth_path": true,
+       "path": [
+        [
+         0,
+         0.45,
+         0
+        ],
+        [
+         0.1657909789205193,
+         0.16,
+         0.07009530161555709
+        ],
+        [
+         0.3868456174812117,
+         0.02,
+         0.16355570376963321
+        ],
+        [
+         0.552636596401731,
+         -0.04,
+         0.2336510053851903
+        ]
+       ]
+      }
+     },
+     {
+      "op": "gen.sweep",
+      "args": {
+       "name": "root_1",
+       "parent": "tree",
+       "profile": {
+        "circle": 0.085
+       },
+       "segments": 6,
+       "scale": [
+        1,
+        0.25
+       ],
+       "smooth_path": true,
+       "path": [
+        [
+         0,
+         0.45,
+         0
+        ],
+        [
+         -0.07009530161555706,
+         0.16,
+         0.1657909789205193
+        ],
+        [
+         -0.16355570376963313,
+         0.02,
+         0.3868456174812117
+        ],
+        [
+         -0.2336510053851902,
+         -0.04,
+         0.552636596401731
+        ]
+       ]
+      }
+     },
+     {
+      "op": "gen.sweep",
+      "args": {
+       "name": "root_2",
+       "parent": "tree",
+       "profile": {
+        "circle": 0.085
+       },
+       "segments": 6,
+       "scale": [
+        1,
+        0.25
+       ],
+       "smooth_path": true,
+       "path": [
+        [
+         0,
+         0.45,
+         0
+        ],
+        [
+         -0.16579097892051933,
+         0.16,
+         -0.07009530161555705
+        ],
+        [
+         -0.38684561748121177,
+         0.02,
+         -0.16355570376963313
+        ],
+        [
+         -0.5526365964017311,
+         -0.04,
+         -0.23365100538519018
+        ]
+       ]
+      }
+     },
+     {
+      "op": "gen.sweep",
+      "args": {
+       "name": "root_3",
+       "parent": "tree",
+       "profile": {
+        "circle": 0.085
+       },
+       "segments": 6,
+       "scale": [
+        1,
+        0.25
+       ],
+       "smooth_path": true,
+       "path": [
+        [
+         0,
+         0.45,
+         0
+        ],
+        [
+         0.07009530161555712,
+         0.16,
+         -0.1657909789205193
+        ],
+        [
+         0.16355570376963327,
+         0.02,
+         -0.38684561748121166
+        ],
+        [
+         0.23365100538519037,
+         -0.04,
+         -0.552636596401731
+        ]
+       ]
+      }
+     },
+     {
+      "op": "gen.sweep",
+      "args": {
+       "name": "branch_0",
+       "parent": "tree",
+       "profile": {
+        "circle": 0.07
+       },
+       "segments": 6,
+       "scale": [
+        1,
+        0.35
+       ],
+       "smooth_path": true,
+       "path": [
+        [
+         0,
+         1.7,
+         0
+        ],
+        [
+         0.33436777119396205,
+         2.05,
+         0.10343207233146884
+        ],
+        [
+         0.7165023668442045,
+         2.55,
+         0.22164015499600465
+        ]
+       ]
+      }
+     },
+     {
+      "op": "gen.sweep",
+      "args": {
+       "name": "branch_1",
+       "parent": "tree",
+       "profile": {
+        "circle": 0.07
+       },
+       "segments": 6,
+       "scale": [
+        1,
+        0.35
+       ],
+       "smooth_path": true,
+       "path": [
+        [
+         0,
+         2.15,
+         0
+        ],
+        [
+         -0.24518341041746408,
+         2.4825,
+         0.22459150753325766
+        ],
+        [
+         -0.5253930223231373,
+         2.9575,
+         0.481267516142695
+        ]
+       ]
+      }
+     },
+     {
+      "op": "gen.sweep",
+      "args": {
+       "name": "branch_2",
+       "parent": "tree",
+       "profile": {
+        "circle": 0.07
+       },
+       "segments": 6,
+       "scale": [
+        1,
+        0.35
+       ],
+       "smooth_path": true,
+       "path": [
+        [
+         0,
+         2.5,
+         0
+        ],
+        [
+         -0.0860532035939574,
+         2.78,
+         -0.26644858068906446
+        ],
+        [
+         -0.18439972198705165,
+         3.18,
+         -0.5709612443337098
+        ]
+       ]
+      }
+     },
+     {
+      "op": "edit.boolean",
+      "label": "wood",
+      "args": {
+       "target": "tree/trunk",
+       "tool": [
+        "tree/root_0",
+        "tree/root_1",
+        "tree/root_2",
+        "tree/root_3",
+        "tree/branch_0",
+        "tree/branch_1",
+        "tree/branch_2"
+       ],
+       "operation": "union"
+      }
+     },
+     {
+      "op": "prim.ico_sphere",
+      "args": {
+       "name": "clump_0",
+       "parent": "tree",
+       "radius": 0.75,
+       "subdivisions": 1,
+       "origin": "center",
+       "position": [
+        0.95,
+        2.75,
+        0.32
+       ]
+      }
+     },
+     {
+      "op": "deform.displace",
+      "args": {
+       "target": "tree/clump_0",
+       "strength": 0.135,
+       "scale": 0.5249999999999999,
+       "octaves": 1,
+       "seed": 11
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "tree/clump_0",
+       "scale": [
+        1,
+        0.82,
+        1
+       ]
+      }
+     },
+     {
+      "op": "prim.ico_sphere",
+      "args": {
+       "name": "clump_1",
+       "parent": "tree",
+       "radius": 0.7,
+       "subdivisions": 1,
+       "origin": "center",
+       "position": [
+        -0.62,
+        3.05,
+        0.66
+       ]
+      }
+     },
+     {
+      "op": "deform.displace",
+      "args": {
+       "target": "tree/clump_1",
+       "strength": 0.126,
+       "scale": 0.48999999999999994,
+       "octaves": 1,
+       "seed": 12
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "tree/clump_1",
+       "scale": [
+        1,
+        0.82,
+        1
+       ]
+      }
+     },
+     {
+      "op": "prim.ico_sphere",
+      "args": {
+       "name": "clump_2",
+       "parent": "tree",
+       "radius": 0.65,
+       "subdivisions": 1,
+       "origin": "center",
+       "position": [
+        -0.25,
+        3.25,
+        -0.63
+       ]
+      }
+     },
+     {
+      "op": "deform.displace",
+      "args": {
+       "target": "tree/clump_2",
+       "strength": 0.11699999999999999,
+       "scale": 0.45499999999999996,
+       "octaves": 1,
+       "seed": 13
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "tree/clump_2",
+       "scale": [
+        1,
+        0.82,
+        1
+       ]
+      }
+     },
+     {
+      "op": "prim.ico_sphere",
+      "args": {
+       "name": "clump_3",
+       "parent": "tree",
+       "radius": 0.95,
+       "subdivisions": 1,
+       "origin": "center",
+       "position": [
+        0,
+        3.55,
+        0
+       ]
+      }
+     },
+     {
+      "op": "deform.displace",
+      "args": {
+       "target": "tree/clump_3",
+       "strength": 0.17099999999999999,
+       "scale": 0.6649999999999999,
+       "octaves": 1,
+       "seed": 14
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "tree/clump_3",
+       "scale": [
+        1,
+        0.82,
+        1
+       ]
+      }
+     },
+     {
+      "op": "prim.ico_sphere",
+      "args": {
+       "name": "clump_4",
+       "parent": "tree",
+       "radius": 0.7,
+       "subdivisions": 1,
+       "origin": "center",
+       "position": [
+        0.4,
+        3.35,
+        -0.35
+       ]
+      }
+     },
+     {
+      "op": "deform.displace",
+      "args": {
+       "target": "tree/clump_4",
+       "strength": 0.126,
+       "scale": 0.48999999999999994,
+       "octaves": 1,
+       "seed": 15
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "tree/clump_4",
+       "scale": [
+        1,
+        0.82,
+        1
+       ]
+      }
+     },
+     {
+      "op": "prim.ico_sphere",
+      "args": {
+       "name": "clump_5",
+       "parent": "tree",
+       "radius": 0.65,
+       "subdivisions": 1,
+       "origin": "center",
+       "position": [
+        -0.45,
+        3.65,
+        0.1
+       ]
+      }
+     },
+     {
+      "op": "deform.displace",
+      "args": {
+       "target": "tree/clump_5",
+       "strength": 0.11699999999999999,
+       "scale": 0.45499999999999996,
+       "octaves": 1,
+       "seed": 16
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "tree/clump_5",
+       "scale": [
+        1,
+        0.82,
+        1
+       ]
+      }
+     },
+     {
+      "op": "prim.ico_sphere",
+      "args": {
+       "name": "clump_6",
+       "parent": "tree",
+       "radius": 0.6,
+       "subdivisions": 1,
+       "origin": "center",
+       "position": [
+        0.3,
+        4.05,
+        0.25
+       ]
+      }
+     },
+     {
+      "op": "deform.displace",
+      "args": {
+       "target": "tree/clump_6",
+       "strength": 0.108,
+       "scale": 0.42,
+       "octaves": 1,
+       "seed": 17
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "tree/clump_6",
+       "scale": [
+        1,
+        0.82,
+        1
+       ]
+      }
+     },
+     {
+      "op": "scene.rename",
+      "args": {
+       "target": "tree/clump_3",
+       "name": "crown"
+      }
+     },
+     {
+      "op": "edit.boolean",
+      "label": "leaves",
+      "args": {
+       "target": "tree/crown",
+       "tool": [
+        "tree/clump_0",
+        "tree/clump_1",
+        "tree/clump_2",
+        "tree/clump_4",
+        "tree/clump_5",
+        "tree/clump_6"
+       ],
+       "operation": "union"
+      }
+     },
+     {
+      "op": "shade.set_flat",
+      "args": {
+       "target": "tree/crown"
+      }
+     },
+     {
+      "op": "shade.set_flat",
+      "args": {
+       "target": "tree/trunk"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "describe",
+   "args": {
+    "target": "tree"
+   }
+  }
+ ]
+}

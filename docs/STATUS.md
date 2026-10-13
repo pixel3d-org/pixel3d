@@ -119,6 +119,7 @@ Acceptance:
 
 - [ ] `features` v1: `ear`, `nose`, `eye`, `head_base`, `hand`, `horn`, `bolt`, `rivet`, `vent_grille`, `panel_inset`, `molding`
 - [ ] `strands`: hair, fur, eyebrows, grass, cables as cards, clumps and shells
+- [ ] Vegetation (ADR 0009): `tree` feature and `gen.tree` (species presets, crown hull, branch levels, roots), foliage as `clumps`, `cards` or `shell`, crown normal transfer, wind data per engine, `flower` and `grass_cards`, `vegetation` perception aspect and expectations
 - [ ] Full diagnostics: intent, edge flow, shading, detail scale, with predicted fixes
 - [ ] MCP tool `features`
 
@@ -156,6 +157,7 @@ Acceptance:
 - [ ] Profiles `gltf` and `godot`
 - [ ] `validate`, `export`, `make_game_ready` (without bake)
 - [ ] Godot smoke test in CI
+- [ ] Vegetation LODs: card thinning and billboard or octahedral impostors (ADR 0009)
 
 Acceptance:
 
@@ -168,6 +170,7 @@ Acceptance:
 - [ ] CPU baking: normal, AO, curvature, thickness, ID, position, height
 - [ ] `decal` joins baked into normal maps
 - [ ] Generated hair atlas textures for strands
+- [ ] Generated foliage atlases (leaf and cluster alpha, normal, albedo variation), bark and grass textures, crown normal transfer bake (ADR 0009)
 - [ ] Dilation; PNG, EXR and KTX2 output
 - [ ] `bake` tool and full `make_game_ready`
 
