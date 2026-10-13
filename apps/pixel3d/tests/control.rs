@@ -229,3 +229,33 @@ fn sculpt_an_sdf_shape_with_the_gizmo() {
     wait_for(30, || Some(head_x(&mut c)).filter(|x| x.abs() < 1e-6));
     let _ = c.call("ui.command", json!({ "id": "app.quit" }));
 }
+
+#[test]
+#[ignore = "needs a display and a GPU"]
+fn remesh_in_the_background_and_review_poles() {
+    let dir = temp_dir("remesh");
+    let (_app, mut c) = start(&["--command".to_owned(), "ui.start on=false".to_owned()]);
+    c.call("ui.command", json!({ "id": "prim.torus", "params": { "name": "ring", "major_radius": 0.3, "minor_radius": 0.1 } })).unwrap();
+    // Mesh > Remesh > Quad remesh: the card estimates the result first.
+    c.call("ui.command", json!({ "id": "job.open", "params": { "op": "remesh.quad" } })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["jobCard"]["estimate"]["faces"].as_u64().is_some_and(|f| f > 0)));
+    assert_eq!(s["jobCard"]["estimate"]["openEdges"], json!(0));
+    let before = s["scene"]["revision"].clone();
+    // Click Run in the card: the remesh runs in the background, one step.
+    let run = wait_for(30, || {
+        let found = c.call("ui.elements", json!({ "label": "Run" })).ok()?;
+        found["elements"].as_array().and_then(|e| e.iter().find(|w| w["label"] == json!("Run")).cloned())
+    });
+    c.call("ui.click", json!({ "target": { "id": run["id"] } })).unwrap();
+    let s = wait_for(60, || Some(inspect(&mut c)).filter(|s| s["scene"]["revision"] != before && s["jobCard"]["running"] == json!(false)));
+    assert!(s["jobCard"]["summary"].as_str().is_some_and(|m| m.contains("remeshed into")), "{}", s["jobCard"]);
+    // The pole overlay and its counts for agents.
+    c.call("ui.command", json!({ "id": "view.poles", "params": { "on": true } })).unwrap();
+    let poles = c.call("ui.command", json!({ "id": "mesh.poles", "params": { "target": "ring" } })).unwrap();
+    let total = ["valence3", "valence5", "valence6plus"].iter().map(|k| poles["objects"][0][k].as_u64().unwrap_or(0)).sum::<u64>();
+    assert!(total > 0, "a remeshed torus has some poles: {poles}");
+    let shot = dir.join("poles.png");
+    c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
+    assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    let _ = c.call("ui.command", json!({ "id": "app.quit" }));
+}
