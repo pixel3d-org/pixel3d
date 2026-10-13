@@ -64,7 +64,7 @@ fn app_aliases(label: &str) -> &'static [&'static str] {
 
 /// What app commands do, by label, for those whose label alone may not say.
 fn app_desc(label: &str) -> &'static str {
-    crate::actions::BOOLEANS.iter().find(|(_, l, _, _)| *l == label).map_or("", |(_, _, _, d)| d)
+    crate::actions::BOOLEANS.iter().find(|v| v.label == label).map_or("", |v| v.desc)
 }
 
 /// App commands that are not in the menus: tools and selection modes.

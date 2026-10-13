@@ -490,8 +490,8 @@ pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
                         break;
                     }
                     let rect = Rect::from_min_size(pos2(x, cy - 13.0), vec2(w, 26.0));
-                    let tip = Tip::new(&a.label).desc(&a.summary);
-                    let resp = chip_with(ui, rect, a.op, a.icon, &a.label, tip);
+                    let tip = Tip::new(&a.label).desc(&a.summary).keys(a.keys);
+                    let resp = chip_with(ui, rect, &a.key(), a.icon, &a.label, tip);
                     if resp.hovered() {
                         hovered = Some(a.clone());
                     }

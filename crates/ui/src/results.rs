@@ -76,16 +76,19 @@ impl LastResult {
     }
 }
 
-/// `text` with a leading op id written as the op's label
+/// `text` with the op ids in it written as the ops' labels
 /// (`cleanup.auto would weld 2 vertices` reads `Clean up would weld ...`).
 ///
-/// Complexity: O(len(text) + log ops).
+/// Complexity: O(len(text) + words x log ops).
 pub fn op_names(text: &str, registry: &Registry) -> String {
-    let (first, rest) = text.split_once(' ').unwrap_or((text, ""));
-    match registry.get(first) {
-        Ok(op) if first.contains('.') => format!("{}{}{rest}", op.meta().label, if rest.is_empty() { "" } else { " " }),
-        _ => text.to_owned(),
-    }
+    let words: Vec<String> = text
+        .split(' ')
+        .map(|w| match registry.get(w) {
+            Ok(op) if w.contains('.') => op.meta().label.to_owned(),
+            _ => w.to_owned(),
+        })
+        .collect();
+    words.join(" ")
 }
 
 /// A summary as a subject and short lines: `crate (o:1): 2 parts (0
@@ -136,7 +139,7 @@ pub fn warnings_ui(ui: &mut egui::Ui, result: &LastResult, registry: &Registry, 
             ui.spacing_mut().item_spacing.x = 6.0;
             let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 16.0), egui::Sense::hover());
             crate::icons::paint_colored(ui.painter(), r.shrink(1.0), crate::icons::Icon::Warning, tk.health_warn, tk.accent);
-            ui.add(egui::Label::new(egui::RichText::new(&w.message).font(theme::small()).color(tk.text)).wrap());
+            ui.add(egui::Label::new(egui::RichText::new(op_names(&w.message, registry)).font(theme::small()).color(tk.text)).wrap());
         });
         if let Some(fix) = &w.fix {
             let op = registry.get(&fix.op).ok();
@@ -209,6 +212,7 @@ mod tests {
         assert_eq!(readable("no subject here", &r), (String::new(), vec!["no subject here".to_owned()]));
         assert_eq!(op_names("prim.box made", &r), "Box made");
         assert_eq!(op_names("nothing.known here", &r), "nothing.known here");
+        assert_eq!(op_names("bin (o:1): cleanup.auto would fill 1 hole", &r), "bin (o:1): Clean up would fill 1 hole");
     }
 
     #[test]

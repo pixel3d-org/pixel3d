@@ -67,6 +67,8 @@ pub struct Action {
     pub preset: Value,
     /// The order of an op's variants (difference, union, intersect).
     pub variant: u8,
+    /// The keyboard shortcut in `Cmd+Shift+Z` notation, or empty.
+    pub keys: &'static str,
 }
 
 impl Action {
@@ -76,9 +78,17 @@ impl Action {
     }
 }
 
-/// One value of a parameter offered as its own action: the value, label,
-/// icon and what it does.
-pub type Variant = (&'static str, &'static str, Icon, &'static str);
+/// One value of a parameter offered as its own action.
+#[derive(Clone, Copy, Debug)]
+pub struct Variant {
+    pub value: &'static str,
+    pub label: &'static str,
+    pub icon: Icon,
+    /// What it does, for tooltips and the palette.
+    pub desc: &'static str,
+    /// The shortcut in `Cmd+Shift+Z` notation.
+    pub keys: &'static str,
+}
 
 /// Ops offered once per value of one parameter: the op, the parameter,
 /// and the values.
@@ -86,9 +96,21 @@ type Variants = (&'static str, &'static str, &'static [Variant]);
 
 /// The boolean operations, as the menus, shortcuts and actions offer them.
 pub const BOOLEANS: &[Variant] = &[
-    ("difference", "Difference", Icon::BoolDifference, "Cut the other selected meshes out of the active one"),
-    ("union", "Union", Icon::BoolUnion, "Merge the other selected meshes into the active one"),
-    ("intersect", "Intersect", Icon::BoolIntersect, "Keep only where the active mesh and the others overlap"),
+    Variant {
+        value: "difference",
+        label: "Difference",
+        icon: Icon::BoolDifference,
+        desc: "Cut the other selected meshes out of the active one",
+        keys: "Cmd+Minus",
+    },
+    Variant { value: "union", label: "Union", icon: Icon::BoolUnion, desc: "Merge the other selected meshes into the active one", keys: "Cmd+Plus" },
+    Variant {
+        value: "intersect",
+        label: "Intersect",
+        icon: Icon::BoolIntersect,
+        desc: "Keep only where the active mesh and the others overlap",
+        keys: "Cmd+*",
+    },
 ];
 
 const VARIANTS: &[Variants] = &[("edit.boolean", "operation", BOOLEANS)];
@@ -271,16 +293,18 @@ pub fn for_context(app: &PixelApp) -> Vec<Action> {
             input,
             preset: Value::Null,
             variant: 0,
+            keys: "",
         };
         match VARIANTS.iter().find(|(id, _, _)| *id == op.id()) {
             Some((_, param, values)) => {
-                for (i, (value, label, icon, desc)) in values.iter().enumerate() {
+                for (i, v) in values.iter().enumerate() {
                     out.push(Action {
-                        label: crate::i18n::t(label).to_owned(),
-                        summary: crate::i18n::t(desc).to_owned(),
-                        icon: *icon,
-                        preset: json!({ *param: value }),
+                        label: crate::i18n::t(v.label).to_owned(),
+                        summary: crate::i18n::t(v.desc).to_owned(),
+                        icon: v.icon,
+                        preset: json!({ *param: v.value }),
                         variant: u8::try_from(i).unwrap_or(u8::MAX),
+                        keys: v.keys,
                         ..base.clone()
                     });
                 }
