@@ -82,6 +82,14 @@ fn summarize(doc: &Document, root: ObjectKey, r: &CompileReport) -> OpOutput {
     if r.parts.len() > MAX_LISTED {
         let _ = write!(s, "\n  ... and {} more", r.parts.len() - MAX_LISTED);
     }
+    // Archetype instances: what they made, so their parts can be patched.
+    if let Some(record) = doc.spec(root)
+        && let Ok(Some((_, made))) = crate::archetype::expand_report(&record.source)
+    {
+        for i in made {
+            let _ = write!(s, "\n  archetype {} ({}): {} joints; parts {}", i.name, i.kind, i.joints, i.parts.join(", "));
+        }
+    }
     let mut out = OpOutput::summary(s);
     out.created.extend(r.created.iter().copied());
     out.changed.push(root);
@@ -143,7 +151,8 @@ impl Op for SpecSet {
                    on another part's surface: a landmark such as `top` or `ear_root_l`, a `param`, a `ray` or `nearest`), a `join` \
                    (`separate`, `blend` for SDF parts, `decal`) and optional `edits` (ops run on the part). Parts compile in \
                    dependency order; unchanged parts are reused, so later patches are fast. Every face records the spec node \
-                   that made it.\n\n\
+                   that made it. An `archetypes` block (`{\"dwarf\": {\"kind\": \"dwarf\"}}`) expands into a skeleton whose joints \
+                   are landmarks and into generated parts you patch by name.\n\n\
                    **Use for** building a model from parts and relations instead of op sequences; patch it with `spec.patch`.",
             examples: &[OpExample {
                 args: r#"{"name": "lamp", "spec": {"parts": {"base": {"primitive": {"cylinder": {"radius": 0.1, "height": 0.02}}}, "pole": {"primitive": {"cylinder": {"radius": 0.01, "height": 0.4}}, "anchor": {"on": "base", "landmark": "top"}}}}}"#,

@@ -9,7 +9,7 @@ Creates or replaces a Model Spec (named parts, shapes, anchors, joins) and compi
 - Flags: undoable, creates_groups, creates_objects
 - Also known as: model spec, spec, blueprint, declarative model, parts
 
-The spec is the model's source; meshes are build artifacts. Each part has one shape (`sdf`, `primitive`, `lathe`, `sweep`, `loft`, `extrude`, `pipe`, `mirror` or `instance`), a placement (`transform`, or an `anchor` on another part's surface: a landmark such as `top` or `ear_root_l`, a `param`, a `ray` or `nearest`), a `join` (`separate`, `blend` for SDF parts, `decal`) and optional `edits` (ops run on the part). Parts compile in dependency order; unchanged parts are reused, so later patches are fast. Every face records the spec node that made it.
+The spec is the model's source; meshes are build artifacts. Each part has one shape (`sdf`, `primitive`, `lathe`, `sweep`, `loft`, `extrude`, `pipe`, `mirror` or `instance`), a placement (`transform`, or an `anchor` on another part's surface: a landmark such as `top` or `ear_root_l`, a `param`, a `ray` or `nearest`), a `join` (`separate`, `blend` for SDF parts, `decal`) and optional `edits` (ops run on the part). Parts compile in dependency order; unchanged parts are reused, so later patches are fast. Every face records the spec node that made it. An `archetypes` block (`{"dwarf": {"kind": "dwarf"}}`) expands into a skeleton whose joints are landmarks and into generated parts you patch by name.
 
 **Use for** building a model from parts and relations instead of op sequences; patch it with `spec.patch`.
 

@@ -289,6 +289,14 @@ pub fn search(query: &str) -> Vec<FeatureInfo> {
 ///
 /// Complexity: O(parameters).
 pub fn resolve(info: &FeatureInfo, v: &Value) -> Result<Params, FeatureError> {
+    resolve_params(info.id, info.params, v)
+}
+
+/// [`resolve`] for any described parameter list (archetypes use it too);
+/// `id` names the owner in messages.
+///
+/// Complexity: O(parameters).
+pub fn resolve_params(id: &str, params: &[ParamInfo], v: &Value) -> Result<Params, FeatureError> {
     let empty = serde_json::Map::new();
     let obj = match v {
         Value::Object(m) => m,
@@ -296,14 +304,14 @@ pub fn resolve(info: &FeatureInfo, v: &Value) -> Result<Params, FeatureError> {
         _ => return Err(FeatureError::new("/params", "give the parameters as an object")),
     };
     for k in obj.keys() {
-        if !info.params.iter().any(|p| p.name == k) {
-            let mut e = FeatureError::new(&format!("/params/{k}"), format!("`{}` has no parameter `{k}`", info.id));
-            e.suggestions = p3d_scene_suggest(k, &info.params.iter().map(|p| p.name).collect::<Vec<_>>());
+        if !params.iter().any(|p| p.name == k) {
+            let mut e = FeatureError::new(&format!("/params/{k}"), format!("`{id}` has no parameter `{k}`"));
+            e.suggestions = p3d_scene_suggest(k, &params.iter().map(|p| p.name).collect::<Vec<_>>());
             return Err(e);
         }
     }
     let mut out = Params::default();
-    for p in info.params {
+    for p in params {
         let path = format!("/params/{}", p.name);
         let given = obj.get(p.name);
         if let ParamKind::Choice(words) = p.kind {
@@ -355,6 +363,46 @@ pub fn build(id: &str, params: &Value) -> Result<Built, FeatureError> {
     let f = get(id)?;
     let p = resolve(&f.info(), params)?;
     f.build(&p)
+}
+
+/// SDF items reflected across x = 0 (a left hand becomes a right one):
+/// centers and capsule ends reflect, rotations become M R M, twist and bend
+/// turn the other way. Items already mirrored across x stay.
+///
+/// Complexity: O(items).
+pub fn mirror_items_x(items: &[Item]) -> Vec<Item> {
+    let m = Vec3::new(-1.0, 1.0, 1.0);
+    items
+        .iter()
+        .map(|it| {
+            if it.modifiers.mirror[0] {
+                return it.clone();
+            }
+            let mut out = it.clone();
+            out.center = it.center * m;
+            let q = it.rotation;
+            out.rotation = glam::Quat::from_xyzw(q.x, -q.y, -q.z, q.w).normalize();
+            out.shape = match &it.shape {
+                p3d_sdf::Shape::Group(inner) => p3d_sdf::Shape::Group(mirror_items_x(inner)),
+                p3d_sdf::Shape::Prim(p3d_sdf::Prim::Capsule { a, b, ra, rb }) => {
+                    p3d_sdf::Shape::Prim(p3d_sdf::Prim::Capsule { a: *a * m, b: *b * m, ra: *ra, rb: *rb })
+                }
+                other => other.clone(),
+            };
+            out.modifiers.twist = -it.modifiers.twist;
+            out.modifiers.bend = -it.modifiers.bend;
+            out
+        })
+        .collect()
+}
+
+/// Where a handle held by a `hand` with these parameters passes through
+/// it (hand space) and the radius it has room for.
+///
+/// Complexity: O(parameters).
+pub fn hand_grip(params: &Value) -> Result<(Vec3, f32), FeatureError> {
+    let p = resolve(&hand::Hand.info(), params)?;
+    Ok(hand::grip(&p))
 }
 
 /// Moves landmarks onto the surface of SDF items by Newton steps along
@@ -425,5 +473,25 @@ mod tests {
         assert!(e.message.contains("between"), "{e}");
         assert!(get("eer").err().is_some_and(|e| e.suggestions.contains(&"ear".to_owned())));
         assert!(!search("pointed ear").is_empty());
+    }
+
+    #[test]
+    fn right_sides_mirror_left_ones_and_fists_have_a_grip() {
+        // A right hand and ear are the left ones reflected across x = 0.
+        let marks = |id: &str, side: &str| build(id, &json!({ "side": side })).unwrap().landmarks;
+        for id in ["hand", "ear"] {
+            let (l, r) = (marks(id, "left"), marks(id, "right"));
+            for (name, p) in &l {
+                assert!((r[name] - *p * Vec3::new(-1.0, 1.0, 1.0)).length() < 1e-5, "{id} {name}");
+            }
+        }
+        let Shape::Mesh(m) = build("ear", &json!({ "side": "right" })).unwrap().shape else { panic!("an ear is a mesh") };
+        assert_eq!(m.validate(), Ok(()));
+        // A fist closes around a handle in front of the palm; the right
+        // hand's grip mirrors the left's.
+        let (c, room) = hand_grip(&json!({ "curl": 78, "length": 0.19 })).unwrap();
+        assert!(c.z < 0.0 && c.y > 0.05 && room > 0.005 && room < 0.05, "{c} {room}");
+        let (cr, _) = hand_grip(&json!({ "curl": 78, "length": 0.19, "side": "right" })).unwrap();
+        assert!((cr - c * Vec3::new(-1.0, 1.0, 1.0)).length() < 1e-6);
     }
 }

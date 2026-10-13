@@ -48,6 +48,23 @@ A skeleton is a named set of joints (`"skeletons": {"rig": {"joints": {"knee": {
 
 Landmarks of every part: `top`, `bottom`, `front`, `back`, `left` (+X, the character's left), `right`, `center`, the names of its SDF shapes, and a feature part's own landmarks (an ear's `root`, `tip`, `lobe` and `rim_back`; mirrors reflect them). Category `humanoid_head` adds `crown`, `chin`, `forehead`, `nose_root`, `nose_base`, `mouth`, `eye_l/r`, `brow_l/r`, `cheek_l/r`, `jaw_l/r`, `ear_root_l/r`, `temple_l/r`, `hairline_front`, `nape` and `back_of_head`. Anchors re-resolve when the parent changes: lengthen the lamp's pole and the shade moves up without a rebuild.
 
+## Archetypes
+
+An archetype is a category as data (ADR 0011, ADR 0016): a skeleton, parts, default genes and critique thresholds from a few numbers. Name an instance in the spec's `archetypes` block:
+
+```json
+{"archetypes": {"dwarf": {"kind": "dwarf", "params": {"heads": 4.3, "build": 0.9, "hold": "right", "beard": "braided"}}}}
+```
+
+- The instance expands, every time the spec compiles, into a skeleton named after it (joints such as `pelvis`, `head`, `shoulder_l`, `wrist_r`, `grip_r`, `knee_l`) and ordinary parts anchored on those joints. Every `spec` answer lists them: `archetype dwarf (dwarf): 24 joints; parts torso, arm_l, hand_l, ...`.
+- Patch a generated part like your own: `{"parts": {"head": {"params": {"brow": 1.0}}}}` merges onto it; a different shape key (`"sdf": [...]`) replaces its shape. `"omit": ["hair"]` leaves parts out, `"prefix": "elf_"` renames them (two instances cannot make the same part name).
+- Move joints by number: `"joints": {"elbow_r": {"by": [0, 0.05, 0]}}` moves the elbow and everything below it; `at` sets a position. Parts follow.
+- Place an instance with `transform` (`position`, `rotate`) or on another instance's joint with `"at": "dwarf.grip_r"`, which puts its root joint there in that joint's frame.
+- Parts of your own anchor on joints: `{"on": "dwarf", "landmark": "head_top", "offset": [0, -0.05, 0]}` for a helmet.
+- The `features` tool lists archetypes and describes each one's parameters, joints and parts.
+
+Humanoids: `human` (7.5 heads), `elf` (8 heads, long legs, pointed ears), `dwarf` (4.3 heads, barrel chest, heavy boots, big hands, braided beard), `orc` (massive, tusks), `halfling` (5 heads, big bare feet). Parameters: `height`, `heads`, `build`, `belly`, `shoulders` (head heights), `legs` (crotch height share), `arms`, `hands`, `feet`, `stance`, `pose` (`relaxed`, `a_pose`, `t_pose`), `hold` (`none`, `right`, `left`, `both`: the forearm points forward and the fist closes around joint `grip_r`), `beard` (`none`, `short`, `full`, `braided`), `hair`, `detail`. The anatomy kit blends SDF masses (ribcage, pecs, lats, traps, belly, pelvis, glutes, deltoids, biceps, triceps, forearms, quads, hamstrings, calves, boots) into one `torso` mesh; the `head_base`, `nose`, `ear`, `eye` and `hand` features and eyebrow, beard and hair strands sit on top.
+
 ## Sculpting by numbers
 
 A part's `deform` block moves points by offsets after its shape and edits, with pins held and a smooth falloff along the surface (it never reaches geometry that is not connected):
