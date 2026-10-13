@@ -24,6 +24,7 @@ mod horn;
 mod nose;
 mod outline;
 mod tube;
+pub mod wing;
 
 /// What kind of value a parameter takes.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -245,6 +246,7 @@ pub fn library() -> Vec<Box<dyn Feature>> {
         Box::new(head::HeadBase),
         Box::new(hand::Hand),
         Box::new(cable::Cable),
+        Box::new(wing::Wing),
     ];
     v.sort_by_key(|f| f.info().id);
     v
@@ -394,6 +396,15 @@ pub fn mirror_items_x(items: &[Item]) -> Vec<Item> {
             out
         })
         .collect()
+}
+
+/// The bones of a `wing` with these parameters (a left wing, feature
+/// space).
+///
+/// Complexity: O(parameters).
+pub fn wing_bones(params: &Value) -> Result<wing::Bones, FeatureError> {
+    let p = resolve(&wing::Wing.info(), params)?;
+    Ok(wing::bones(&p))
 }
 
 /// Where a handle held by a `hand` with these parameters passes through

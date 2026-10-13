@@ -171,3 +171,24 @@ fn archetype_mistakes_point_into_the_block() {
     assert_eq!(s.parts["elf_nose"].anchor.as_ref().unwrap().on.as_deref(), Some("elf_head"));
     assert!((s.skeletons["b"].joints["root"].frame().0 - Vec3::X).length() < 1e-6);
 }
+
+#[test]
+fn wings_spread_from_a_back_joint() {
+    let spec = json!({ "archetypes": {
+        "elf": { "kind": "elf", "params": { "hair": "none" } },
+        "wings": { "kind": "feathered_wings", "at": "elf.back", "params": { "span": 1.2 } }
+    } });
+    let s = p3d_spec::parse(&spec).unwrap();
+    let back = s.skeletons["elf"].joints["back"].frame().0;
+    let root = s.skeletons["wings"].joints["root"].frame().0;
+    assert!((back - root).length() < 1e-4);
+    let (l, r) = (s.skeletons["wings"].joints["tip_l"].frame().0, s.skeletons["wings"].joints["tip_r"].frame().0);
+    assert!(l.x > 0.8 && (l.x + r.x).abs() < 1e-4 && l.y > back.y, "{l} {r}");
+    let mut tx = Tx::new(Document::new());
+    let out = run(&mut tx, "spec.set", json!({ "name": "angel", "spec": spec })).unwrap();
+    assert!(out.contains("archetype wings (feathered_wings)") && out.contains("wing_l"), "{out}");
+    let mut tx = Tx::new(Document::new());
+    let membrane = json!({ "archetypes": { "w": { "kind": "membrane_wings", "params": { "fingers": 3 } } } });
+    run(&mut tx, "spec.set", json!({ "name": "bat", "spec": membrane.clone() })).unwrap();
+    assert!(p3d_spec::parse(&membrane).unwrap().skeletons["w"].joints.contains_key("finger_3_r"));
+}

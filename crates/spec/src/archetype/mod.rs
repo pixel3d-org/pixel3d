@@ -10,6 +10,7 @@
 
 mod humanoid;
 mod weapon;
+mod wings;
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -193,6 +194,7 @@ pub fn library() -> Vec<Box<dyn Archetype>> {
     let mut v: Vec<Box<dyn Archetype>> = Vec::new();
     v.extend(humanoid::all());
     v.extend(weapon::all());
+    v.extend(wings::all());
     v.sort_by_key(|a| a.info().id);
     v
 }

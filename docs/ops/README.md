@@ -68,7 +68,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`gen.mirror`](gen.mirror.md) | Adds the mirror image of a mesh across an axis plane, welding the seam; optionally bisects first. |
 | [`gen.scatter`](gen.scatter.md) | Places seeded, evenly spaced instances of an object over a surface, standing on it with random turns and scales. |
 | [`gen.shell`](gen.shell.md) | Builds a curved sheet from one outline (cup, bend, twist), as a card or a closed shell: ears, leaves, petals, wings, fins. |
-| [`gen.feature`](gen.feature.md) | Builds a feature template (head base, hand, ear, eye, nose, horn, cable, bolt, rivet, vent grille, panel inset, molding) from semantic parameters. |
+| [`gen.feature`](gen.feature.md) | Builds a feature template (head base, hand, ear, eye, nose, horn, cable, wing, bolt, rivet, vent grille, panel inset, molding) from semantic parameters. |
 | [`gen.strands`](gen.strands.md) | Grows hair, fur, eyebrows, beards or grass on an object's surface as alpha cards, stylized clumps or fur shells, from about ten parameters. |
 
 ## sdf
