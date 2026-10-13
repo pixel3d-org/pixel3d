@@ -95,7 +95,7 @@ impl NativeMenu {
     pub fn poll(&self, app: &mut PixelApp, ctx: &egui::Context) {
         while let Ok(ev) = MenuEvent::receiver().try_recv() {
             if let Some((it, _)) = self.items.get(ev.id.as_ref()) {
-                let _ = app.run(it.command, (it.params)());
+                let _ = app.run(it.command, it.params.get());
                 ctx.request_repaint();
             }
         }

@@ -16,7 +16,7 @@ use crate::icons::Icon;
 pub struct Command {
     /// The command id [`PixelApp::run`] takes (an op id or an app command).
     pub id: &'static str,
-    pub params: fn() -> Value,
+    pub params: crate::menus::Params,
     pub label: String,
     pub desc: String,
     /// Other names to find it by, lowercase.
@@ -97,7 +97,7 @@ fn app_desc(label: &str) -> &'static str {
 fn extra_commands() -> Vec<Command> {
     let mk = |id, params: fn() -> Value, label: &'static str, desc: &'static str, aliases: &[&str], icon| Command {
         id,
-        params,
+        params: crate::menus::Params::Fn(params),
         label: t(label).to_owned(),
         desc: t(desc).to_owned(),
         aliases: aliases.iter().map(|a| a.to_lowercase()).collect(),
@@ -189,8 +189,15 @@ pub fn index(app: &PixelApp) -> Vec<Command> {
             }
             // An op behind a menu entry lends it its summary and aliases.
             let meta = app.session.registry().get(it.command).ok().map(|op| op.meta());
-            let desc = meta.as_ref().map_or_else(|| t(app_desc(it.label)).to_owned(), |m| m.summary.to_owned());
-            let op_aliases = meta.as_ref().map_or(&[][..], |m| m.aliases);
+            let mut desc = meta.as_ref().map_or_else(|| t(app_desc(it.label)).to_owned(), |m| m.summary.to_owned());
+            let mut op_aliases = meta.as_ref().map_or(&[][..], |m| m.aliases);
+            // A feature template: its own summary and names.
+            if let crate::menus::Params::Feature(id) = it.params
+                && let Some(f) = crate::menus::feature_templates().iter().find(|f| f.id == id)
+            {
+                desc = format!("{}: {}", t("Insert a feature"), f.summary);
+                op_aliases = f.aliases;
+            }
             out.push(Command {
                 id: it.command,
                 params: it.params,
@@ -220,7 +227,7 @@ pub fn index(app: &PixelApp) -> Vec<Command> {
             && !crate::jobcard::runs_in_card(app.session.registry(), op.id());
         out.push(Command {
             id: op.id(),
-            params: null,
+            params: crate::menus::Params::Fn(null),
             label: meta.label.to_owned(),
             desc: meta.summary.to_owned(),
             aliases: meta.aliases.iter().map(|a| a.to_lowercase()).collect(),
@@ -300,7 +307,7 @@ pub fn rank(commands: &[Command], query: &str) -> Vec<usize> {
 /// Runs a command with its own parameters; ops that take a target run on
 /// each selected object.
 pub fn run(app: &mut PixelApp, cmd: &Command) -> Result<Value, String> {
-    run_with(app, cmd, (cmd.params)())
+    run_with(app, cmd, cmd.params.get())
 }
 
 /// Runs a command with `params`. An op that takes a target, called without

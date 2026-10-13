@@ -12,12 +12,31 @@ use crate::icons::Icon;
 /// Whether an item can run now, or why not.
 pub type Ready = fn(&PixelApp) -> Result<(), String>;
 
+/// What a menu item (or palette command) passes to its command.
+#[derive(Clone, Copy)]
+pub enum Params {
+    /// Built by a function.
+    Fn(fn() -> Value),
+    /// A feature template to insert (Add > Feature), the Features panel
+    /// opening to tune it.
+    Feature(&'static str),
+}
+
+impl Params {
+    pub fn get(self) -> Value {
+        match self {
+            Params::Fn(f) => f(),
+            Params::Feature(id) => json!({ "feature": id, "open": true }),
+        }
+    }
+}
+
 /// One menu item. An item without a command is a section header.
 #[derive(Clone, Copy)]
 pub struct MenuItem {
     pub label: &'static str,
     pub command: &'static str,
-    pub params: fn() -> Value,
+    pub params: Params,
     pub shortcut: Option<KeyboardShortcut>,
     pub icon: Option<Icon>,
     /// Whether the item shows a check mark (toggles and choices).
@@ -48,7 +67,7 @@ const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
 }
 
 fn entry(label: &'static str, command: &'static str, params: fn() -> Value, shortcut: Option<KeyboardShortcut>) -> MenuItem {
-    MenuItem { label, command, params, shortcut, icon: None, checked: None, enabled: None }
+    MenuItem { label, command, params: Params::Fn(params), shortcut, icon: None, checked: None, enabled: None }
 }
 
 /// Cmd+* (Ctrl+* off macOS) as egui sees it: `*` is Shift+8 on most
@@ -116,7 +135,7 @@ fn checked(state: fn(&PixelApp) -> bool, it: Option<MenuItem>) -> Option<MenuIte
 pub fn menus() -> Vec<Menu> {
     let cmd = Modifiers::COMMAND;
     let shift_cmd = Modifiers::COMMAND.plus(Modifiers::SHIFT);
-    vec![
+    let mut all = vec![
         Menu {
             label: "File",
             entries: vec![
@@ -256,15 +275,6 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::Shapes, with("SDF shape", "shapes.new", crate::sdf::starter)),
                 None,
                 header("Feature"),
-                icon(Icon::Features, with("Ear", "features.insert", || json!({ "feature": "ear", "open": true }))),
-                icon(Icon::Features, with("Eye", "features.insert", || json!({ "feature": "eye", "open": true }))),
-                icon(Icon::Features, with("Nose", "features.insert", || json!({ "feature": "nose", "open": true }))),
-                icon(Icon::Features, with("Horn", "features.insert", || json!({ "feature": "horn", "open": true }))),
-                icon(Icon::Features, with("Bolt", "features.insert", || json!({ "feature": "bolt", "open": true }))),
-                icon(Icon::Features, with("Rivet", "features.insert", || json!({ "feature": "rivet", "open": true }))),
-                icon(Icon::Features, with("Vent grille", "features.insert", || json!({ "feature": "vent_grille", "open": true }))),
-                icon(Icon::Features, with("Panel inset", "features.insert", || json!({ "feature": "panel_inset", "open": true }))),
-                icon(Icon::Features, with("Molding", "features.insert", || json!({ "feature": "molding", "open": true }))),
                 None,
                 header("Outline"),
                 icon(Icon::Leaf, with("Leaf shell", "outline.new", || json!({ "starter": "leaf" }))),
@@ -340,7 +350,34 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::Apply, with("Apply transform", "selection.run", || json!({ "op": "scene.apply_transform" }))),
             ],
         },
-    ]
+    ];
+    // Add > Feature: one item per template, so new ones appear by themselves.
+    if let Some(add) = all.iter_mut().find(|m| m.label == "Add")
+        && let Some(at) = add.entries.iter().position(|e| e.as_ref().is_some_and(|it| it.is_header() && it.label == "Feature"))
+    {
+        add.entries.splice(at + 1..at + 1, feature_items());
+    }
+    all
+}
+
+/// The feature templates by label (read once).
+///
+/// Complexity: O(templates log templates) the first time, then O(1).
+pub fn feature_templates() -> &'static [p3d_features::FeatureInfo] {
+    static LIST: std::sync::OnceLock<Vec<p3d_features::FeatureInfo>> = std::sync::OnceLock::new();
+    LIST.get_or_init(|| {
+        let mut v: Vec<p3d_features::FeatureInfo> = p3d_features::library().iter().map(|f| f.info()).collect();
+        v.sort_by_key(|i| i.label);
+        v
+    })
+}
+
+/// Add > Feature: insert each template at the 3D cursor.
+fn feature_items() -> Vec<Option<MenuItem>> {
+    feature_templates()
+        .iter()
+        .map(|i| icon(Icon::Features, Some(MenuItem { params: Params::Feature(i.id), ..entry(i.label, "features.insert", none, None) })))
+        .collect()
 }
 
 #[cfg(test)]
@@ -359,7 +396,7 @@ mod tests {
                 }
                 // Ops may refuse the scene (nothing selected, no holes); the
                 // command itself must exist.
-                if let Err(e) = app.run(it.command, (it.params)()) {
+                if let Err(e) = app.run(it.command, it.params.get()) {
                     assert!(!e.starts_with(crate::i18n::t("unknown command")), "{}: {e}", it.command);
                 }
                 if let Some(state) = it.checked {
@@ -404,15 +441,28 @@ mod tests {
         assert!(items.iter().all(|it| (it.enabled.unwrap())(&app).is_ok()));
         let steps = app.session.history().len();
         for it in items.iter().rev() {
-            app.run(it.command, (it.params)()).unwrap();
+            app.run(it.command, it.params.get()).unwrap();
         }
         // The report adds no undo step and reads as lines; the clean box stays clean.
         assert_eq!(app.session.history().len(), steps + 1);
         assert!(app.result.as_ref().is_some_and(|r| !r.read_only));
-        app.run(items[1].command, (items[1].params)()).unwrap();
+        app.run(items[1].command, items[1].params.get()).unwrap();
         let r = app.result.clone().unwrap();
         let (_, lines) = crate::results::readable(&r.entries[0].summary, app.session.registry());
         assert!(r.read_only && lines.iter().any(|l| l == "Clean up would change nothing"), "{lines:?}");
+    }
+
+    #[test]
+    fn add_feature_lists_every_template_by_label() {
+        let add = menus().into_iter().find(|m| m.label == "Add").unwrap();
+        let labels: Vec<&str> = add.entries.iter().flatten().filter(|it| matches!(it.params, Params::Feature(_))).map(|it| it.label).collect();
+        assert_eq!(labels.len(), p3d_features::library().len());
+        assert!(labels.windows(2).all(|w| w[0] <= w[1]), "{labels:?}");
+        assert!(labels.contains(&"Hand") && labels.contains(&"Head base"), "{labels:?}");
+        // The palette finds them by their summaries and aliases.
+        let app = crate::PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        let hand = crate::commands::index(&app).into_iter().find(|c| c.label == "Hand").unwrap();
+        assert!(hand.desc.starts_with("Insert a feature"), "{}", hand.desc);
     }
 
     #[test]
@@ -421,7 +471,7 @@ mod tests {
         let add = menus().into_iter().find(|m| m.label == "Add").unwrap();
         for it in add.entries.into_iter().flatten().filter(|it| !it.is_header()) {
             let before = app.doc().object_count();
-            app.run(it.command, (it.params)()).unwrap_or_else(|e| panic!("{}: {e}", it.label));
+            app.run(it.command, it.params.get()).unwrap_or_else(|e| panic!("{}: {e}", it.label));
             assert!(app.doc().object_count() > before, "{}", it.label);
         }
     }

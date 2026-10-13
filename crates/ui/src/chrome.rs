@@ -373,7 +373,7 @@ fn menu_body(app: &PixelApp, ui: &mut egui::Ui, menu: &crate::menus::Menu) -> Op
             Some(it) if it.is_header() => crate::widgets::menu_header(ui, t(it.label)),
             Some(it) => {
                 if menu_item(ui, app, it, icon_column).clicked() {
-                    clicked = Some((it.command, (it.params)()));
+                    clicked = Some((it.command, it.params.get()));
                 }
             }
         }
@@ -702,7 +702,7 @@ fn mode_menu(app: &PixelApp, ui: &mut egui::Ui, left: f32, cy: f32) -> (f32, Opt
             crate::menus::MenuItem {
                 label: "Object Mode",
                 command: "ui.mode",
-                params: || json!({ "mode": "object" }),
+                params: crate::menus::Params::Fn(|| json!({ "mode": "object" })),
                 shortcut: None,
                 icon: Some(Icon::ModeObject),
                 checked: Some(|a| !a.ui.mode.is_edit()),
@@ -711,7 +711,7 @@ fn mode_menu(app: &PixelApp, ui: &mut egui::Ui, left: f32, cy: f32) -> (f32, Opt
             crate::menus::MenuItem {
                 label: "Edit Mode",
                 command: "ui.mode",
-                params: || json!({ "mode": "edit" }),
+                params: crate::menus::Params::Fn(|| json!({ "mode": "edit" })),
                 shortcut: Some(KeyboardShortcut::new(Modifiers::NONE, Key::Tab)),
                 icon: Some(Icon::ModeVert),
                 checked: Some(|a| a.ui.mode.is_edit()),
@@ -720,7 +720,7 @@ fn mode_menu(app: &PixelApp, ui: &mut egui::Ui, left: f32, cy: f32) -> (f32, Opt
         ];
         for it in &entries {
             if menu_item(ui, app, it, true).clicked() {
-                chosen = Some((it.command, (it.params)()));
+                chosen = Some((it.command, it.params.get()));
             }
         }
     });

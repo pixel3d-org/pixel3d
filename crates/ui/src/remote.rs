@@ -248,7 +248,7 @@ impl PixelApp {
             "ui.commands" => {
                 let list: Vec<Value> = crate::commands::index(self)
                     .iter()
-                    .map(|c| json!({ "id": c.id, "label": c.label, "desc": c.desc, "params": (c.params)() }))
+                    .map(|c| json!({ "id": c.id, "label": c.label, "desc": c.desc, "params": c.params.get() }))
                     .collect();
                 Ok(json!({ "commands": list }))
             }
