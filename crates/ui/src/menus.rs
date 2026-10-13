@@ -9,6 +9,9 @@ use serde_json::{Value, json};
 use crate::PixelApp;
 use crate::icons::Icon;
 
+/// Whether an item can run now, or why not.
+pub type Ready = fn(&PixelApp) -> Result<(), String>;
+
 /// One menu item. An item without a command is a section header.
 #[derive(Clone, Copy)]
 pub struct MenuItem {
@@ -19,6 +22,8 @@ pub struct MenuItem {
     pub icon: Option<Icon>,
     /// Whether the item shows a check mark (toggles and choices).
     pub checked: Option<fn(&PixelApp) -> bool>,
+    /// Whether the item can run now, or why not (shown on hover).
+    pub enabled: Option<Ready>,
 }
 
 impl MenuItem {
@@ -43,7 +48,44 @@ const fn key(modifiers: Modifiers, key: Key) -> Option<KeyboardShortcut> {
 }
 
 fn entry(label: &'static str, command: &'static str, params: fn() -> Value, shortcut: Option<KeyboardShortcut>) -> MenuItem {
-    MenuItem { label, command, params, shortcut, icon: None, checked: None }
+    MenuItem { label, command, params, shortcut, icon: None, checked: None, enabled: None }
+}
+
+/// Cmd+* (Ctrl+* off macOS) as egui sees it: `*` is Shift+8 on most
+/// keyboards and egui has no key of its own for it.
+pub const ASTERISK: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND.plus(Modifiers::SHIFT), Key::Num8);
+
+/// A shortcut as menus and the palette write it, with Cmd+Shift+8 as
+/// `Ctrl+*` (`Cmd*` on macOS).
+pub fn shortcut_text(ctx: &egui::Context, s: &KeyboardShortcut) -> String {
+    if *s == ASTERISK {
+        let mut text = ctx.format_shortcut(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Num8));
+        text.pop();
+        text.push('*');
+        return text;
+    }
+    ctx.format_shortcut(s)
+}
+
+/// Whether a boolean can run on the selection, or why not.
+fn boolean_ready(app: &PixelApp) -> Result<(), String> {
+    app.tools_on_active().map(|_| ())
+}
+
+/// Whether a mesh is selected (cleanup works on meshes).
+///
+/// Complexity: O(selected objects).
+fn mesh_selected(app: &PixelApp) -> Result<(), String> {
+    let doc = app.doc();
+    if app.selection.iter().any(|k| doc.object(*k).is_some_and(|o| o.mesh_key().is_some())) {
+        Ok(())
+    } else {
+        Err(crate::i18n::t("Select a mesh first.").to_owned())
+    }
+}
+
+fn when(state: Ready, it: Option<MenuItem>) -> Option<MenuItem> {
+    it.map(|it| MenuItem { enabled: Some(state), ..it })
 }
 
 fn item(label: &'static str, command: &'static str) -> Option<MenuItem> {
@@ -81,6 +123,8 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::New, keyed("New", "file.new", key(cmd, Key::N))),
                 icon(Icon::Open, keyed("Open...", "file.open", key(cmd, Key::O))),
                 icon(Icon::Box, item("Open the sample scene", "file.sample")),
+                None,
+                icon(Icon::Import, item("Import...", "file.import")),
                 None,
                 icon(Icon::Save, keyed("Save", "file.save", key(cmd, Key::S))),
                 keyed("Save As...", "file.save_as", key(shift_cmd, Key::S)),
@@ -174,7 +218,34 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::Curve, item("Rectangle", "curve.rectangle")),
                 None,
                 header("Generate"),
-                icon(Icon::Extrude, item("Extruded shape", "gen.extrude_shape")),
+                icon(
+                    Icon::Extrude,
+                    with(
+                        "Extruded shape",
+                        "gen.extrude_shape",
+                        || json!({ "outline": [[-0.5, -0.2], [0.1, -0.2], [0.1, -0.4], [0.5, 0.0], [0.1, 0.4], [0.1, 0.2], [-0.5, 0.2]], "depth": "8cm" }),
+                    ),
+                ),
+                icon(
+                    Icon::Sweep,
+                    with(
+                        "Sweep",
+                        "gen.sweep",
+                        || json!({ "path": [[-0.5, 0, 0], [0, 0, -0.4], [0.5, 0, 0]], "smooth_path": true, "profile": { "rectangle": ["8cm", "4cm"] } }),
+                    ),
+                ),
+                icon(
+                    Icon::Pipe,
+                    with("Pipe", "gen.pipe", || json!({ "path": [[0, 0, 0], [0, 0.5, 0], [0.5, 0.5, 0], [0.5, 0.5, -0.5]], "radius": "3cm" })),
+                ),
+                icon(
+                    Icon::Loft,
+                    with(
+                        "Loft",
+                        "gen.loft",
+                        || json!({ "points": 16, "sections": [[[-0.2, 0, -0.2], [0.2, 0, -0.2], [0.2, 0, 0.2], [-0.2, 0, 0.2]], [[0.15, 0.5, 0], [0, 0.5, -0.15], [-0.15, 0.5, 0], [0, 0.5, 0.15]]] }),
+                    ),
+                ),
                 None,
                 header("Generate (lathe)"),
                 icon(Icon::Tube, with("Barrel", "gen.lathe", || json!({ "profile": "barrel" }))),
@@ -196,6 +267,31 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::Merge, keyed("Join", "edit.join", key(Modifiers::COMMAND, Key::J))),
                 with("Move out of parent", "selection.run", || json!({ "op": "scene.unparent" })),
                 None,
+                header("Generate from selection"),
+                icon(Icon::Array, with("Array", "selection.action", || json!({ "op": "gen.array" }))),
+                icon(Icon::Symmetrize, with("Mirror", "selection.action", || json!({ "op": "gen.mirror" }))),
+                icon(Icon::Scatter, with("Scatter onto active", "selection.action", || json!({ "op": "gen.scatter" }))),
+                icon(Icon::Sweep, with("Sweep along curve", "selection.action", || json!({ "op": "gen.sweep" }))),
+                icon(Icon::Pipe, with("Pipe along curve", "selection.action", || json!({ "op": "gen.pipe" }))),
+                icon(Icon::Loft, with("Loft through curves", "selection.action", || json!({ "op": "gen.loft" }))),
+                None,
+                header("Boolean"),
+                when(
+                    boolean_ready,
+                    icon(
+                        Icon::BoolDifference,
+                        Some(entry("Difference", "selection.boolean", || json!({ "operation": "difference" }), key(cmd, Key::Minus))),
+                    ),
+                ),
+                when(
+                    boolean_ready,
+                    icon(Icon::BoolUnion, Some(entry("Union", "selection.boolean", || json!({ "operation": "union" }), key(cmd, Key::Plus)))),
+                ),
+                when(
+                    boolean_ready,
+                    icon(Icon::BoolIntersect, Some(entry("Intersect", "selection.boolean", || json!({ "operation": "intersect" }), Some(ASTERISK)))),
+                ),
+                None,
                 icon(Icon::Trash, keyed("Delete", "edit.delete", key(Modifiers::NONE, Key::Delete))),
             ],
         },
@@ -204,6 +300,10 @@ pub fn menus() -> Vec<Menu> {
             entries: vec![
                 icon(Icon::Fill, with("Fill holes", "selection.run", || json!({ "op": "edit.fill" }))),
                 icon(Icon::Normals, with("Recalculate normals", "selection.run", || json!({ "op": "edit.recalc_normals" }))),
+                None,
+                header("Clean Up"),
+                when(mesh_selected, icon(Icon::CleanUp, with("Auto Clean", "selection.run", || json!({ "op": "cleanup.auto" })))),
+                when(mesh_selected, icon(Icon::Report, with("Report", "selection.run", || json!({ "op": "cleanup.report" })))),
                 None,
                 icon(Icon::Apply, with("Apply transform", "selection.run", || json!({ "op": "scene.apply_transform" }))),
             ],
@@ -222,7 +322,7 @@ mod tests {
             for it in menu.entries.into_iter().flatten() {
                 // Headers, commands that need a dialog and quit are skipped;
                 // the rest must run.
-                if it.is_header() || matches!(it.command, "file.open" | "file.save" | "file.save_as" | "app.quit") {
+                if it.is_header() || matches!(it.command, "file.open" | "file.import" | "file.save" | "file.save_as" | "app.quit") {
                     continue;
                 }
                 // Ops may refuse the scene (nothing selected, no holes); the
@@ -234,6 +334,63 @@ mod tests {
                     let _ = state(&app);
                 }
             }
+        }
+    }
+
+    #[test]
+    fn boolean_items_say_why_they_cannot_run() {
+        let mut app = crate::PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        let object = menus().into_iter().find(|m| m.label == "Object").unwrap();
+        let booleans: Vec<MenuItem> = object.entries.into_iter().flatten().filter(|it| it.command == "selection.boolean").collect();
+        assert_eq!(booleans.iter().map(|it| it.label).collect::<Vec<_>>(), ["Difference", "Union", "Intersect"]);
+        let state = |app: &crate::PixelApp| booleans.iter().map(|it| (it.enabled.unwrap())(app)).collect::<Vec<_>>();
+        app.run("prim.box", serde_json::json!({ "name": "crate" })).unwrap();
+        assert!(state(&app).iter().all(|s| s.as_ref().is_err_and(|e| e.contains("two or more meshes"))));
+        app.run("prim.box", serde_json::json!({ "name": "lid", "position": [0, 0.5, 0] })).unwrap();
+        app.run("edit.select_all", Value::Null).unwrap();
+        assert!(state(&app).iter().all(Result::is_ok));
+        app.run("ui.mode", serde_json::json!({ "mode": "face" })).unwrap();
+        assert!(state(&app).iter().all(|s| s.as_ref().is_err_and(|e| e.contains("Object Mode"))));
+        // Cmd+* is written as such.
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let minus = KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus);
+            assert!(shortcut_text(ui.ctx(), &ASTERISK).ends_with('*'));
+            assert_eq!(shortcut_text(ui.ctx(), &minus), ui.ctx().format_shortcut(&minus));
+        });
+        out.textures_delta.clear();
+    }
+
+    #[test]
+    fn clean_up_items_clean_and_report() {
+        let mut app = crate::PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        let mesh = menus().into_iter().find(|m| m.label == "Mesh").unwrap();
+        let items: Vec<MenuItem> = mesh.entries.into_iter().flatten().filter(|it| matches!(it.label, "Auto Clean" | "Report")).collect();
+        assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|it| (it.enabled.unwrap())(&app).is_err()), "nothing selected");
+        app.run("prim.box", serde_json::json!({ "name": "crate" })).unwrap();
+        assert!(items.iter().all(|it| (it.enabled.unwrap())(&app).is_ok()));
+        let steps = app.session.history().len();
+        for it in items.iter().rev() {
+            app.run(it.command, (it.params)()).unwrap();
+        }
+        // The report adds no undo step and reads as lines; the clean box stays clean.
+        assert_eq!(app.session.history().len(), steps + 1);
+        assert!(app.result.as_ref().is_some_and(|r| !r.read_only));
+        app.run(items[1].command, (items[1].params)()).unwrap();
+        let r = app.result.clone().unwrap();
+        let (_, lines) = crate::results::readable(&r.entries[0].summary, app.session.registry());
+        assert!(r.read_only && lines.iter().any(|l| l == "Clean up would change nothing"), "{lines:?}");
+    }
+
+    #[test]
+    fn every_add_item_creates_an_object() {
+        let mut app = crate::PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        let add = menus().into_iter().find(|m| m.label == "Add").unwrap();
+        for it in add.entries.into_iter().flatten().filter(|it| !it.is_header()) {
+            let before = app.doc().object_count();
+            app.run(it.command, (it.params)()).unwrap_or_else(|e| panic!("{}: {e}", it.label));
+            assert!(app.doc().object_count() > before, "{}", it.label);
         }
     }
 }

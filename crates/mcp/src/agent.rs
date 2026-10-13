@@ -2,8 +2,10 @@
 //! arguments), text for the model plus structured JSON out. The MCP server
 //! and the tests drive the same [`Agent`].
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use p3d_engine::predict::{apply_fix, diagnose_predicted, explain, op_error};
 use p3d_engine::{BatchOptions, OpCall, Session};
 use p3d_ops::catalog::catalog_json;
@@ -42,6 +44,28 @@ impl ToolOutput {
     fn report(r: Report) -> Self {
         Self::ok(r.text, json!({ "aspect": r.aspect, "data": r.data }))
     }
+
+    /// The output as JSON for another process (the desktop app answering
+    /// `mcp.call`), images as base64 PNG.
+    ///
+    /// Complexity: O(text and image bytes).
+    pub fn to_wire(&self) -> Value {
+        let images: Vec<String> = self.images.iter().map(|png| BASE64.encode(png)).collect();
+        json!({ "text": self.text, "structured": self.structured, "images": images, "isError": self.is_error })
+    }
+
+    /// Reads [`ToolOutput::to_wire`]; `None` when `v` is not one.
+    ///
+    /// Complexity: O(text and image bytes).
+    pub fn from_wire(v: &Value) -> Option<ToolOutput> {
+        let text = v.get("text")?.as_str()?.to_owned();
+        let images = match v.get("images") {
+            None => Vec::new(),
+            Some(list) => list.as_array()?.iter().map(|s| s.as_str().and_then(|s| BASE64.decode(s).ok())).collect::<Option<Vec<_>>>()?,
+        };
+        let structured = v.get("structured").cloned().unwrap_or(Value::Null);
+        Some(ToolOutput { text, structured, images, is_error: v.get("isError").and_then(Value::as_bool).unwrap_or(false) })
+    }
 }
 
 /// A tool: name, one-sentence description and strict input schema.
@@ -52,7 +76,7 @@ pub struct ToolInfo {
     pub schema: Value,
 }
 
-fn schema<T: schemars::JsonSchema>() -> Value {
+pub(crate) fn schema<T: schemars::JsonSchema>() -> Value {
     serde_json::to_value(schemars::schema_for!(T)).unwrap_or(Value::Null)
 }
 
@@ -132,6 +156,9 @@ pub fn tools() -> Vec<ToolInfo> {
 /// 100 ms on large scenes and several tools need it.
 struct FindingsCache {
     revision: u64,
+    /// The document itself: a host that loads another file can reuse a
+    /// revision number. The weak pointer keeps the address from being reused.
+    doc: Weak<Document>,
     target: Option<String>,
     findings: Arc<Vec<Finding>>,
 }
@@ -155,6 +182,13 @@ impl Agent {
 
     pub fn session_mut(&mut self) -> &mut Session {
         &mut self.session
+    }
+
+    /// Exchanges the agent's session with `other`: a host that owns its
+    /// session (the desktop app) lends it for one call and takes it back.
+    /// The caches stay valid: they are keyed by the document.
+    pub fn swap_session(&mut self, other: &mut Session) {
+        std::mem::swap(&mut self.session, other);
     }
 
     /// Calls a tool. Errors come back as an error output, never a panic.
@@ -195,16 +229,18 @@ impl Agent {
     /// Findings of the current revision for a target (cached).
     fn findings(&mut self, target: Option<&str>) -> Result<Arc<Vec<Finding>>, OpError> {
         let rev = self.session.revision();
+        let doc = self.doc();
         if let Some(c) = &self.cache
             && c.revision == rev
+            && std::ptr::eq(c.doc.as_ptr(), Arc::as_ptr(&doc))
             && c.target.as_deref() == target
         {
             return Ok(Arc::clone(&c.findings));
         }
-        let doc = self.doc();
         let view = View::new(&doc, target).map_err(op_error)?;
         let f = Arc::new(diagnose(&view));
-        self.cache = Some(FindingsCache { revision: rev, target: target.map(str::to_owned), findings: Arc::clone(&f) });
+        let doc = Arc::downgrade(&doc);
+        self.cache = Some(FindingsCache { revision: rev, doc, target: target.map(str::to_owned), findings: Arc::clone(&f) });
         Ok(f)
     }
 

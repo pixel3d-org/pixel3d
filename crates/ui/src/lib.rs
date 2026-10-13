@@ -8,6 +8,7 @@
 //! and the control server see the same actions. Nothing here owns document
 //! data.
 
+pub mod actions;
 pub mod chrome;
 pub mod cmdline;
 pub mod commands;
@@ -15,6 +16,7 @@ pub mod control;
 pub mod curves;
 pub mod docking;
 pub mod elements;
+pub mod files;
 pub mod gizmo;
 pub mod health;
 pub mod i18n;
@@ -28,8 +30,10 @@ pub mod palette;
 pub mod panels;
 pub mod quick;
 pub mod remote;
+pub mod results;
 pub mod schema_form;
 pub mod screenshot;
+pub mod snap;
 pub mod stats;
 pub mod theme;
 pub mod transform;
@@ -137,15 +141,15 @@ impl WorkspaceKind {
         }
     }
 
-    /// Why the workspace cannot be used yet, if it cannot.
-    pub fn unavailable(self) -> Option<&'static str> {
+    /// What the workspace is for (its tab's tooltip).
+    pub fn describe(self) -> &'static str {
         match self {
-            WorkspaceKind::Model => None,
-            WorkspaceKind::Uv => Some(t("Needs the UV editor, which is not built yet.")),
-            WorkspaceKind::Bake => Some(t("Needs baking, which is not built yet.")),
-            WorkspaceKind::Rig => Some(t("Needs rigging, which is not built yet.")),
-            WorkspaceKind::Animate => Some(t("Needs animation, which is not built yet.")),
-            WorkspaceKind::Export => Some(t("Needs the exporters, which are not built yet.")),
+            WorkspaceKind::Model => t("Modelling: the viewport, Outliner, Properties and Health"),
+            WorkspaceKind::Uv => t("UVs: the viewport beside the UV editor"),
+            WorkspaceKind::Bake => t("Baking: high and low poly pairs and their maps"),
+            WorkspaceKind::Rig => t("Rigging: a tall Outliner for the bone hierarchy"),
+            WorkspaceKind::Animate => t("Animation: the timeline under the viewport"),
+            WorkspaceKind::Export => t("Export: budget and health checks before export"),
         }
     }
 }
@@ -155,6 +159,8 @@ impl WorkspaceKind {
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
     pub docking: docking::Workspace,
+    /// The layouts of the other workspaces, restored when switching back.
+    pub layouts: std::collections::BTreeMap<WorkspaceKind, docking::Workspace>,
     pub theme: theme::ThemePref,
     pub view: ViewSettings,
     /// The tool settings row under the top bar.
@@ -184,6 +190,7 @@ impl Default for UiState {
     fn default() -> Self {
         UiState {
             docking: docking::Workspace::default(),
+            layouts: std::collections::BTreeMap::new(),
             theme: theme::ThemePref::default(),
             view: ViewSettings::default(),
             show_toolbar: true,
@@ -229,6 +236,22 @@ pub type PickSave = Box<dyn Fn(&str) -> Option<PathBuf>>;
 pub struct Services {
     pub pick_open: Option<PickOpen>,
     pub pick_save: Option<PickSave>,
+    /// Asks for a model file to import (glTF, GLB, OBJ, FBX).
+    pub pick_import: Option<PickOpen>,
+}
+
+/// Extensions `io.import` reads.
+pub const MODEL_EXTENSIONS: [&str; 4] = ["glb", "gltf", "obj", "fbx"];
+
+/// Whether `path` names a model file `io.import` reads.
+pub fn is_model_file(path: &std::path::Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| MODEL_EXTENSIONS.iter().any(|m| e.eq_ignore_ascii_case(m)))
+}
+
+/// An op batch running in the background (imports) and its undo label.
+struct RunningJob {
+    job: p3d_engine::Job,
+    label: String,
 }
 
 /// The last single-op transaction: Properties shows its parameters and
@@ -257,12 +280,22 @@ pub struct PixelApp {
     pub hidden: BTreeSet<ObjectKey>,
     /// The last single-op transaction, adjustable in Properties.
     pub last_op: Option<LastOp>,
+    /// What the last transaction reported (summaries, warnings and fixes).
+    pub result: Option<results::LastResult>,
+    /// Background op batches (imports), committed when they finish.
+    jobs: Vec<RunningJob>,
     /// The revision of an edit still being dragged: the next change of the
     /// same drag replaces it, so one drag is one undo step.
     coalesce: Option<u64>,
+    /// A group to select when Edit Mode starts on its object (the faces a
+    /// boolean cut), while the document is still at that revision.
+    pub edit_focus: Option<(u64, ObjectKey, String)>,
     pub services: Services,
     /// The file the document was opened from or saved to.
     pub path: Option<PathBuf>,
+    /// Folders file ops may use: the project's and those the user picked
+    /// files from (the session's file access follows them).
+    pub files: files::FileRoots,
     saved_revision: u64,
     /// Bumped on every document load so scene caches never confuse two files.
     generation: u64,
@@ -284,6 +317,10 @@ pub struct PixelApp {
     pub edit: elements::EditState,
     /// The control server and the input and screenshots it asked for.
     pub remote: remote::Remote,
+    /// The hovered contextual action's preview, and the actions for the
+    /// current selection (generated from the registry, cached).
+    pub action_preview: actions::ActionPreview,
+    actions: Option<(u64, std::sync::Arc<Vec<actions::Action>>)>,
     /// The transform gizmo: its drag and the Edit Mode preview.
     pub gizmo: gizmo::GizmoState,
     /// The command palette while open.
@@ -312,9 +349,13 @@ impl PixelApp {
             active: None,
             hidden: BTreeSet::new(),
             last_op: None,
+            result: None,
+            jobs: Vec::new(),
             coalesce: None,
+            edit_focus: None,
             services,
             path: None,
+            files: files::FileRoots::default(),
             generation: 0,
             status: None,
             console: Vec::new(),
@@ -328,6 +369,8 @@ impl PixelApp {
             curves: curves::CurveCache::default(),
             edit: elements::EditState::default(),
             remote: remote::Remote::default(),
+            action_preview: actions::ActionPreview::default(),
+            actions: None,
             gizmo: gizmo::GizmoState::default(),
             palette: None,
             cmdline: cmdline::CmdLine::default(),
@@ -350,7 +393,7 @@ impl PixelApp {
 
     /// Background work still running (shown in the status bar).
     pub fn running_jobs(&self) -> usize {
-        usize::from(self.health.busy())
+        usize::from(self.health.busy()) + self.jobs.len()
     }
 
     /// Whether the History or Console panel is open.
@@ -518,7 +561,10 @@ impl PixelApp {
             }
         };
         self.ui.transform.cursor = at.to_array();
-        Ok(json!({ "cursor": self.ui.transform.cursor }))
+        if let Some(r) = params.get("rotation") {
+            self.ui.transform.cursor_rotation = serde_json::from_value(r.clone()).map_err(|e| format!("rotation: {e}"))?;
+        }
+        Ok(json!({ "cursor": self.ui.transform.cursor, "rotation": self.ui.transform.cursor_rotation }))
     }
 
     /// The center of the selection in world space: the selected elements'
@@ -550,9 +596,10 @@ impl PixelApp {
     /// Switches between Object mode and the element modes. Edit mode needs
     /// an active mesh object.
     pub fn set_mode(&mut self, mode: SelectMode) -> Result<Value, String> {
+        let was_edit = self.ui.mode.is_edit();
         if mode.is_edit() {
             let mesh = self.active_object().is_some_and(|k| self.doc().object_mesh(k).is_some());
-            if !mesh && !self.ui.mode.is_edit() {
+            if !mesh && !was_edit {
                 return Err(t("Select a mesh object to edit it").to_owned());
             }
             self.ui.element_mode = mode;
@@ -567,8 +614,110 @@ impl PixelApp {
             let editing = self.active_object().or(self.edit.object);
             let mesh = editing.and_then(|k| doc.object(k)?.mesh_key()).and_then(|m| doc.mesh_arc(m));
             self.edit.sync(mesh.and(editing), mesh, mode);
+            // Right after a boolean, Edit Mode starts with the faces it cut.
+            if !was_edit
+                && let Some((revision, k, name)) = self.edit_focus.take()
+                && revision == self.session.revision()
+                && editing == Some(k)
+            {
+                return self.select_group(k, &name);
+            }
         }
         Ok(json!({ "mode": mode }))
+    }
+
+    /// Edits object `k` with its group `name` selected, in the group's
+    /// element mode (faces, edges or vertices).
+    ///
+    /// Complexity: O(g log g) for a group of g elements, plus a mode change.
+    pub fn select_group(&mut self, k: ObjectKey, name: &str) -> Result<Value, String> {
+        let doc = std::sync::Arc::clone(self.session.doc());
+        let mesh = doc.object(k).and_then(|o| o.mesh_key()).and_then(|m| doc.mesh_arc(m)).cloned().ok_or(t("not a mesh object"))?;
+        let g = mesh.group(name).ok_or_else(|| format!("{} `{name}`", t("no group")))?;
+        let mode = match g.kind() {
+            p3d_mesh::ElementKind::Face => SelectMode::Face,
+            p3d_mesh::ElementKind::Edge => SelectMode::Edge,
+            p3d_mesh::ElementKind::Vert => SelectMode::Vert,
+        };
+        let ids: Vec<u32> = g.iter().collect();
+        let count = ids.len();
+        self.selection = [k].into_iter().collect();
+        self.active = Some(k);
+        self.ui.mode = mode;
+        self.ui.element_mode = mode;
+        if self.ui.tool == Tool::Knife {
+            self.ui.tool = Tool::Select;
+        }
+        self.edit.sync(Some(k), Some(&mesh), mode);
+        self.edit.apply_box(ids, mode, elements::BoxOp::Set);
+        self.set_status(format!("{} {name}: {count} {}", t("Selected"), t("elements")));
+        Ok(json!({ "mode": mode, "group": name, "elements": count }))
+    }
+
+    /// The target (the active mesh) and the tools (the other selected
+    /// meshes) of an op that combines objects, such as a boolean, or why
+    /// the selection does not give them.
+    ///
+    /// Complexity: O(selected objects).
+    pub fn tools_on_active(&self) -> Result<(ObjectKey, Vec<ObjectKey>), String> {
+        if self.ui.mode.is_edit() {
+            return Err(t("Works on whole objects: switch to Object Mode (Tab).").to_owned());
+        }
+        let doc = self.doc();
+        let is_mesh = |k: &ObjectKey| doc.object(*k).is_some_and(|o| o.mesh_key().is_some());
+        if self.selection.iter().filter(|k| is_mesh(k)).count() < 2 {
+            return Err(t("Select two or more meshes: the active one (selected last) keeps the result, the others act on it.").to_owned());
+        }
+        let target = self.active_object().filter(is_mesh).ok_or(t("Make a mesh active (click it last): it keeps the result."))?;
+        let tools = self.selection.iter().copied().filter(|k| *k != target && is_mesh(k)).collect();
+        Ok((target, tools))
+    }
+
+    /// The call of an op that takes the active mesh as its `target` and the
+    /// other selected meshes as its `tool`, with `preset` parameters.
+    ///
+    /// Complexity: O(selected objects).
+    pub fn tools_on_active_call(&self, op: &str, preset: &Value) -> Result<(ObjectKey, OpCall), String> {
+        let (target, tools) = self.tools_on_active()?;
+        let doc = self.doc();
+        let id = |k: ObjectKey| doc.object(k).map(|o| o.public_id());
+        let mut args = preset.as_object().cloned().unwrap_or_default();
+        args.insert("target".into(), json!(id(target)));
+        args.insert("tool".into(), json!(tools.into_iter().filter_map(id).collect::<Vec<_>>()));
+        Ok((target, OpCall::new(op, Value::Object(args))))
+    }
+
+    /// Runs an op on the active mesh with the other selected meshes as its
+    /// tools, as Blender's booleans do (one undo step). The target stays
+    /// selected; entering Edit Mode next selects the faces a cut made.
+    pub fn run_tools_on_active(&mut self, op: &str, preset: &Value) -> Result<Value, String> {
+        let (target, call) = self.tools_on_active_call(op, preset)?;
+        let r = self.execute(&[call])?;
+        self.selection = [target].into_iter().collect();
+        self.active = Some(target);
+        Ok(r)
+    }
+
+    /// The contextual actions for the current selection and mode, generated
+    /// again only when the document, the selection or the mode changed.
+    ///
+    /// Complexity: O(selected) to check; a rebuild as [`actions::for_context`].
+    pub fn contextual_actions(&mut self) -> std::sync::Arc<Vec<actions::Action>> {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.scene_key().hash(&mut h);
+        self.selection.hash(&mut h);
+        (self.ui.mode as u8).hash(&mut h);
+        self.edit.version.hash(&mut h);
+        let key = h.finish();
+        if let Some((k, a)) = &self.actions
+            && *k == key
+        {
+            return std::sync::Arc::clone(a);
+        }
+        let a = std::sync::Arc::new(actions::for_context(self));
+        self.actions = Some((key, std::sync::Arc::clone(&a)));
+        a
     }
 
     /// Object and element counts, selected and visible.
@@ -640,16 +789,54 @@ impl PixelApp {
 
     // ---- documents ----------------------------------------------------------------
 
+    /// Gives the session the current folders: the project's and the picked ones.
+    ///
+    /// Complexity: O(folders) file system calls.
+    fn sync_file_access(&mut self) {
+        self.session.set_file_access(self.files.access());
+    }
+
+    /// Allows the folder of a file the user chose (in a dialog or by
+    /// dropping it on the window) for file ops, for the rest of the run.
+    pub fn allow_picked(&mut self, file: &std::path::Path) {
+        if self.files.allow_picked_file(file) {
+            self.sync_file_access();
+        }
+    }
+
+    /// Allows a folder the user named when starting the app
+    /// (`pixel3d --allow-dir`) for file ops, for the rest of the run.
+    pub fn allow_folder(&mut self, dir: &std::path::Path) -> Result<(), String> {
+        if !dir.is_dir() {
+            return Err(format!("{} {}", dir.display(), t("is not a folder")));
+        }
+        if self.files.allow_folder(dir) {
+            self.sync_file_access();
+        }
+        Ok(())
+    }
+
+    /// The open document's file changed: its folder is the project folder.
+    fn set_project_file(&mut self, file: Option<&std::path::Path>) {
+        if self.files.set_project_file(file) {
+            self.sync_file_access();
+        }
+    }
+
     fn loaded(&mut self, doc: Document, path: Option<PathBuf>) {
         self.session.load(doc);
         self.generation += 1;
         self.saved_revision = self.session.revision();
+        self.set_project_file(path.as_deref());
         self.path = path;
         self.selection.clear();
         self.active = None;
         self.hidden.clear();
         self.viewport.hidden_changed();
         self.last_op = None;
+        self.result = None;
+        // Jobs started on the old document must not land in the new one.
+        self.jobs.clear();
         self.coalesce = None;
         self.health = health::HealthState::default();
         self.viewport.frame_pending = true;
@@ -679,6 +866,14 @@ impl PixelApp {
         }
     }
 
+    /// Asks the user for a file with a host dialog; the folder of the
+    /// chosen file is allowed for file ops from now on.
+    fn pick(&mut self, dialog: impl FnOnce(&Services) -> Option<PathBuf>) -> Option<PathBuf> {
+        let chosen = dialog(&self.services)?;
+        self.allow_picked(&chosen);
+        Some(chosen)
+    }
+
     /// Saves to `path`, or to the current file.
     pub fn save_to(&mut self, path: Option<PathBuf>) -> Result<Value, String> {
         let path = match path.or_else(|| self.path.clone()) {
@@ -688,6 +883,7 @@ impl PixelApp {
         let path = if path.extension().is_none() { path.with_extension("p3d") } else { path };
         p3d_io::p3d::save(self.session.doc(), &path).map_err(|e| format!("{} {}: {e}", t("Cannot save"), path.display()))?;
         self.saved_revision = self.session.revision();
+        self.set_project_file(Some(&path));
         self.path = Some(path.clone());
         self.ui.remember(&path);
         self.set_status(format!("{} {}", t("Saved"), path.display()));
@@ -714,7 +910,10 @@ impl PixelApp {
                 Ok(json!({}))
             }
             "file.open" => {
-                let path = str_param("path").map(PathBuf::from).or_else(|| self.services.pick_open.as_ref().and_then(|f| f()));
+                let path = match str_param("path") {
+                    Some(p) => Some(PathBuf::from(p)),
+                    None => self.pick(|s| s.pick_open.as_ref().and_then(|f| f())),
+                };
                 match path {
                     Some(p) => self.open_path(&p).map(|()| json!({ "path": p.display().to_string() })),
                     None => Ok(json!({ "cancelled": true })),
@@ -728,12 +927,28 @@ impl PixelApp {
                         .as_ref()
                         .and_then(|p| p.file_name())
                         .map_or_else(|| "untitled.p3d".to_owned(), |n| n.to_string_lossy().into_owned());
-                    path = self.services.pick_save.as_ref().and_then(|f| f(&suggested));
+                    path = self.pick(|s| s.pick_save.as_ref().and_then(|f| f(&suggested)));
                     if path.is_none() {
                         return Ok(json!({ "cancelled": true }));
                     }
                 }
                 self.save_to(path)
+            }
+            "file.import" | "io.import" if params.get("path").is_none() => {
+                // Without a path, ask in a dialog; the chosen folder is
+                // allowed from then on.
+                let Some(path) = self.pick(|s| s.pick_import.as_ref().and_then(|f| f())) else {
+                    return Ok(json!({ "cancelled": true }));
+                };
+                self.import_files(&[path], params)
+            }
+            "file.import" => {
+                let path = str_param("path").ok_or("path must be a string")?;
+                let mut rest = params.clone();
+                if let Some(m) = rest.as_object_mut() {
+                    m.remove("path");
+                }
+                self.import_files(&[PathBuf::from(path)], &rest)
             }
             "file.sample" => self.sample(),
             "edit.undo" => {
@@ -865,7 +1080,8 @@ impl PixelApp {
             }
             "ui.dock" => self.ui.docking.command(params),
             "ui.dock.reset" => {
-                self.ui.docking = docking::Workspace::default();
+                // The current workspace's preset.
+                self.ui.docking = docking::preset(self.ui.workspace);
                 Ok(json!({}))
             }
             "ui.start" => {
@@ -884,10 +1100,13 @@ impl PixelApp {
             "ui.workspace" => {
                 let ws =
                     serde_json::from_value::<WorkspaceKind>(params.get("workspace").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
-                if let Some(why) = ws.unavailable() {
-                    return Err(format!("{}: {why}", ws.label()));
+                if ws != self.ui.workspace {
+                    // Keep this workspace's layout; bring back the other's, or its preset.
+                    let current = std::mem::take(&mut self.ui.docking);
+                    self.ui.layouts.insert(self.ui.workspace, current);
+                    self.ui.docking = self.ui.layouts.remove(&ws).unwrap_or_else(|| docking::preset(ws));
+                    self.ui.workspace = ws;
                 }
-                self.ui.workspace = ws;
                 Ok(json!({ "workspace": ws }))
             }
             "view.snap" => {
@@ -897,6 +1116,42 @@ impl PixelApp {
             "selection.run" => {
                 let op = str_param("op").ok_or("op is required: an op that takes a target")?;
                 self.run_on_selection(&op)
+            }
+            "selection.action" => {
+                // The contextual action of an op: its inputs come from the
+                // selection as the tool settings row would pass them.
+                let op = str_param("op").ok_or("op is required")?;
+                let action = actions::for_context(self).into_iter().find(|a| a.op == op);
+                match action {
+                    Some(a) => actions::run(self, &a),
+                    None => Err(actions::selection_hint(self, &op)),
+                }
+            }
+            // A boolean on the selection: the active mesh is the target, the
+            // other selected meshes are the tools (`operation`: difference,
+            // union or intersect; also `keep_tool` and `weld`).
+            "selection.boolean" => self.run_tools_on_active("edit.boolean", params),
+            "edit.boolean" if params.get("target").is_none() => self.run_tools_on_active("edit.boolean", params),
+            "edit.select_group" => {
+                let target = str_param("target").ok_or("target is required: the mesh object")?;
+                let group = str_param("group").ok_or("group is required: a group name, for example boolean_1.cut")?;
+                let k = self.doc().resolve(&target).map_err(|e| e.to_string())?;
+                self.select_group(k, &group)
+            }
+            "view.modal" => {
+                // G, R, S: a transform that follows the pointer until a click.
+                let kind = match params.get("kind").and_then(Value::as_str) {
+                    Some("move") | None => gizmo::Kind::Move,
+                    Some("rotate") => gizmo::Kind::Rotate,
+                    Some("scale") => gizmo::Kind::Scale,
+                    Some(other) => return Err(format!("{} `{other}`: move, rotate or scale", t("unknown transform"))),
+                };
+                let has = if self.ui.mode.is_edit() { self.edit.flushed().is_some_and(|f| !f.verts.is_empty()) } else { !self.selection.is_empty() };
+                if !has {
+                    return Err(t("nothing selected").to_owned());
+                }
+                self.gizmo.pending = Some(kind);
+                Ok(json!({ "modal": params.get("kind").cloned().unwrap_or(json!("move")) }))
             }
             "view.benchmark" => {
                 // Orbits the camera every frame for `seconds` and measures.
@@ -909,9 +1164,13 @@ impl PixelApp {
             "app.control" => {
                 let on = params.get("on").and_then(Value::as_bool).unwrap_or(self.remote.addr().is_none());
                 if on {
-                    let port = params.get("port").and_then(Value::as_u64).unwrap_or(0);
-                    let port = u16::try_from(port).map_err(|_| t("port must be 0 to 65535"))?;
-                    self.start_control(port).map(|a| json!({ "control": a.to_string() }))
+                    // The default port lets `pixel3d-cli mcp --connect` find the
+                    // app; another free one when a second app holds it.
+                    let r = match params.get("port").and_then(Value::as_u64) {
+                        Some(port) => self.start_control(u16::try_from(port).map_err(|_| t("port must be 0 to 65535"))?),
+                        None => self.start_control(p3d_control::DEFAULT_PORT).or_else(|_| self.start_control(0)),
+                    };
+                    r.map(|a| json!({ "control": a.to_string() }))
                 } else {
                     self.stop_control();
                     Ok(json!({ "control": null }))
@@ -981,30 +1240,150 @@ impl PixelApp {
     }
 
     /// [`PixelApp::execute`] with an undo label (the op labels when `None`).
+    ///
+    /// Reports (ops that are not undoable, such as `cleanup.report`) change
+    /// nothing, so they run without adding an undo step.
     pub fn execute_labeled(&mut self, calls: &[OpCall], label: Option<&str>) -> Result<Value, String> {
-        let opts = BatchOptions { label: label.map(str::to_owned), ..BatchOptions::default() };
+        let registry = std::sync::Arc::clone(self.session.registry());
+        let read_only =
+            !calls.is_empty() && calls.iter().all(|c| registry.get(&c.op).is_ok_and(|o| !o.meta().flags.contains(p3d_ops::OpFlags::UNDOABLE)));
+        let opts = BatchOptions { label: label.map(str::to_owned), dry_run: read_only, ..BatchOptions::default() };
         match self.session.execute(calls, &opts) {
-            Ok(r) => {
-                let mut created = Vec::new();
-                for res in &r.results {
-                    self.log(res.output.summary.clone());
-                    created.extend(res.output.created.iter().copied());
-                }
-                if let Some(last) = r.results.last() {
-                    self.status = Some((last.output.summary.clone(), Instant::now()));
-                }
-                self.last_op = match r.results.as_slice() {
-                    [one] => Some(LastOp { op: one.op.clone(), params: one.params.clone(), revision: r.revision, error: None }),
-                    _ => None,
-                };
-                if !created.is_empty() {
-                    self.active = created.first().copied();
-                    self.selection = created.into_iter().collect();
-                }
-                self.ui.start_page = false;
-                Ok(json!({ "revision": r.revision, "summaries": r.results.iter().map(|x| x.output.summary.clone()).collect::<Vec<_>>() }))
-            }
+            Ok(r) => Ok(self.committed(&r)),
             Err(e) => Err(e.error.to_string()),
+        }
+    }
+
+    /// Takes in a finished batch: logs the summaries and warnings, keeps
+    /// the report for the result card, makes a single op adjustable, and
+    /// selects the objects it created.
+    ///
+    /// Complexity: O(results + warnings + created objects).
+    fn committed(&mut self, r: &p3d_engine::BatchResult) -> Value {
+        let mut created = Vec::new();
+        for res in &r.results {
+            self.log(res.output.summary.clone());
+            for w in &res.output.warnings {
+                self.log(format!("  {}: {}", t("warning"), w.message));
+                if let Some(f) = &w.fix {
+                    self.log(format!("    {}: {} {}", t("fix"), f.op, f.args));
+                }
+            }
+            created.extend(res.output.created.iter().copied());
+        }
+        let result = results::LastResult::from_batch(r, self.session.registry());
+        let warnings = result.warning_count();
+        if let Some(last) = r.results.last() {
+            let status = match warnings {
+                0 => last.output.summary.clone(),
+                1 => format!("{} ({})", last.output.summary, t("1 warning")),
+                n => format!("{} ({n} {})", last.output.summary, t("warnings")),
+            };
+            self.status = Some((status, Instant::now()));
+        }
+        if !r.dry_run {
+            self.last_op = match r.results.as_slice() {
+                [one] => Some(LastOp { op: one.op.clone(), params: one.params.clone(), revision: r.revision, error: None }),
+                _ => None,
+            };
+            if !created.is_empty() {
+                self.active = created.first().copied();
+                self.selection = created.into_iter().collect();
+            }
+            self.note_cut_group(r);
+        }
+        self.result = Some(result);
+        self.ui.start_page = false;
+        let mut out = json!({ "revision": r.revision, "summaries": r.results.iter().map(|x| x.output.summary.clone()).collect::<Vec<_>>() });
+        let all: Vec<&p3d_ops::Warning> = r.results.iter().flat_map(|x| &x.output.warnings).collect();
+        if !all.is_empty() {
+            out["warnings"] = json!(all);
+        }
+        out
+    }
+
+    /// Remembers the faces a cut made (a group named `*.cut`, as booleans
+    /// make), so Edit Mode can start with them selected.
+    ///
+    /// Complexity: O(groups the batch made).
+    fn note_cut_group(&mut self, r: &p3d_engine::BatchResult) {
+        self.edit_focus =
+            r.results.iter().flat_map(|x| &x.output.groups).find(|g| g.name.ends_with(".cut")).map(|g| (r.revision, g.object, g.name.clone()));
+    }
+
+    /// Starts op calls in the background as one transaction (imports, which
+    /// may take a while); [`PixelApp::poll_jobs`] commits the result.
+    pub fn start_job(&mut self, calls: Vec<OpCall>, label: &str) {
+        let job = self.session.spawn_job(calls, label);
+        self.jobs.push(RunningJob { job, label: label.to_owned() });
+        self.set_status(format!("{label}..."));
+    }
+
+    /// Commits the background jobs that finished; returns whether any are
+    /// still running. Call once per frame.
+    ///
+    /// Complexity: O(jobs) plus the work of committing finished ones.
+    pub fn poll_jobs(&mut self) -> bool {
+        let mut i = 0;
+        while i < self.jobs.len() {
+            match self.session.poll_job(&mut self.jobs[i].job) {
+                p3d_engine::JobStatus::Pending(_) => i += 1,
+                p3d_engine::JobStatus::Done(r) => {
+                    self.jobs.remove(i);
+                    self.committed(&r);
+                    self.prune_selection();
+                }
+                p3d_engine::JobStatus::Failed(e) => {
+                    let job = self.jobs.remove(i);
+                    self.set_status(format!("{}: {}", job.label, e.error));
+                }
+            }
+        }
+        !self.jobs.is_empty()
+    }
+
+    /// Imports model files (glTF, GLB, OBJ, FBX) as one undoable step in
+    /// the background. `args` holds the `io.import` parameters other than
+    /// the path (name, parent, weld).
+    pub fn import_files(&mut self, files: &[PathBuf], args: &Value) -> Result<Value, String> {
+        if files.is_empty() {
+            return Err(t("no file to import").to_owned());
+        }
+        let calls: Vec<OpCall> = files
+            .iter()
+            .map(|f| {
+                let mut a = args.as_object().cloned().unwrap_or_default();
+                a.insert("path".into(), json!(f.display().to_string()));
+                OpCall::new("io.import", Value::Object(a))
+            })
+            .collect();
+        let name = |f: &PathBuf| f.file_name().map_or_else(|| f.display().to_string(), |n| n.to_string_lossy().into_owned());
+        let label = match files {
+            [one] => format!("{} {}", t("Import"), name(one)),
+            many => format!("{} {} {}", t("Import"), many.len(), t("files")),
+        };
+        self.start_job(calls, &label);
+        Ok(json!({ "importing": files.iter().map(|f| f.display().to_string()).collect::<Vec<_>>() }))
+    }
+
+    /// Files dropped on the window: a `.p3d` scene opens, model files are
+    /// imported into the scene (their folders become allowed, as when picked
+    /// in a dialog), anything else is refused with a message.
+    pub fn drop_files(&mut self, files: &[PathBuf]) {
+        let scene = files.iter().find(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("p3d")));
+        let models: Vec<PathBuf> = files.iter().filter(|f| is_model_file(f)).cloned().collect();
+        let other = files.iter().find(|f| Some(*f) != scene && !is_model_file(f));
+        if let Some(s) = scene {
+            let _ = self.open_path(s);
+        }
+        for m in &models {
+            self.allow_picked(m);
+        }
+        if !models.is_empty() {
+            let _ = self.import_files(&models, &Value::Null);
+        }
+        if let Some(f) = other {
+            self.set_status(format!("{} {}: {}", t("Cannot use"), f.display(), t("drop a .p3d scene, or .glb, .gltf, .obj or .fbx models")));
         }
     }
 
@@ -1028,6 +1407,8 @@ impl PixelApp {
                     }
                     self.last_op = Some(LastOp { op: last.op, params: one.params.clone(), revision: r.revision, error: None });
                 }
+                self.result = Some(results::LastResult::from_batch(&r, self.session.registry()));
+                self.note_cut_group(&r);
                 self.prune_selection();
                 Ok(())
             }
@@ -1242,11 +1623,13 @@ impl PixelApp {
             }
             self.quit_requested = true;
         }
-        for f in ctx.input(|i| i.raw.dropped_files.clone()) {
-            let p = f.path().to_path_buf();
-            if !p.as_os_str().is_empty() {
-                let _ = self.open_path(&p);
-            }
+        let dropped: Vec<PathBuf> =
+            ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
+        if !dropped.is_empty() {
+            self.drop_files(&dropped);
+        }
+        if self.poll_jobs() {
+            ctx.request_repaint_after(Duration::from_millis(50));
         }
         if let Some((_, at)) = &self.status {
             let left = STATUS_TIME.saturating_sub(at.elapsed());
@@ -1284,6 +1667,7 @@ impl PixelApp {
             }
         });
         palette::show(self, ui);
+        chrome::drop_overlay(ui);
         self.frame_ms = t0.elapsed().as_secs_f32() * 1000.0;
     }
 
@@ -1295,8 +1679,14 @@ impl PixelApp {
             docking::Panel::Viewport => {
                 // While an Edit Mode gizmo drag runs, the viewport shows its
                 // preview document.
-                let (doc, key) = match &self.gizmo.preview {
-                    Some((d, n)) => (std::sync::Arc::clone(d), *n | (1 << 63)),
+                let preview = self
+                    .gizmo
+                    .preview
+                    .clone()
+                    .map(|(d, n)| (d, n | (1 << 63)))
+                    .or_else(|| self.action_preview.doc.clone().map(|(d, n)| (d, n | (1 << 62))));
+                let (doc, key) = match preview {
+                    Some((d, n)) => (d, n),
                     None => (std::sync::Arc::clone(self.session.doc()), self.scene_key()),
                 };
                 let style = theme::Tokens::get().view_style();
@@ -1309,7 +1699,7 @@ impl PixelApp {
                 let editing = if element_mode { self.active_object() } else { self.edit.object };
                 let part = editing.and_then(|k| self.viewport.part_of(k));
                 // The preview mesh keeps the element ids: no resync then.
-                let previewing = self.gizmo.preview.is_some();
+                let previewing = self.gizmo.preview.is_some() || self.action_preview.doc.is_some();
                 if !previewing {
                     self.edit.sync(part.as_ref().and(editing), part.as_ref().map(|p| &p.1), self.ui.mode);
                 }
@@ -1319,6 +1709,7 @@ impl PixelApp {
                 };
                 self.viewport.pick_elements = element_mode && self.edit.object.is_some();
                 self.viewport.knife = element_mode && self.ui.tool == Tool::Knife;
+                self.viewport.suppress = self.gizmo.modal();
                 let view_rect = chrome::viewport_header(self, ui, ui.max_rect());
                 viewport_events = ui
                     .scope_builder(egui::UiBuilder::new().max_rect(view_rect), |ui| {
@@ -1339,6 +1730,10 @@ impl PixelApp {
                     docking::Panel::Health => health::show(self, ui),
                     docking::Panel::History => panels::history(self, ui),
                     docking::Panel::Console | docking::Panel::Viewport => panels::console(self, ui),
+                    docking::Panel::UvEditor => panels::uv_editor(self, ui),
+                    docking::Panel::Timeline => panels::timeline(self, ui),
+                    docking::Panel::Bake => panels::bake(self, ui),
+                    docking::Panel::Export => panels::export(self, ui),
                 });
             }
         });
@@ -1431,6 +1826,31 @@ mod tests {
     }
 
     #[test]
+    fn workspaces_switch_layouts_and_keep_their_own() {
+        let mut a = app();
+        let model = a.ui.docking.clone();
+        a.run("ui.workspace", json!({ "workspace": "uv" })).unwrap();
+        assert!(a.ui.docking.is_visible(docking::Panel::UvEditor), "the UV preset shows the UV editor");
+        assert!(a.ui.docking.validate().is_ok());
+        // A change in the UV workspace stays with it.
+        a.ui.docking.set_visible(docking::Panel::Outliner, false).unwrap();
+        a.run("ui.workspace", json!({ "workspace": "model" })).unwrap();
+        assert_eq!(a.ui.docking, model);
+        a.run("ui.workspace", json!({ "workspace": "uv" })).unwrap();
+        assert!(!a.ui.docking.is_visible(docking::Panel::Outliner));
+        // Saved with the preferences and restored.
+        let mut b = app();
+        b.load_prefs(&a.prefs_json());
+        assert_eq!((b.ui.workspace, &b.ui.docking), (WorkspaceKind::Uv, &a.ui.docking));
+        // Reset brings back this workspace's preset.
+        a.run("ui.dock.reset", Value::Null).unwrap();
+        assert_eq!(a.ui.docking, docking::preset(WorkspaceKind::Uv));
+        for ws in WorkspaceKind::ALL {
+            assert!(docking::preset(ws).validate().is_ok(), "{ws:?}");
+        }
+    }
+
+    #[test]
     fn tab_toggles_edit_mode_instead_of_moving_focus() {
         let mut a = app();
         a.run("prim.box", json!({ "name": "crate" })).unwrap();
@@ -1484,6 +1904,133 @@ mod tests {
         assert!(b.title().starts_with("scene.p3d"));
         assert_ne!(a.scene_key() >> 40, b.scene_key() >> 40, "a load starts a new cache generation");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Commits background jobs until none run (a few seconds at most).
+    fn finish_jobs(a: &mut PixelApp) {
+        for _ in 0..2000 {
+            if !a.poll_jobs() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("a job did not finish");
+    }
+
+    #[test]
+    fn imports_run_in_the_background_and_offer_their_fixes() {
+        let dir = files::tests::temp_dir("import");
+        // A box without its top: cleanup.auto would fill the hole.
+        let bin = dir.join("bin.obj");
+        let obj = "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n\
+                   f 1 4 3 2\nf 1 2 6 5\nf 3 4 8 7\nf 1 5 8 4\nf 2 3 7 6\n";
+        std::fs::write(&bin, obj).unwrap();
+        let picked = bin.clone();
+        let services = Services { pick_import: Some(Box::new(move || Some(picked.clone()))), ..Services::default() };
+        let mut a = PixelApp::new(Session::new(), services);
+        // File > Import...: the dialog's folder is allowed, the import runs as a job.
+        assert!(a.run("file.import", Value::Null).unwrap()["importing"].is_array());
+        assert_eq!(a.running_jobs(), 1);
+        finish_jobs(&mut a);
+        assert_eq!((a.doc().object_count(), a.selection.len(), a.session.history().len()), (1, 1, 1), "one undoable step, selected");
+        assert_eq!(a.last_op.as_ref().map(|l| l.op.as_str()), Some("io.import"), "adjustable like any op");
+        let result = a.result.clone().unwrap();
+        let fix = result.entries[0].warnings.iter().find_map(|w| w.fix.clone()).expect("a warning with a fix");
+        assert_eq!(fix.op, "cleanup.auto");
+        let k = *a.selection.first().unwrap();
+        let faces = a.doc().object_mesh(k).unwrap().face_count();
+        results::run_fix(&mut a, OpCall::new(&fix.op, fix.args)).unwrap();
+        assert_eq!(a.doc().object_mesh(k).unwrap().face_count(), faces + 1, "the fix closed the hole");
+        // Dropping files: models import, other files are refused.
+        std::fs::write(dir.join("notes.txt"), "hello").unwrap();
+        a.drop_files(&[dir.join("notes.txt")]);
+        assert!(a.status.as_ref().is_some_and(|(s, _)| s.contains("Cannot use")));
+        a.drop_files(std::slice::from_ref(&bin));
+        finish_jobs(&mut a);
+        assert_eq!(a.doc().object_count(), 2);
+        // A folder nobody picked stays closed, through the dialog-free path too.
+        let other = files::tests::temp_dir("import-other");
+        std::fs::write(other.join("bin.obj"), obj).unwrap();
+        a.run("file.import", json!({ "path": other.join("bin.obj").display().to_string() })).unwrap();
+        finish_jobs(&mut a);
+        assert!(a.status.as_ref().is_some_and(|(s, _)| s.contains("outside the allowed folders")), "{:?}", a.status);
+        assert_eq!(a.doc().object_count(), 2);
+        for d in [dir, other] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    /// A box with a thin cylinder through it; the cylinder is selected
+    /// first, the box last (active).
+    fn crate_and_drill() -> (PixelApp, ObjectKey, ObjectKey) {
+        let mut a = app();
+        a.run("prim.box", json!({ "name": "crate" })).unwrap();
+        a.run("prim.cylinder", json!({ "name": "drill", "radius": 0.2, "height": 2.0 })).unwrap();
+        let (c, d) = (a.doc().resolve("crate").unwrap(), a.doc().resolve("drill").unwrap());
+        a.selection = [c, d].into_iter().collect();
+        a.active = Some(c);
+        (a, c, d)
+    }
+
+    #[test]
+    fn booleans_cut_the_active_mesh_with_the_other_selected_ones() {
+        let (mut a, c, d) = crate_and_drill();
+        a.selection = [d].into_iter().collect();
+        let refused = a.run("selection.boolean", json!({ "operation": "difference" })).unwrap_err();
+        assert!(refused.contains("two or more meshes"), "{refused}");
+        a.selection = [c, d].into_iter().collect();
+        a.active = Some(c);
+        let steps = a.session.history().len();
+        a.run("selection.boolean", json!({ "operation": "difference" })).unwrap();
+        assert_eq!((a.doc().object_count(), a.session.history().len()), (1, steps + 1), "the drill is used up, one undo step");
+        assert_eq!(a.selection, [c].into_iter().collect(), "the crate stays selected");
+        // Adjust Last Operation: keep the drill; still one undo step.
+        let mut params = a.last_op.as_ref().map(|l| l.params.clone()).unwrap();
+        assert_eq!(a.last_op.as_ref().map(|l| l.op.as_str()), Some("edit.boolean"));
+        params["keep_tool"] = json!(true);
+        quick::adjust(&mut a, params).unwrap();
+        assert_eq!((a.doc().object_count(), a.session.history().len()), (2, steps + 1));
+        // Tab: Edit Mode starts with the faces the cut made.
+        a.run("ui.edit", Value::Null).unwrap();
+        assert_eq!(a.ui.mode, SelectMode::Face);
+        let mesh = a.doc().object_mesh(c).unwrap();
+        let (name, cut) = mesh.groups().find(|(n, _)| n.ends_with(".cut")).map(|(n, g)| (n.to_owned(), g.iter().collect::<BTreeSet<u32>>())).unwrap();
+        assert!(!cut.is_empty());
+        assert_eq!(a.edit.picked(), (&cut, Some(SelectMode::Face)));
+        // The group can be picked again by name (the Properties group list).
+        a.run("ui.mode", json!({ "mode": "object" })).unwrap();
+        a.run("edit.select_group", json!({ "target": "crate", "group": name })).unwrap();
+        assert_eq!(a.edit.picked().0, &cut);
+        // Without a target the op itself takes the selection too (palette, command line).
+        a.run("ui.mode", json!({ "mode": "object" })).unwrap();
+        a.selection = [c, d].into_iter().collect();
+        a.active = Some(c);
+        a.run("edit.boolean", json!({ "operation": "union" })).unwrap();
+        assert_eq!(a.doc().object_count(), 1);
+    }
+
+    #[test]
+    fn boolean_keys_run_on_the_selection() {
+        let ctx = egui::Context::default();
+        let press = |a: &mut PixelApp, key: egui::Key, modifiers: egui::Modifiers| {
+            let ev = egui::Event::Key { key, physical_key: None, pressed: true, repeat: false, modifiers };
+            ctx.begin_pass(egui::RawInput { events: vec![ev], ..Default::default() });
+            chrome::shortcuts(a, &ctx);
+            ctx.end_pass().textures_delta.clear();
+        };
+        let cmd = egui::Modifiers::COMMAND;
+        for (key, modifiers, op) in [
+            (egui::Key::Minus, cmd, "difference"),
+            (egui::Key::Plus, cmd, "union"),
+            (egui::Key::Equals, cmd, "union"),
+            (egui::Key::Num8, cmd | egui::Modifiers::SHIFT, "intersect"),
+        ] {
+            let (mut a, _, _) = crate_and_drill();
+            press(&mut a, key, modifiers);
+            let ran = a.last_op.as_ref().map(|l| (l.op.clone(), l.params["operation"].clone()));
+            assert_eq!(ran, Some(("edit.boolean".to_owned(), json!(op))), "{key:?}");
+            assert_eq!(a.doc().object_count(), 1);
+        }
     }
 
     #[test]

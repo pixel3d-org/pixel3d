@@ -96,19 +96,28 @@ macro_rules! item {
     };
 }
 
-fn on_selection(mut it: Item) -> Item {
-    it.needs_selection = true;
-    it
-}
-
 /// The tool rail, in groups.
 fn sidebar_groups(edit: bool) -> Vec<Vec<Item>> {
     let tools = vec![
         item!(Select, "ui.tool", "Select", "Q", "Click to select, Shift+click to add or remove", || json!({ "tool": "select" }), |a| a.ui.tool
             == Tool::Select),
-        item!(Move, "ui.tool", "Move", "W", "Move the selection with the gizmo", || json!({ "tool": "move" }), |a| a.ui.tool == Tool::Move),
-        item!(Rotate, "ui.tool", "Rotate", "E", "Rotate the selection with the gizmo", || json!({ "tool": "rotate" }), |a| a.ui.tool == Tool::Rotate),
-        item!(Scale, "ui.tool", "Scale", "R", "Scale the selection with the gizmo", || json!({ "tool": "scale" }), |a| a.ui.tool == Tool::Scale),
+        item!(Move, "ui.tool", "Move", "W", "Move the selection with the gizmo (G moves with the pointer)", || json!({ "tool": "move" }), |a| a
+            .ui
+            .tool
+            == Tool::Move),
+        item!(
+            Rotate,
+            "ui.tool",
+            "Rotate",
+            "E",
+            "Rotate the selection with the gizmo (R turns with the pointer)",
+            || json!({ "tool": "rotate" }),
+            |a| a.ui.tool == Tool::Rotate
+        ),
+        item!(Scale, "ui.tool", "Scale", "T", "Scale the selection with the gizmo (S scales with the pointer)", || json!({ "tool": "scale" }), |a| a
+            .ui
+            .tool
+            == Tool::Scale),
     ];
     if edit {
         return vec![tools, edit_tools(), edit_extras()];
@@ -163,13 +172,10 @@ fn edit_extras() -> Vec<Item> {
     ]
 }
 
-/// Actions on the selected objects, shown in the tool settings row while
-/// something is selected (the contextual toolbar).
+/// App commands that close the contextual toolbar in Object Mode (the ops
+/// before them are generated from the registry, `actions.rs`).
 fn object_actions() -> Vec<Item> {
     vec![
-        on_selection(item!(Apply, "scene.apply_transform", "Apply transform", "", "Bake the object's transform into its mesh")),
-        on_selection(item!(Fill, "edit.fill", "Fill holes", "", "Close each hole with one face")),
-        on_selection(item!(Normals, "edit.recalc_normals", "Recalculate normals", "", "Make every face point outward")),
         item!(Copy, "edit.duplicate", "Duplicate", "Cmd+D", "Copy the selected objects"),
         item!(Trash, "edit.delete", "Delete", "Delete", "Remove the selected objects"),
     ]
@@ -277,23 +283,17 @@ fn workspace_tabs(app: &mut PixelApp, ui: &mut egui::Ui, r: Rect) -> f32 {
         let rect = Rect::from_min_size(pos2(x, r.center().y - 13.0), vec2(w, 26.0));
         let resp = ui.interact(rect, ui.id().with(("workspace", *ws)), Sense::click());
         let current = app.ui.workspace == *ws;
-        let enabled = ws.unavailable().is_none();
+        let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.1);
         if current {
             ui.painter().rect_filled(rect, 6.0, tk.tab_active);
-        } else if resp.hovered() && enabled {
-            ui.painter().rect_filled(rect, 6.0, tk.control.gamma_multiply(0.6));
+        } else if hot > 0.0 {
+            ui.painter().rect_filled(rect, 6.0, tk.control.gamma_multiply(0.6 * hot));
         }
-        let color = if current {
-            tk.text
-        } else if enabled {
-            tk.text_dim
-        } else {
-            tk.text_faint.gamma_multiply(0.7)
-        };
+        let color = if current { tk.text } else { crate::widgets::mix(tk.text_dim, tk.text, hot) };
         ui.painter().text(rect.center(), Align2::CENTER_CENTER, ws.label(), theme::body(), color);
         icons::describe_control(ui, &resp, ws.label(), Some(current));
-        let tip = ws.unavailable().map_or_else(|| format!("{} {}", ws.label(), t("workspace")), str::to_owned);
-        if resp.on_hover_text(tip).clicked() && enabled {
+        crate::widgets::tooltip(&resp, Tip::new(ws.label()).desc(ws.describe()), egui::RectAlign::BOTTOM);
+        if resp.clicked() {
             chosen = Some(*ws);
         }
         x += w;
@@ -371,11 +371,17 @@ fn menu_body(app: &PixelApp, ui: &mut egui::Ui, menu: &crate::menus::Menu) -> Op
     clicked
 }
 
-/// One dropdown row: icon, label, shortcut and a check mark when on.
+/// One dropdown row: icon, label, shortcut and a check mark when on. An
+/// item that cannot run now is dimmed and says why on hover.
 fn menu_item(ui: &mut egui::Ui, app: &PixelApp, it: &crate::menus::MenuItem, icon_column: bool) -> egui::Response {
     let on = it.checked.map(|f| f(app));
-    let keys = it.shortcut.as_ref().map(|s| ui.ctx().format_shortcut(s));
-    crate::widgets::menu_row(ui, it.icon, t(it.label), keys.as_deref(), on, icon_column)
+    let keys = it.shortcut.as_ref().map(|s| crate::menus::shortcut_text(ui.ctx(), s));
+    let state = it.enabled.map_or(Ok(()), |f| f(app));
+    let resp = ui.add_enabled_ui(state.is_ok(), |ui| crate::widgets::menu_row(ui, it.icon, t(it.label), keys.as_deref(), on, icon_column)).inner;
+    match state {
+        Err(why) => resp.on_disabled_hover_text(why),
+        Ok(()) => resp,
+    }
 }
 
 /// Size of a button in a segmented group, and the group's inner padding.
@@ -405,24 +411,23 @@ fn segment(ui: &mut egui::Ui, app: &PixelApp, items: &[Item], left: f32, cy: f32
     clicked
 }
 
-/// An outlined chip with an icon and a label; returns the response.
+/// An outlined chip for a toolbar item.
 fn chip(ui: &mut egui::Ui, rect: Rect, it: &Item) -> egui::Response {
+    chip_with(ui, rect, it.command, it.icon, t(it.label), it.tip())
+}
+
+/// An outlined chip with an icon and a label; returns the response.
+fn chip_with(ui: &mut egui::Ui, rect: Rect, key: &str, icon: Icon, label: &str, tip: Tip<'_>) -> egui::Response {
     let tk = Tokens::get();
-    let resp = ui.interact(rect, ui.id().with(("chip", it.command)), Sense::click());
+    let resp = ui.interact(rect, ui.id().with(("chip", key)), Sense::click());
     let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.12);
     let p = ui.painter();
     p.rect(rect, 7.0, crate::widgets::mix(egui::Color32::TRANSPARENT, tk.control, hot), Stroke::new(1.0, tk.control), egui::StrokeKind::Inside);
     let color = crate::widgets::mix(tk.icon, tk.text, hot);
-    icons::paint_colored(p, Rect::from_min_size(pos2(rect.left() + 8.0, rect.center().y - 7.5), vec2(15.0, 15.0)), it.icon, color, tk.accent);
-    p.text(
-        pos2(rect.left() + 29.0, rect.center().y),
-        Align2::LEFT_CENTER,
-        t(it.label),
-        theme::body(),
-        crate::widgets::mix(tk.text_dim, tk.text, hot),
-    );
-    icons::describe_control(ui, &resp, t(it.label), None);
-    crate::widgets::tooltip(&resp, it.tip(), egui::RectAlign::BOTTOM);
+    icons::paint_colored(p, Rect::from_min_size(pos2(rect.left() + 8.0, rect.center().y - 7.5), vec2(15.0, 15.0)), icon, color, tk.accent);
+    p.text(pos2(rect.left() + 29.0, rect.center().y), Align2::LEFT_CENTER, label, theme::body(), crate::widgets::mix(tk.text_dim, tk.text, hot));
+    icons::describe_control(ui, &resp, label, None);
+    crate::widgets::tooltip(&resp, tip, egui::RectAlign::BOTTOM);
     resp
 }
 
@@ -455,19 +460,92 @@ pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
         ui.painter().galley(pos2(x, cy - g.size().y / 2.0), g, tk.text);
         x += w + 16.0;
         let mut action = None;
-        if app.selected_targets().is_empty() {
-            ui.painter().text(pos2(x, cy), Align2::LEFT_CENTER, what, theme::small(), tk.text_dim);
+        if let Some(text) = crate::gizmo::status_text(app) {
+            // A transform in progress: its value and the keys that steer it.
+            let g = ui.painter().layout_no_wrap(text, theme::mono(), tk.icon_accent);
+            let w = g.size().x;
+            ui.painter().galley(pos2(x, cy - g.size().y / 2.0), g, tk.icon_accent);
+            let hint = t("X Y Z constrain, Shift+X plane, type a value, Enter confirms, Esc cancels");
+            ui.painter().text(pos2(x + w + 18.0, cy), Align2::LEFT_CENTER, hint, theme::small(), tk.text_dim);
         } else {
-            for it in object_actions() {
-                let text_w = ui.painter().layout_no_wrap(t(it.label).to_owned(), theme::body(), tk.text).size().x;
-                let rect = Rect::from_min_size(pos2(x, cy - 13.0), vec2(29.0 + text_w + 10.0, 26.0));
-                if rect.right() > r.right() - 8.0 {
-                    break;
+            let acts = app.contextual_actions();
+            let edit = app.ui.mode.is_edit();
+            // Duplicate and Delete close the row in Object Mode.
+            let tail: Vec<Item> = if edit || app.selected_targets().is_empty() { Vec::new() } else { object_actions() };
+            if acts.is_empty() && tail.is_empty() {
+                let hint = if edit { t("Pick vertices, edges or faces to see what can run on them.") } else { what };
+                ui.painter().text(pos2(x, cy), Align2::LEFT_CENTER, hint, theme::small(), tk.text_dim);
+            } else {
+                let measure = ui.painter().clone();
+                let width_of = |label: &str| measure.layout_no_wrap(label.to_owned(), theme::body(), tk.text).size().x + 39.0;
+                let tail_w: f32 = tail.iter().map(|it| width_of(t(it.label)) + 6.0).sum();
+                let more_w = 74.0;
+                let limit = r.right() - 8.0 - tail_w - more_w;
+                let mut hovered: Option<crate::actions::Action> = None;
+                let mut run: Option<crate::actions::Action> = None;
+                let mut shown = 0;
+                for a in acts.iter() {
+                    let w = width_of(&a.label);
+                    if x + w > limit {
+                        break;
+                    }
+                    let rect = Rect::from_min_size(pos2(x, cy - 13.0), vec2(w, 26.0));
+                    let tip = Tip::new(&a.label).desc(&a.summary).keys(a.keys);
+                    let resp = chip_with(ui, rect, &a.key(), a.icon, &a.label, tip);
+                    if resp.hovered() {
+                        hovered = Some(a.clone());
+                    }
+                    if resp.clicked() {
+                        run = Some(a.clone());
+                    }
+                    x += w + 6.0;
+                    shown += 1;
                 }
-                if chip(ui, rect, &it).clicked() {
-                    action = Some(it);
+                if shown < acts.len() {
+                    // The rest in a menu, grouped by category.
+                    let rect = Rect::from_min_size(pos2(x, cy - 13.0), vec2(more_w - 6.0, 26.0));
+                    let tip = Tip::new(t("More actions")).desc(t("Everything that can run on the selection"));
+                    let resp = chip_with(ui, rect, "more-actions", Icon::Menu, t("More"), tip);
+                    egui::Popup::menu(&resp).frame(crate::widgets::popup_frame(ui)).gap(4.0).align(egui::RectAlign::BOTTOM_START).width(260.0).show(
+                        |ui| {
+                            egui::ScrollArea::vertical().max_height(520.0).show(ui, |ui| {
+                                ui.spacing_mut().item_spacing.y = 1.0;
+                                let mut group = None;
+                                for a in acts.iter().skip(shown) {
+                                    let g = crate::actions::category_label(a.category);
+                                    if group != Some(g) {
+                                        crate::widgets::menu_header(ui, t(g));
+                                        group = Some(g);
+                                    }
+                                    let row = crate::widgets::menu_row(ui, Some(a.icon), &a.label, None, None, true);
+                                    let row = row.on_hover_text(&a.summary);
+                                    if row.hovered() {
+                                        hovered = Some(a.clone());
+                                    }
+                                    if row.clicked() {
+                                        run = Some(a.clone());
+                                    }
+                                }
+                            });
+                        },
+                    );
+                    x = rect.right() + 6.0;
                 }
-                x = rect.right() + 6.0;
+                for it in tail {
+                    let w = width_of(t(it.label));
+                    let rect = Rect::from_min_size(pos2(x, cy - 13.0), vec2(w, 26.0));
+                    if chip(ui, rect, &it).clicked() {
+                        action = Some(it);
+                    }
+                    x = rect.right() + 6.0;
+                }
+                // Hovering an action previews it; a click runs it.
+                crate::actions::hover(app, hovered.as_ref(), ui.ctx());
+                if let Some(a) = run
+                    && let Err(e) = crate::actions::run(app, &a)
+                {
+                    app.set_status(e);
+                }
             }
         }
         if let Some((cmd, params)) = clicked {
@@ -617,6 +695,7 @@ fn mode_menu(app: &PixelApp, ui: &mut egui::Ui, left: f32, cy: f32) -> (f32, Opt
                 shortcut: None,
                 icon: Some(Icon::ModeObject),
                 checked: Some(|a| !a.ui.mode.is_edit()),
+                enabled: None,
             },
             crate::menus::MenuItem {
                 label: "Edit Mode",
@@ -625,6 +704,7 @@ fn mode_menu(app: &PixelApp, ui: &mut egui::Ui, left: f32, cy: f32) -> (f32, Opt
                 shortcut: Some(KeyboardShortcut::new(Modifiers::NONE, Key::Tab)),
                 icon: Some(Icon::ModeVert),
                 checked: Some(|a| a.ui.mode.is_edit()),
+                enabled: None,
             },
         ];
         for it in &entries {
@@ -896,12 +976,39 @@ pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
     p.text(rect.left_top() + vec2(10.0, 8.0), Align2::LEFT_TOP, label, theme::small(), tk.text_dim);
 }
 
+/// While files are dragged over the window: what dropping them does.
+pub fn drop_overlay(ui: &egui::Ui) {
+    let hovering = ui.ctx().input(|i| i.raw.hovered_files.len());
+    if hovering == 0 {
+        return;
+    }
+    let tk = Tokens::get();
+    let screen = ui.ctx().content_rect();
+    let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("p3d_drop_overlay")));
+    p.rect_filled(screen, 0.0, tk.border.gamma_multiply(0.7));
+    let card = Rect::from_center_size(screen.center(), vec2(420.0, 96.0));
+    p.rect(card, 12.0, tk.popup, Stroke::new(1.5, tk.accent), egui::StrokeKind::Inside);
+    icons::paint_colored(&p, Rect::from_center_size(pos2(card.left() + 44.0, card.center().y), vec2(30.0, 30.0)), Icon::Import, tk.icon, tk.accent);
+    p.text(pos2(card.left() + 78.0, card.center().y - 11.0), Align2::LEFT_CENTER, t("Drop to import"), egui::FontId::proportional(16.0), tk.text);
+    p.text(
+        pos2(card.left() + 78.0, card.center().y + 13.0),
+        Align2::LEFT_CENTER,
+        t(".glb, .gltf, .obj and .fbx join the scene; a .p3d opens"),
+        theme::small(),
+        tk.text_dim,
+    );
+}
+
 /// A shortcut, its command and the command parameters.
 type Binding = (KeyboardShortcut, &'static str, fn() -> Value);
 
 /// Keyboard shortcuts. Nothing fires while a text field has the keyboard.
 pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
     if ctx.egui_wants_keyboard_input() {
+        return;
+    }
+    // A modal transform reads the keys itself (X, Y, Z, typed values).
+    if app.gizmo.modal() {
         return;
     }
     let cmd = Modifiers::COMMAND;
@@ -924,7 +1031,11 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(Modifiers::NONE, Key::Q), "ui.tool", || json!({ "tool": "select" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::W), "ui.tool", || json!({ "tool": "move" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::E), "ui.tool", || json!({ "tool": "rotate" })),
-        (KeyboardShortcut::new(Modifiers::NONE, Key::R), "ui.tool", || json!({ "tool": "scale" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::T), "ui.tool", || json!({ "tool": "scale" })),
+        // Blender's modal transforms.
+        (KeyboardShortcut::new(Modifiers::NONE, Key::G), "view.modal", || json!({ "kind": "move" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::R), "view.modal", || json!({ "kind": "rotate" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::S), "view.modal", || json!({ "kind": "scale" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num1), "ui.mode", || json!({ "mode": "vert" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num2), "ui.mode", || json!({ "mode": "edge" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Num3), "ui.mode", || json!({ "mode": "face" })),
@@ -933,6 +1044,13 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(Modifiers::NONE, Key::O), "ui.transform", || json!({ "proportional": "toggle" })),
         (KeyboardShortcut::new(cmd, Key::K), "ui.palette", || Value::Null),
         (KeyboardShortcut::new(Modifiers::NONE, Key::F3), "ui.palette", || Value::Null),
+        // Booleans on the selection (Blender's Bool Tool keys; the numpad
+        // keys arrive as the same keys). They take Cmd+Minus and Cmd+Plus
+        // from egui's interface zoom.
+        (crate::menus::ASTERISK, "selection.boolean", || json!({ "operation": "intersect" })),
+        (KeyboardShortcut::new(cmd, Key::Minus), "selection.boolean", || json!({ "operation": "difference" })),
+        (KeyboardShortcut::new(cmd, Key::Plus), "selection.boolean", || json!({ "operation": "union" })),
+        (KeyboardShortcut::new(cmd, Key::Equals), "selection.boolean", || json!({ "operation": "union" })),
     ];
     // Edit Mode keys come first (E extrudes there, as in Blender).
     if app.ui.mode.is_edit() {

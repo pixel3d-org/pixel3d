@@ -229,3 +229,47 @@ pub const TORUS: &[&str] = &["M12 12m-9 0a9 5 0 1 0 18 0a9 5 0 1 0 -18 0", "M8 1
 
 /// A wedge (ramp): a triangular prism.
 pub const WEDGE: &[&str] = &["M3 18l8 3l10 -4l-8 -12z", "M11 21l2 -16"];
+
+/// A cross section (small square) swept along a curve.
+pub const SWEEP: &[&str] = &["M5 17c5 0 5 -11 15 -11", "M3 15h4v4h-4z"];
+
+/// A pipe bending around a corner.
+pub const PIPE: &[&str] = &["M4 20v-8a6 6 0 0 1 6 -6h10", "M8 20v-8a2 2 0 0 1 2 -2h10", "M4 20h4", "M20 6v4"];
+
+/// A square section below blending into a round one above.
+pub const LOFT: &[&str] = &["M4 17l8 3l8 -3l-8 -3z", "M12 6m-5 0a5 2 0 1 0 10 0a5 2 0 1 0 -10 0", "M4 17l3 -11", "M20 17l-3 -11"];
+
+/// Three copies in a row.
+pub const ARRAY: &[&str] = &["M2 10h5v5h-5z", "M9.5 10h5v5h-5z", "M17 10h5v5h-5z"];
+
+/// Dots spread loosely over an area.
+pub const SCATTER: &[&str] = &[
+    "M5 6m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M12 4m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M19 7m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M8 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M16 13m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M5 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M12 18m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+    "M19 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
+];
+
+/// A page with an arrow coming in from the left.
+pub const IMPORT: &[&str] = &["M14 3v4a1 1 0 0 0 1 1h4", "M5 11v-6a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2h-6", "M3 16h8", "M8 13l3 3l-3 3"];
+
+/// Two overlapping squares merged into one outline.
+pub const BOOL_UNION: &[&str] = &["M4 4h11v5h5v11h-11v-5h-5z", "M9 15h3", "M15 9v3"];
+
+/// The first square with the second cut out of it (hatched: what stays).
+pub const BOOL_DIFFERENCE: &[&str] = &["M4 4h11v5h-6v6h-5z", "M15 9h5v11h-11v-5", "M4 8l4 -4", "M4 12l8 -8", "M5 15l4 -4", "M11 9l4 -4"];
+
+/// Two overlapping squares with their shared part hatched (what stays).
+pub const BOOL_INTERSECT: &[&str] = &["M4 4h11v11h-11z", "M9 9h11v11h-11z", "M9 12l3 -3", "M9 15l6 -6", "M12 15l3 -3"];
+
+/// A large and a small sparkle: the mesh made clean.
+pub const SPARKLES: &[&str] =
+    &["M10 3l1.6 4.4l4.4 1.6l-4.4 1.6l-1.6 4.4l-1.6 -4.4l-4.4 -1.6l4.4 -1.6z", "M17 13l.9 2.1l2.1 .9l-2.1 .9l-.9 2.1l-.9 -2.1l-2.1 -.9l2.1 -.9z"];
+
+/// A clipboard with lines: a report.
+pub const REPORT: &[&str] =
+    &["M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2", "M9 3h6v4h-6z", "M9 12h6", "M9 16h4"];

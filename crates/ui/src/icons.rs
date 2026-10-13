@@ -123,6 +123,17 @@ icons! {
     BoxSelect => d::MARQUEE_2, false;
     Tube => d::CIRCLE_DOT, false;
     Curve => d::VECTOR_SPLINE, false;
+    Sweep => d::SWEEP, false;
+    Pipe => d::PIPE, false;
+    Loft => d::LOFT, false;
+    Array => d::ARRAY, false;
+    Scatter => d::SCATTER, false;
+    Import => d::IMPORT, false;
+    BoolUnion => d::BOOL_UNION, false;
+    BoolDifference => d::BOOL_DIFFERENCE, false;
+    BoolIntersect => d::BOOL_INTERSECT, false;
+    CleanUp => d::SPARKLES, false;
+    Report => d::REPORT, false;
 }
 
 /// The flattened outlines of an icon, parsed on first use.

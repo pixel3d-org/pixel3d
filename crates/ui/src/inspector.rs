@@ -113,18 +113,31 @@ fn tool_tab(app: &mut PixelApp, ui: &mut egui::Ui) {
         info(ui, t("Tool"), name);
         info(ui, t("Mode"), app.ui.mode.label());
     });
+    // A report (an op that changed nothing): its lines and fixes.
+    let registry = std::sync::Arc::clone(app.session.registry());
+    let revision = app.session.revision();
+    if let Some(r) = app.result.clone().filter(|r| r.read_only && r.revision == revision) {
+        let mut fix = None;
+        panel(ui, "report", &r.title(&registry), true, |ui| fix = crate::results::report_ui(ui, &r, &registry, true));
+        if let Some(f) = fix {
+            let _ = crate::results::run_fix(app, f);
+            return;
+        }
+    }
     let Some(last) = app.last_op.clone() else {
         panel(ui, "last", t("Last operation"), true, |ui| {
             ui.label(RichText::new(t("Run an operation, then adjust its settings here.")).color(tk.text_dim));
         });
         return;
     };
-    let registry = std::sync::Arc::clone(app.session.registry());
     let Ok(op) = registry.get(&last.op) else { return };
     let title = format!("{}: {}", t("Adjust"), op.meta().label);
     let current = app.session.revision() == last.revision;
     let mut params = last.params.clone();
     let mut out = schema_form::FormOutput::default();
+    // The op's warnings, each fix a button.
+    let result = app.result.clone().filter(|r| !r.read_only && r.revision == last.revision && r.warning_count() > 0);
+    let mut fix = None;
     panel(ui, "last", &title, true, |ui| {
         let schema = op.params_schema();
         ui.add_enabled_ui(current, |ui| {
@@ -136,9 +149,16 @@ fn tool_tab(app: &mut PixelApp, ui: &mut egui::Ui) {
         if let Some(e) = &last.error {
             ui.label(RichText::new(e).font(theme::small()).color(tk.health_error));
         }
+        if let Some(r) = &result {
+            ui.add_space(4.0);
+            fix = crate::results::warnings_ui(ui, r, &registry, current);
+        }
     });
     if out.changed && current {
         let _ = app.adjust_last(params);
+    }
+    if let Some(f) = fix {
+        let _ = crate::results::run_fix(app, f);
     }
 }
 
@@ -265,20 +285,39 @@ fn mesh_tab(app: &mut PixelApp, ui: &mut egui::Ui, key: ObjectKey) {
         }
         info(ui, t("UV layers"), m.uv_layer_count().to_string());
     });
+    // The group a boolean just cut stands out; clicking a group edits it.
+    let fresh = app.edit_focus.as_ref().filter(|(rev, k, _)| *rev == app.session.revision() && *k == key).map(|(_, _, n)| n.clone());
+    let mut pick: Option<String> = None;
     panel(ui, "groups", t("Groups"), true, |ui| {
         if m.group_count() == 0 {
             ui.label(RichText::new(t("No groups.")).color(tk.text_dim));
         }
         for (name, g) in m.groups() {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(g.kind().as_str()).font(theme::small()).color(tk.text_faint));
-                ui.add(egui::Label::new(name).truncate());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new(chrome::thousands(g.count())).color(tk.text_dim));
-                });
-            });
+            let new = fresh.as_deref() == Some(name);
+            let bg = ui.painter().add(egui::Shape::Noop);
+            let row = ui
+                .horizontal(|ui| {
+                    ui.label(RichText::new(g.kind().as_str()).font(theme::small()).color(tk.text_faint));
+                    ui.add(egui::Label::new(RichText::new(name).color(if new { tk.icon_accent } else { tk.text })).truncate());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.label(RichText::new(chrome::thousands(g.count())).color(tk.text_dim));
+                    });
+                })
+                .response
+                .interact(egui::Sense::click());
+            if row.hovered() {
+                ui.painter().set(bg, egui::epaint::RectShape::filled(row.rect.expand(2.0), 4.0, tk.control));
+            }
+            crate::control::record_widget(ui, &row, &format!("{} {name}", t("Select group")), "listitem", Some(new));
+            let tip = if new { t("Made by the last operation. Click to select it in Edit Mode.") } else { t("Click to select it in Edit Mode.") };
+            if row.on_hover_text(tip).clicked() {
+                pick = Some(name.to_owned());
+            }
         }
     });
+    if let Some(name) = pick {
+        let _ = app.select_group(key, &name);
+    }
 }
 
 #[cfg(test)]

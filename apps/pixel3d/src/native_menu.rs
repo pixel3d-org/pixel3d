@@ -14,14 +14,19 @@ use p3d_ui::menus::{MenuItem as Entry, menus};
 
 pub struct NativeMenu {
     _menu: Menu,
-    /// Menu item id to its command.
-    items: BTreeMap<String, Entry>,
+    /// Menu item id to its command and the native item.
+    items: BTreeMap<String, (Entry, MenuItem)>,
 }
 
-/// The key equivalent of a shortcut that uses the command key.
+/// The key equivalent of a shortcut that uses the command key. Cmd+* is
+/// the numpad `*` here (egui takes Cmd+Shift+8), Cmd+Plus is Cmd+= (the
+/// app takes both).
 fn accelerator(s: &egui::KeyboardShortcut) -> Option<Accelerator> {
     if !s.modifiers.command {
         return None;
+    }
+    if *s == p3d_ui::menus::ASTERISK {
+        return Accelerator::from_str("CMD+NUMPADMULTIPLY").ok();
     }
     let mut text = String::from("CMD+");
     if s.modifiers.shift {
@@ -30,7 +35,7 @@ fn accelerator(s: &egui::KeyboardShortcut) -> Option<Accelerator> {
     if s.modifiers.alt {
         text.push_str("ALT+");
     }
-    text.push_str(s.logical_key.name());
+    text.push_str(if s.logical_key == egui::Key::Plus { "Equal" } else { s.logical_key.name() });
     Accelerator::from_str(&text).ok()
 }
 
@@ -73,7 +78,7 @@ impl NativeMenu {
                         let id = format!("p3d-{m}-{i}");
                         let item = MenuItem::with_id(id.clone(), t(it.label), true, it.shortcut.as_ref().and_then(accelerator));
                         let _ = sub.append(&item);
-                        items.insert(id, it);
+                        items.insert(id, (it, item));
                     }
                 }
             }
@@ -83,12 +88,23 @@ impl NativeMenu {
         NativeMenu { _menu: menu, items }
     }
 
-    /// Runs the commands of chosen menu items.
+    /// Runs the commands of chosen menu items, and greys out the items
+    /// that cannot run on the selection now (booleans).
+    ///
+    /// Complexity: O(items with a state check) per frame.
     pub fn poll(&self, app: &mut PixelApp, ctx: &egui::Context) {
         while let Ok(ev) = MenuEvent::receiver().try_recv() {
-            if let Some(it) = self.items.get(ev.id.as_ref()) {
+            if let Some((it, _)) = self.items.get(ev.id.as_ref()) {
                 let _ = app.run(it.command, (it.params)());
                 ctx.request_repaint();
+            }
+        }
+        for (it, item) in self.items.values() {
+            if let Some(state) = it.enabled {
+                let on = state(app).is_ok();
+                if item.is_enabled() != on {
+                    item.set_enabled(on);
+                }
             }
         }
     }
@@ -106,5 +122,13 @@ mod tests {
         assert!(accelerator(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Z)).is_some());
         assert!(accelerator(&KeyboardShortcut::new(Modifiers::NONE, Key::F)).is_none());
         assert!(accelerator(&KeyboardShortcut::new(Modifiers::NONE, Key::Delete)).is_none());
+        // The boolean keys.
+        assert_eq!(accelerator(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Minus)), Accelerator::from_str("CMD+MINUS").ok());
+        assert_eq!(accelerator(&KeyboardShortcut::new(Modifiers::COMMAND, Key::Plus)), Accelerator::from_str("CMD+EQUAL").ok());
+        assert_eq!(accelerator(&p3d_ui::menus::ASTERISK), Accelerator::from_str("CMD+NUMPADMULTIPLY").ok());
+        for k in [Key::Minus, Key::Plus] {
+            assert!(accelerator(&KeyboardShortcut::new(Modifiers::COMMAND, k)).is_some(), "{k:?}");
+        }
+        assert!(accelerator(&p3d_ui::menus::ASTERISK).is_some());
     }
 }

@@ -22,7 +22,7 @@ fn call(agent: &mut Agent, log: &mut String, tool: &str, args: Value) -> ToolOut
 
 #[test]
 fn tools_have_strict_schemas_and_descriptions() {
-    for t in tools() {
+    for t in tools().into_iter().chain(p3d_mcp::connect::ui_tools()) {
         assert!(t.description.ends_with('.'), "{}", t.name);
         assert_eq!(t.schema["additionalProperties"], json!(false), "{}: schema must be strict", t.name);
         assert_eq!(t.schema["type"], json!("object"), "{}", t.name);

@@ -35,7 +35,8 @@ fn null() -> Value {
 fn app_aliases(label: &str) -> &'static [&'static str] {
     match label {
         "New" => &["new scene", "new file", "reset"],
-        "Open..." => &["open file", "load", "import p3d"],
+        "Open..." => &["open file", "load", "open p3d"],
+        "Import..." => &["import", "import file", "load gltf", "load glb", "load fbx", "load obj", "append", "file import"],
         "Save" => &["save file", "write"],
         "Save As..." => &["save copy", "export p3d"],
         "Undo" => &["ctrl z", "step back"],
@@ -54,8 +55,16 @@ fn app_aliases(label: &str) -> &'static [&'static str] {
         "Reset panel layout" => &["reset layout", "default layout"],
         "Fill holes" => &["fill", "close holes"],
         "Apply transform" => &["apply all transforms", "freeze transformations", "reset xform", "ctrl a"],
+        "Difference" => &["boolean difference", "subtract", "cut", "carve", "bool tool", "ctrl minus", "polycbooldifference"],
+        "Union" => &["boolean union", "merge meshes", "combine", "bool tool", "ctrl plus", "polycboolunion"],
+        "Intersect" => &["boolean intersect", "intersection", "overlap", "bool tool", "ctrl asterisk", "polycboolintersection"],
         _ => &[],
     }
+}
+
+/// What app commands do, by label, for those whose label alone may not say.
+fn app_desc(label: &str) -> &'static str {
+    crate::actions::BOOLEANS.iter().find(|v| v.label == label).map_or("", |v| v.desc)
 }
 
 /// App commands that are not in the menus: tools and selection modes.
@@ -72,9 +81,9 @@ fn extra_commands() -> Vec<Command> {
     };
     vec![
         mk("ui.tool", || json!({ "tool": "select" }), "Select tool", "Click to select objects", &["q", "tweak", "pick"], Icon::Select),
-        mk("ui.tool", || json!({ "tool": "move" }), "Move tool", "Move the selection with the gizmo", &["w", "g", "grab", "translate"], Icon::Move),
-        mk("ui.tool", || json!({ "tool": "rotate" }), "Rotate tool", "Rotate the selection with the gizmo", &["e", "r", "rotation"], Icon::Rotate),
-        mk("ui.tool", || json!({ "tool": "scale" }), "Scale tool", "Scale the selection with the gizmo", &["r", "s", "resize"], Icon::Scale),
+        mk("ui.tool", || json!({ "tool": "move" }), "Move tool", "Move the selection with the gizmo", &["w", "translate"], Icon::Move),
+        mk("ui.tool", || json!({ "tool": "rotate" }), "Rotate tool", "Rotate the selection with the gizmo", &["e", "rotation"], Icon::Rotate),
+        mk("ui.tool", || json!({ "tool": "scale" }), "Scale tool", "Scale the selection with the gizmo", &["t", "resize"], Icon::Scale),
         mk("ui.mode", || json!({ "mode": "object" }), "Object mode", "Work on whole objects", &["tab", "object"], Icon::ModeObject),
         mk(
             "ui.mode",
@@ -87,6 +96,30 @@ fn extra_commands() -> Vec<Command> {
         mk("ui.mode", || json!({ "mode": "vert" }), "Vertex select", "Select vertices (edit mode)", &["1", "vertex mode", "points"], Icon::ModeVert),
         mk("ui.mode", || json!({ "mode": "edge" }), "Edge select", "Select edges (edit mode)", &["2", "edge mode"], Icon::ModeEdge),
         mk("ui.mode", || json!({ "mode": "face" }), "Face select", "Select faces (edit mode)", &["3", "face mode", "polygon"], Icon::ModeFace),
+        mk(
+            "view.modal",
+            || json!({ "kind": "move" }),
+            "Grab",
+            "Move the selection with the pointer; X, Y, Z constrain, type a value",
+            &["g", "grab", "translate", "move"],
+            Icon::Move,
+        ),
+        mk(
+            "view.modal",
+            || json!({ "kind": "rotate" }),
+            "Rotate",
+            "Turn the selection with the pointer; X, Y, Z constrain, type degrees",
+            &["r", "rotate"],
+            Icon::Rotate,
+        ),
+        mk(
+            "view.modal",
+            || json!({ "kind": "scale" }),
+            "Resize",
+            "Scale the selection with the pointer; X, Y, Z constrain, type a factor",
+            &["s", "scale", "resize"],
+            Icon::Scale,
+        ),
         mk("view.snap", null, "Snap", "Snap transform drags to the grid and 15 degree steps", &["snapping", "magnet", "shift tab"], Icon::Grid),
     ]
 }
@@ -106,7 +139,7 @@ pub fn index(app: &PixelApp) -> Vec<Command> {
             }
             // An op behind a menu entry lends it its summary and aliases.
             let meta = app.session.registry().get(it.command).ok().map(|op| op.meta());
-            let desc = meta.as_ref().map(|m| m.summary.to_owned()).unwrap_or_default();
+            let desc = meta.as_ref().map_or_else(|| t(app_desc(it.label)).to_owned(), |m| m.summary.to_owned());
             let op_aliases = meta.as_ref().map_or(&[][..], |m| m.aliases);
             out.push(Command {
                 id: it.command,
@@ -127,7 +160,12 @@ pub fn index(app: &PixelApp) -> Vec<Command> {
             continue;
         }
         let meta = op.meta();
-        let on_selection = op.params_schema().pointer("/properties/target").is_some();
+        // Ops that need only a target run on each selected object; ops that
+        // need more (a boolean's tools) take it from the selection their own way.
+        let schema = op.params_schema();
+        let required: Vec<&str> =
+            schema.get("required").and_then(Value::as_array).map(|r| r.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        let on_selection = schema.pointer("/properties/target").is_some() && required.iter().all(|r| *r == "target");
         out.push(Command {
             id: op.id(),
             params: null,

@@ -12,12 +12,17 @@ use std::time::{Duration, Instant};
 use p3d_control::Client;
 use serde_json::{Value, json};
 
-struct App(Child);
+/// The app process and its control port; killed (and its access token
+/// file removed, which a killed app cannot do itself) when dropped.
+struct App(Child, u16);
 
 impl Drop for App {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
+        if let Some(token) = p3d_control::token_path(self.1) {
+            let _ = std::fs::remove_file(token);
+        }
     }
 }
 
@@ -25,7 +30,8 @@ fn free_port() -> u16 {
     std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
 }
 
-/// Polls `f` until it returns `Some`, for up to `secs`.
+/// Polls `f` until it returns `Some`, for up to `secs` (a timeout names the caller's line).
+#[track_caller]
 fn wait_for<T>(secs: u64, mut f: impl FnMut() -> Option<T>) -> T {
     let start = Instant::now();
     loop {
@@ -42,21 +48,39 @@ fn pos_x(c: &mut Client) -> f64 {
     s["activeTransform"]["position"][0].as_f64().unwrap_or(f64::NAN)
 }
 
+/// Starts the app with the control server on a free port and `args`
+/// (agents name files only inside the folders the user allowed, such as
+/// an `--allow-dir`). Returns the app and a connected client, once the
+/// first frames are drawn.
+fn start(args: &[String]) -> (App, Client) {
+    let port = free_port();
+    let mut all: Vec<String> = args.to_vec();
+    all.extend(["--fresh".to_owned(), "--control".to_owned(), port.to_string()]);
+    let app = App(Command::new(env!("CARGO_BIN_EXE_pixel3d")).args(&all).spawn().unwrap(), port);
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let mut c = wait_for(60, || Client::connect_published(addr).ok());
+    // Wait for the first frames: the viewport has a size.
+    wait_for(60, || c.call("ui.inspect", Value::Null).ok().filter(|s| s["viewport"][2].as_f64().unwrap_or(0.0) > 10.0));
+    (app, c)
+}
+
+/// A fresh folder for one test run.
+fn temp_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("pixel3d-control-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir.canonicalize().unwrap()
+}
+
 #[test]
 #[ignore = "needs a display and a GPU"]
 fn open_edit_with_the_gizmo_undo_and_save() {
-    let port = free_port();
-    let _app = App(Command::new(env!("CARGO_BIN_EXE_pixel3d")).args(["--fresh", "--sample", "--control", &port.to_string()]).spawn().unwrap());
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    let mut c = wait_for(60, || Client::connect(addr).ok());
-    // Wait for the first frames: the viewport has a size.
-    wait_for(60, || c.call("ui.inspect", Value::Null).ok().filter(|s| s["viewport"][2].as_f64().unwrap_or(0.0) > 10.0));
-
-    // Save the sample, start over, open it again.
-    let dir = std::env::temp_dir().join(format!("pixel3d-control-{port}"));
-    std::fs::create_dir_all(&dir).unwrap();
+    let dir = temp_dir("accept");
     let file = dir.join("accept.p3d");
     let path = file.display().to_string();
+    let (_app, mut c) = start(&["--sample".to_owned(), "--allow-dir".to_owned(), dir.display().to_string()]);
+
+    // Save the sample, start over, open it again.
     c.call("ui.command", json!({ "id": "file.save_as", "params": { "path": path } })).unwrap();
     c.call("ui.command", json!({ "id": "file.new" })).unwrap();
     assert_eq!(c.call("ui.inspect", Value::Null).unwrap()["scene"]["objects"], json!(0));
@@ -80,11 +104,80 @@ fn open_edit_with_the_gizmo_undo_and_save() {
     // Undo with the keyboard, then save and check the file.
     c.call("ui.key", json!({ "key": "Z", "modifiers": { "cmd": true } })).unwrap();
     wait_for(30, || Some(pos_x(&mut c)).filter(|x| x.abs() < 1e-4));
+
+    // Modal G Z 0.5 Enter from the keyboard (Dynamic Input), then undo.
+    for (key, text) in [("G", None), ("Z", None), ("", Some("0.5")), ("Enter", None)] {
+        match text {
+            Some(t) => c.call("ui.text", json!({ "text": t })).unwrap(),
+            None => c.call("ui.key", json!({ "key": key })).unwrap(),
+        };
+    }
+    let pos_z = |c: &mut Client| c.call("ui.inspect", Value::Null).unwrap()["activeTransform"]["position"][2].as_f64().unwrap_or(f64::NAN);
+    wait_for(30, || Some(pos_z(&mut c)).filter(|z| (z - 0.5).abs() < 1e-4));
+    c.call("ui.command", json!({ "id": "edit.undo" })).unwrap();
     c.call("ui.command", json!({ "id": "file.save" })).unwrap();
     assert!(std::fs::metadata(&file).unwrap().len() > 0);
     let shot = dir.join("after.png");
     let r = c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
     assert_eq!(r["path"], json!(shot.display().to_string()));
+    assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    let _ = c.call("ui.command", json!({ "id": "app.quit" }));
+}
+
+fn inspect(c: &mut Client) -> Value {
+    c.call("ui.inspect", Value::Null).unwrap()
+}
+
+#[test]
+#[ignore = "needs a display and a GPU"]
+fn booleans_imports_and_cleanup_in_the_app() {
+    let dir = temp_dir("bool");
+    let scene = dir.join("scene.p3d").display().to_string();
+    // A box without its top: cleanup.auto would fill the hole.
+    let obj = "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n\
+               f 1 4 3 2\nf 1 2 6 5\nf 3 4 8 7\nf 1 5 8 4\nf 2 3 7 6\n";
+    std::fs::write(dir.join("bin.obj"), obj).unwrap();
+    // A start-up command is the user's: saving there makes the folder the project's.
+    let (_app, mut c) = start(&["--command".to_owned(), format!("file.save path={scene}"), "--command".to_owned(), "ui.start on=false".to_owned()]);
+    assert_eq!(inspect(&mut c)["allowedFolders"], json!([dir.display().to_string()]));
+    let elsewhere = temp_dir("bool-elsewhere").join("x.p3d").display().to_string();
+    let refused = c.call("ui.command", json!({ "id": "file.save_as", "params": { "path": elsewhere } })).unwrap_err().to_string();
+    assert!(refused.contains("only the folders the user allowed"), "{refused}");
+
+    // A crate and a drill through it; the crate selected last (active).
+    c.call("ui.command", json!({ "id": "prim.box", "params": { "name": "crate" } })).unwrap();
+    c.call("ui.command", json!({ "id": "prim.cylinder", "params": { "name": "drill", "radius": 0.2, "height": 2.0 } })).unwrap();
+    c.call("ui.command", json!({ "id": "edit.select", "params": { "target": "drill" } })).unwrap();
+    c.call("ui.command", json!({ "id": "edit.select", "params": { "target": "crate", "add": true } })).unwrap();
+    // The Object menu's Difference is enabled now; Cmd+Minus runs it.
+    c.call("ui.key", json!({ "key": "Minus", "modifiers": { "cmd": true } })).unwrap();
+    wait_for(30, || Some(inspect(&mut c)).filter(|s| s["scene"]["objects"] == json!(1)));
+    // Tab: Edit Mode with the cut faces selected.
+    c.call("ui.key", json!({ "key": "Tab" })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["mode"] == json!("face")));
+    assert!(s["edit"]["picked"].as_array().is_some_and(|p| !p.is_empty()), "the cut faces are picked");
+    c.call("ui.key", json!({ "key": "Tab" })).unwrap();
+
+    // Import from the project folder in the background, then run the fix
+    // the import's warning offers by clicking its button.
+    let bin = dir.join("bin.obj").display().to_string();
+    c.call("ui.command", json!({ "id": "file.import", "params": { "path": bin } })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["scene"]["objects"] == json!(2)));
+    let revision = s["scene"]["revision"].clone();
+    let fix = wait_for(30, || {
+        let found = c.call("ui.elements", json!({ "label": "Fix: Clean up" })).ok()?;
+        found["elements"].as_array().and_then(|e| e.first()).cloned()
+    });
+    c.call("ui.click", json!({ "target": { "id": fix["id"] } })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["scene"]["revision"] != revision));
+    assert!(s["status"].as_str().is_some_and(|m| m.contains("filled 1 hole")), "{}", s["status"]);
+
+    // Mesh > Clean Up > Report changes nothing.
+    let revision = s["scene"]["revision"].clone();
+    c.call("ui.command", json!({ "id": "selection.run", "params": { "op": "cleanup.report" } })).unwrap();
+    assert_eq!(inspect(&mut c)["scene"]["revision"], revision);
+    let shot = dir.join("bool.png");
+    c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
     assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
     let _ = c.call("ui.command", json!({ "id": "app.quit" }));
 }

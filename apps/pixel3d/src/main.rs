@@ -1,6 +1,6 @@
 //! pixel3d desktop application.
 //!
-//! Usage: `pixel3d [--sample] [file.p3d]`. The window is an eframe app
+//! Usage: `pixel3d [--sample] [file.p3d] [models...]`. The window is an eframe app
 //! around `p3d_ui::PixelApp` (project spec 20.2): integrated title bar on
 //! macOS, the viewport on eframe's wgpu device, preferences in eframe's
 //! storage.
@@ -15,13 +15,16 @@ mod native_menu;
 use p3d_ui::{PixelApp, Services};
 
 const USAGE: &str = "\
-usage: pixel3d [options] [file.p3d]
+usage: pixel3d [options] [file.p3d] [model.glb|.gltf|.obj|.fbx]...
 
 options:
       --sample             open the sample scene
       --screenshot <png>   save a screenshot of the window, then quit
       --light              use the light theme for this run
       --control <port>     let agents and tests drive the app (127.0.0.1, 0 picks a port)
+      --allow-dir <folder> let file ops (import) use this folder too (repeatable); they
+                           may always use the open project's folder and the folders
+                           files were picked from in a dialog or dropped from
       --fresh              start with default preferences and do not save them
       --command <line>     run a command after start (repeatable), e.g. 'ui.mode mode=face'
       --hover <x,y>        with --screenshot: rest the pointer there (points) first
@@ -42,6 +45,7 @@ struct Args {
     click: bool,
     control: Option<u16>,
     fresh: bool,
+    allow_dirs: Vec<PathBuf>,
 }
 
 struct App {
@@ -127,6 +131,9 @@ fn services() -> Services {
     Services {
         pick_open: Some(Box::new(|| rfd::FileDialog::new().add_filter("pixel3d scene", &["p3d"]).pick_file())),
         pick_save: Some(Box::new(|name: &str| rfd::FileDialog::new().add_filter("pixel3d scene", &["p3d"]).set_file_name(name).save_file())),
+        pick_import: Some(Box::new(|| {
+            rfd::FileDialog::new().set_title("Import").add_filter("3D models (glTF, GLB, OBJ, FBX)", &p3d_ui::MODEL_EXTENSIONS).pick_file()
+        })),
     }
 }
 
@@ -173,6 +180,17 @@ fn main() -> ExitCode {
                 Some(c) => args.commands.push(c),
                 None => {
                     eprintln!("error: --command needs a command id\n\n{USAGE}");
+                    return ExitCode::FAILURE;
+                }
+            },
+            "--allow-dir" => match it.next().map(PathBuf::from) {
+                Some(d) if d.is_dir() => args.allow_dirs.push(d),
+                Some(d) => {
+                    eprintln!("error: --allow-dir: {} is not a folder", d.display());
+                    return ExitCode::FAILURE;
+                }
+                None => {
+                    eprintln!("error: --allow-dir needs a folder\n\n{USAGE}");
                     return ExitCode::FAILURE;
                 }
             },
@@ -264,9 +282,13 @@ fn run(args: Args) -> anyhow::Result<()> {
             if let Some(rs) = &cc.wgpu_render_state {
                 app.set_wgpu(rs);
             }
-            for f in &args.files {
-                let _ = app.open_path(f);
+            for d in &args.allow_dirs {
+                if let Err(e) = app.allow_folder(d) {
+                    tracing::warn!(error = %e, "--allow-dir");
+                }
             }
+            // As if dropped on the window: a scene opens, models are imported.
+            app.drop_files(&args.files);
             if args.sample {
                 let _ = app.run("file.sample", serde_json::Value::Null);
             }

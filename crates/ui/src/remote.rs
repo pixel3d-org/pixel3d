@@ -7,10 +7,13 @@
 //!
 //! Methods: `ui.inspect` (alias `ui.state`), `ui.elements`, `ui.click`,
 //! `ui.drag`, `ui.key`, `ui.text`, `ui.screenshot`, `ui.render` (the
-//! viewport only) and `ui.command` (any command or op).
+//! viewport only), `ui.command` (any command or op), `ui.commands` (the
+//! list) and `mcp.call` (an MCP tool on this app's scene, for
+//! `pixel3d-cli mcp --connect`).
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use egui::{Event, Modifiers, PointerButton, Pos2, pos2};
 use p3d_control::{Request, Server};
@@ -33,6 +36,8 @@ pub struct Remote {
     next_shot: u64,
     /// The server wakes this app's UI thread.
     waker_set: bool,
+    /// Answers `mcp.call` on the app's session (made on the first call).
+    agent: Option<p3d_mcp::Agent>,
 }
 
 impl Remote {
@@ -94,6 +99,10 @@ impl PixelApp {
         }
         let server = Server::start(port).map_err(|e| e.to_string())?;
         let addr = server.addr();
+        // `pixel3d-cli mcp --connect` reads the token from this user-only
+        // file; unit tests hand the token over directly instead.
+        #[cfg(not(test))]
+        server.publish().map_err(|e| format!("cannot publish the agent access token: {e}"))?;
         self.remote.server = Some(server);
         self.remote.waker_set = false;
         self.set_status(format!("{} {addr}", t("Agents can connect at")));
@@ -225,10 +234,69 @@ impl PixelApp {
             }
             "ui.command" => {
                 let id = params.get("id").and_then(Value::as_str).ok_or(t("id is required (a command or op id)"))?;
-                self.run(id, params.get("params").cloned().unwrap_or(Value::Null))
+                let params = params.get("params").cloned().unwrap_or(Value::Null);
+                self.check_agent_path(id, &params)?;
+                self.run(id, params)
             }
+            "ui.commands" => {
+                let list: Vec<Value> = crate::commands::index(self)
+                    .iter()
+                    .map(|c| json!({ "id": c.id, "label": c.label, "desc": c.desc, "params": (c.params)() }))
+                    .collect();
+                Ok(json!({ "commands": list }))
+            }
+            p3d_mcp::connect::METHOD => self.agent_call(params),
             other => Err(format!("{} `{other}`", t("unknown control method"))),
         }
+    }
+
+    /// Agents name files only inside the folders the user allowed (the
+    /// session's file access, `files.rs`): a `path` given to `file.open`,
+    /// `file.import`, `file.save` or `file.save_as` must lie in one, so
+    /// opening or saving a file cannot widen the folders. Without a path
+    /// these commands ask the user in a dialog.
+    ///
+    /// Complexity: O(folders + path length).
+    fn check_agent_path(&self, id: &str, params: &Value) -> Result<(), String> {
+        let Some(path) = params.get("path").and_then(Value::as_str) else { return Ok(()) };
+        let files = self.session.file_access();
+        let checked = match id {
+            "file.open" | "file.import" => files.readable(path).map(|_| ()),
+            "file.save" | "file.save_as" => files.writable(path).map(|_| ()),
+            _ => Ok(()),
+        };
+        checked.map_err(|e| format!("{}: {e}", t("agents may use only the folders the user allowed")))
+    }
+
+    /// Runs an MCP tool on this app's scene (`pixel3d-cli mcp --connect`):
+    /// the agent's changes land in the same history as the user's, objects
+    /// it creates become the selection, and the console and status bar say
+    /// what it did.
+    ///
+    /// Complexity: the tool's work plus O(n log n) in objects after a change.
+    fn agent_call(&mut self, params: &Value) -> Result<Value, String> {
+        let before = Arc::clone(self.session.doc());
+        let agent = self.remote.agent.get_or_insert_with(|| p3d_mcp::connect::host_agent(&self.session));
+        let out = p3d_mcp::connect::answer(agent, &mut self.session, params)?;
+        let tool = params.get("tool").and_then(Value::as_str).unwrap_or("?");
+        let first = out.get("text").and_then(Value::as_str).and_then(|s| s.lines().next()).unwrap_or("");
+        let line = format!("{} {tool}: {}", t("Agent"), first.chars().take(160).collect::<String>());
+        if Arc::ptr_eq(&before, self.session.doc()) {
+            self.log(line);
+            return Ok(out);
+        }
+        let old: std::collections::BTreeSet<_> = before.objects().map(|(k, _)| k).collect();
+        let doc = Arc::clone(self.session.doc());
+        let created: Vec<_> = doc.objects().map(|(k, _)| k).filter(|k| !old.contains(k)).collect();
+        if created.is_empty() {
+            self.prune_selection();
+        } else {
+            self.active = created.first().copied();
+            self.selection = created.into_iter().collect();
+        }
+        self.ui.start_page = false;
+        self.set_status(line);
+        Ok(out)
     }
 
     /// The interface state for agents: modes, selection, settings, scene.
@@ -256,6 +324,7 @@ impl PixelApp {
             "camera": { "yaw": self.viewport.camera.yaw.to_degrees(), "pitch": self.viewport.camera.pitch.to_degrees(), "distance": self.viewport.camera.distance, "ortho": self.viewport.camera.ortho },
             "viewport": [self.viewport.rect.left(), self.viewport.rect.top(), self.viewport.rect.width(), self.viewport.rect.height()],
             "scene": { "objects": doc.object_count(), "revision": doc.revision, "dirty": self.is_dirty(), "path": self.path.as_ref().map(|p| p.display().to_string()) },
+            "allowedFolders": self.session.file_access().roots().iter().map(|r| r.display().to_string()).collect::<Vec<_>>(),
             "palette": self.palette.is_some(),
             "status": self.status_message(),
             "gizmoDragging": self.gizmo.dragging(),
@@ -281,9 +350,10 @@ mod tests {
     fn agents_drive_the_app_through_the_server() {
         let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
         let addr = app.start_control(0).unwrap();
+        let token = app.remote.server.as_ref().map(|s| s.token().to_owned()).unwrap();
         let ctx = egui::Context::default();
         let client = std::thread::spawn(move || {
-            let mut c = Client::connect(addr).unwrap();
+            let mut c = Client::connect(addr, &token).unwrap();
             let made = c.call("ui.command", json!({ "id": "prim.box", "params": { "name": "crate" } })).unwrap();
             let state = c.call("ui.inspect", Value::Null).unwrap();
             let key = c.call("ui.key", json!({ "key": "Tab" })).unwrap();
@@ -306,5 +376,77 @@ mod tests {
         app.feed_remote_input(&mut raw);
         app.filter_input(&ctx, &mut raw);
         assert!(app.ui.mode.is_edit());
+    }
+
+    #[test]
+    fn agents_get_the_users_folders_and_never_more() {
+        let (project, other) = (crate::files::tests::temp_dir("agent-project"), crate::files::tests::temp_dir("agent-other"));
+        crate::files::tests::write_obj(&project.join("tri.obj"));
+        crate::files::tests::write_obj(&other.join("tri.obj"));
+        let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        // The user saves the scene: its folder is the project folder.
+        app.run("file.save", json!({ "path": project.join("scene.p3d").display().to_string() })).unwrap();
+        let addr = app.start_control(0).unwrap();
+        let token = app.remote.server.as_ref().map(|s| s.token().to_owned()).unwrap();
+        let ctx = egui::Context::default();
+        let (inside, outside) = (project.join("tri.obj").display().to_string(), other.join("tri.obj").display().to_string());
+        let elsewhere = other.join("scene.p3d").display().to_string();
+        let client = std::thread::spawn(move || {
+            let mut c = Client::connect(addr, &token).unwrap();
+            let tool = |c: &mut Client, path: &str| {
+                let out = c.call("mcp.call", json!({ "tool": "import", "args": { "path": path } })).unwrap();
+                p3d_mcp::ToolOutput::from_wire(&out).unwrap()
+            };
+            let ok = tool(&mut c, &inside);
+            let refused = tool(&mut c, &outside);
+            let save = c.call("ui.command", json!({ "id": "file.save_as", "params": { "path": elsewhere } })).err().map(|e| e.to_string());
+            let open = c.call("ui.command", json!({ "id": "file.open", "params": { "path": outside } })).err().map(|e| e.to_string());
+            let state = c.call("ui.state", Value::Null).unwrap();
+            (ok, refused, save, open, state)
+        });
+        while !client.is_finished() {
+            app.drain_control(&ctx);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let (ok, refused, save, open, state) = client.join().unwrap();
+        assert!(!ok.is_error, "{}", ok.text);
+        assert!(refused.is_error && refused.text.contains("outside the allowed folders"), "{}", refused.text);
+        for e in [save, open] {
+            assert!(e.is_some_and(|e| e.contains("only the folders the user allowed")), "saving or opening elsewhere cannot widen the folders");
+        }
+        assert_eq!(state["allowedFolders"], json!([project.display().to_string()]));
+        assert!(app.session.file_access().readable(&other.join("tri.obj").display().to_string()).is_err());
+        for d in [project, other] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn mcp_tools_run_on_the_app_scene() {
+        let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        let addr = app.start_control(0).unwrap();
+        let token = app.remote.server.as_ref().map(|s| s.token().to_owned()).unwrap();
+        let ctx = egui::Context::default();
+        let client = std::thread::spawn(move || {
+            let mut c = Client::connect(addr, &token).unwrap();
+            let run = json!({ "tool": "run", "args": { "ops": [{ "op": "prim.box", "args": { "name": "crate" } }] } });
+            let made = c.call("mcp.call", run).unwrap();
+            let seen = c.call("mcp.call", json!({ "tool": "scene_overview" })).unwrap();
+            let commands = c.call("ui.commands", Value::Null).unwrap();
+            (made, seen, commands)
+        });
+        while !client.is_finished() {
+            app.drain_control(&ctx);
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let (made, seen, commands) = client.join().unwrap();
+        let made = p3d_mcp::ToolOutput::from_wire(&made).unwrap();
+        assert!(!made.is_error, "{}", made.text);
+        assert!(p3d_mcp::ToolOutput::from_wire(&seen).unwrap().text.contains("crate"));
+        assert_eq!(app.doc().object_count(), 1, "the change is in the app's own session");
+        assert_eq!(app.selection.len(), 1, "what the agent made is selected");
+        assert!(app.session.can_undo(), "and undoable like the user's edits");
+        let ids: Vec<&str> = commands["commands"].as_array().unwrap().iter().filter_map(|c| c["id"].as_str()).collect();
+        assert!(ids.contains(&"view.frame") && ids.contains(&"ui.mode"), "{ids:?}");
     }
 }
