@@ -19,7 +19,7 @@ pub const MAX_SAMPLES: usize = 4_000_000;
 const MAX_FACE: usize = 8;
 
 /// Options of [`quad_remesh`].
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct QuadSpec {
     /// Target edge length in meters.
     pub edge: f32,
@@ -30,11 +30,13 @@ pub struct QuadSpec {
     pub seed: u64,
     /// Sample spacing of the fields, as a fraction of the extraction lattice step.
     pub density: f32,
+    /// Design rules for the edge flow: loops around points, flow along an axis.
+    pub guides: Vec<crate::field::Guide>,
 }
 
 impl Default for QuadSpec {
     fn default() -> Self {
-        QuadSpec { edge: 0.01, iterations: 12, relax: 4, seed: 0, density: 0.4 }
+        QuadSpec { edge: 0.01, iterations: 12, relax: 4, seed: 0, density: 0.4, guides: Vec::new() }
     }
 }
 
@@ -342,7 +344,7 @@ pub fn quad_remesh(mesh: &Mesh, spec: &QuadSpec) -> Result<(Mesh, QuadReport), R
     let (pos, tris) = densify(pos, tris, scale * spec.density)?;
     let samples = pos.len();
     let levels = hierarchy(graph(pos, &tris), 64);
-    let q = orientation_field(&levels, spec.iterations, spec.seed);
+    let q = orientation_field(&levels, spec.iterations, spec.seed, &spec.guides);
     let o = position_field(&levels, &q, scale, spec.iterations);
     let (vpos, faces) = extract(&levels[0], &q[0], &o[0], scale);
     if faces.is_empty() {
@@ -556,5 +558,51 @@ mod tests {
         let a = quad_remesh(&s, &QuadSpec { edge: 0.1, ..QuadSpec::default() }).unwrap().0;
         let b = quad_remesh(&s, &QuadSpec { edge: 0.1, ..QuadSpec::default() }).unwrap().0;
         assert_eq!(a.positions, b.positions);
+    }
+}
+
+#[cfg(test)]
+mod guide_tests {
+    #![allow(clippy::unwrap_used)]
+    use p3d_geo::prim::{IcoSphereSpec, Origin, ico_sphere};
+
+    use super::*;
+    use crate::field::Guide;
+
+    /// Mean |sin 2t| of the angle t between each edge near the ring and the
+    /// radial direction from the ring's center: 0 when edges run along
+    /// circles and spokes.
+    fn misalignment(m: &Mesh, center: Vec3, radius: f32) -> f32 {
+        let (mut sum, mut n) = (0.0f32, 0usize);
+        for e in m.edges() {
+            let [a, b] = m.edge_verts(e);
+            let (pa, pb) = (m.positions[a as usize], m.positions[b as usize]);
+            let mid = (pa + pb) * 0.5;
+            let r = mid.distance(center);
+            if !(0.5 * radius..0.9 * radius).contains(&r) {
+                continue;
+            }
+            let nrm = mid.normalize();
+            let radial = ((mid - center) - nrm * nrm.dot(mid - center)).normalize();
+            let dir = ((pb - pa) - nrm * nrm.dot(pb - pa)).normalize();
+            let c = dir.dot(radial).clamp(-1.0, 1.0);
+            let t = c.acos();
+            sum += (2.0 * t).sin().abs();
+            n += 1;
+        }
+        sum / n.max(1) as f32
+    }
+
+    #[test]
+    fn ring_guides_make_loops_around_a_point() {
+        let s = ico_sphere(&IcoSphereSpec { radius: 0.5, subdivisions: 4 }, Origin::Center).unwrap();
+        let center = Vec3::new(0.0, 0.0, 0.5);
+        let radius = 0.3;
+        // The ring must span a few lattice cells to steer the flow.
+        let free = quad_remesh(&s, &QuadSpec { edge: 0.025, ..QuadSpec::default() }).unwrap().0;
+        let ring = quad_remesh(&s, &QuadSpec { edge: 0.025, guides: vec![Guide::Ring { center, radius }], ..QuadSpec::default() }).unwrap().0;
+        let (a, b) = (misalignment(&free, center, radius), misalignment(&ring, center, radius));
+        assert!(b < 0.4 && b < a * 0.65, "guided {b} vs free {a}");
+        assert!(ring.faces().all(|f| ring.face_len(f) == 4));
     }
 }

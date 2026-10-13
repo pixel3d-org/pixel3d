@@ -11,14 +11,16 @@ Rebuilds a closed mesh as all quads with even edges that follow a smooth directi
 
 Field-aligned quad remeshing (Instant Meshes, Jakob et al. 2015): a smooth direction field and a lattice of points about `edge` apart are solved on the surface, quads are extracted from the lattice and subdivided once, so every face is a quad. Before subdividing, local edits (merging triangle pairs, turning edges, splitting vertices of valence 6 or more and big faces) lower the poles, so none has valence 2 or above 6. The new vertices are relaxed onto the old surface; face groups and materials carry over by the nearest old face. UVs, creases and edge groups do not.
 
-**Use for** turning `sdf.mesh` results, boolean-heavy blockouts and scans into clean, even quads before UVs, subdivision or rigging. Hard edges round off: remesh organic parts, model hard-surface parts directly.
+**Use for** turning `sdf.mesh` results, boolean-heavy blockouts and scans into clean, even quads before UVs, subdivision or rigging. Hard edges round off: remesh organic parts, model hard-surface parts directly. `loops` lay edge loops around points (eyes, mouth, joints) and `align` runs the flow along an axis; a spec part with `humanoid_head` landmarks gets loops around its eyes and mouth by itself.
 
 ## Parameters
 
 | Name | Type | Default | Description |
 |---|---|---|---|
+| `align` | `AxisParam \| null` | - | Flow along an object axis (limbs, blades, tails). |
 | `edge` | `Length \| null` | - | Target edge length; about a fortieth of the largest side when omitted. |
 | `iterations` | `number` | `12` | Smoothing sweeps of the direction and position fields per level (more is smoother and slower). |
+| `loops` | `LoopParam[]` | - | Edge loops circling points (eyes, mouth, joints): `{"at": "eye_socket", "radius": "3cm"}`; `at` is world coordinates or a group's center. |
 | `relax` | `number` | `4` | Relaxation sweeps onto the original surface. |
 | `target` | `string` | required | Mesh object (name, path or id); it must be closed. |
 

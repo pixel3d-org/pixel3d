@@ -868,6 +868,25 @@ impl<'a> Compiler<'a> {
                 return Err(err(&format!("{epath}/args/target"), "edits act on their part: leave out `target`"));
             }
             args.insert("target".into(), Value::String("part".into()));
+            // Category topology rules: a head's quad remesh loops around
+            // its eyes and mouth and flows upright unless told otherwise.
+            if e.op == "remesh.quad"
+                && self.category_of(part).as_deref() == Some("humanoid_head")
+                && !args.contains_key("loops")
+                && let Some(m) = tx.doc().object_mesh(pk).cloned()
+                && let Some(surface) = Surface::of_mesh(&m, Affine3A::IDENTITY)
+            {
+                {
+                    let height = m.bounds().map_or(0.2, |(lo, hi)| hi.y - lo.y);
+                    let mut loops = Vec::new();
+                    for (mark, share) in [("eye_l", 0.15f32), ("eye_r", 0.15), ("mouth", 0.18)] {
+                        let at = self.local_point(name, part, &m, &surface, &crate::model::LocalPoint::Name(mark.to_owned()), &epath)?;
+                        loops.push(serde_json::json!({ "at": [at.x, at.y, at.z], "radius": height * share }));
+                    }
+                    args.insert("loops".into(), Value::Array(loops));
+                    args.entry("align").or_insert(Value::String("y".into()));
+                }
+            }
             let applied = self.run(
                 &mut tx,
                 &e.op,

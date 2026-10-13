@@ -438,7 +438,7 @@ pub struct HandlesParams {
 }
 
 /// The center of a group's vertices (local space).
-fn group_center(mesh: &Mesh, name: &str, path: &str) -> Result<Vec3, OpError> {
+pub(crate) fn group_center(mesh: &Mesh, name: &str, path: &str) -> Result<Vec3, OpError> {
     let g = mesh.group(name).ok_or_else(|| {
         let mut e = OpError::new(ErrorCode::NotFound, format!("no group `{name}`")).at(path);
         e.suggestions = p3d_scene::name::suggest(name, mesh.groups().map(|(n, _)| n), 3);
