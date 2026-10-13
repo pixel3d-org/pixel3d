@@ -1188,6 +1188,8 @@ export type SdfSilhouettesParams = {
   round?: Length;
   /** Outline seen from the side (+X): z right (front), y up; give side, top or both. */
   side?: OutlineParam | null;
+  /** Mesh object to rebuild in place from the outlines (it keeps its name, transform, parent and children) instead of making a new object. */
+  target?: string | null;
   /** Outline seen from the top (+Y): x right, z up (front). */
   top?: OutlineParam | null;
 };
@@ -1210,6 +1212,8 @@ export type GenShellParams = {
   parent?: string | null;
   /** Origin position in the parent's space (the outline's origin). */
   position?: [Length, Length, Length];
+  /** Mesh object to rebuild in place from the outline (it keeps its name, transform, parent and children) instead of making a new object. */
+  target?: string | null;
   /** Thickness; 0 (the default) makes a one-sided card facing +Z. */
   thickness?: Length;
   /** Turn about the length axis at the tip. */

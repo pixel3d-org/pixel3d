@@ -1,17 +1,20 @@
 //! Shapes drawn as 2D outlines: `gen.shell` (a curved sheet from one
 //! outline: ears, leaves, wings, fins, capes) and `sdf.silhouettes` (a
 //! solid from two or three orthographic outlines, like a blueprint).
-//! Outlines are SVG path data in meters or point lists.
+//! Outlines are SVG path data in meters or point lists. With `target`
+//! either rebuilds a mesh object in place, so its history holds the
+//! outlines to edit and run again.
 
 use glam::{DVec2, Vec2};
 use p3d_geo::generate::svg::parse_path;
 use p3d_geo::generate::{ShellSpec, shell};
+use p3d_mesh::Mesh;
 use p3d_scene::Document;
 use p3d_sdf::{MeshSpec, OutlineField, View, mesh};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{check_length, check_new_object, create_mesh_object};
+use crate::common::{check_length, check_new_object, create_mesh_object, dims, label, mesh_groups, mesh_target, thousands};
 use crate::error::{ErrorCode, OpError};
 use crate::op::{Category, Op, OpCtx, OpExample, OpFlags, OpMeta, OpOutput};
 use crate::params::{Angle, Length};
@@ -61,6 +64,52 @@ fn extent(contours: &[Vec<DVec2>]) -> f64 {
 const MIN_DETAIL: f64 = 1e-4;
 const MAX_DETAIL: f64 = 1.0;
 
+/// Checks where the mesh goes: a new object, or `target` rebuilt in place.
+fn check_place(doc: &Document, target: Option<&str>, name: Option<&str>, parent: Option<&str>, position: &[Length; 3]) -> Result<(), OpError> {
+    match target {
+        Some(t) => {
+            if name.is_some() || parent.is_some() || position.iter().any(|l| l.0 != 0.0) {
+                return Err(OpError::invalid("/target", "name, parent and position are for a new object; leave them out to rebuild the target"));
+            }
+            mesh_target(doc, t).map(|_| ())
+        }
+        None => check_new_object(doc, name, parent).map(|_| ()),
+    }
+}
+
+/// Puts the mesh in a new object, or in `target` (which keeps its name,
+/// transform, parent and children).
+///
+/// Complexity: O(V + F) of the mesh for the summary.
+fn place(
+    tx: &mut Tx,
+    target: Option<&str>,
+    name: Option<&str>,
+    parent: Option<&str>,
+    position: &[Length; 3],
+    kind: &str,
+    m: Mesh,
+) -> Result<OpOutput, OpError> {
+    let Some(t) = target else {
+        let key = create_mesh_object(tx, name, kind, parent, position, m)?;
+        return Ok(created_summary(tx, key, kind));
+    };
+    let key = mesh_target(tx.doc(), t)?;
+    *tx.mesh_mut(key, "/target")? = m;
+    let doc = tx.doc();
+    let (dims, faces, tris) = doc.object_mesh(key).map_or_else(|| ("?".into(), 0, 0), |m| (dims(m), m.face_count(), m.triangle_count()));
+    let mut out = OpOutput::summary(format!(
+        "rebuilt {} {kind} {dims}: {} faces ({} tris; budget {})",
+        label(doc, key),
+        thousands(faces),
+        thousands(tris),
+        thousands(doc.settings.tri_budget() as usize)
+    ));
+    out.changed.push(key);
+    out.groups = mesh_groups(doc, key);
+    Ok(out)
+}
+
 // ---- gen.shell -------------------------------------------------------------------
 
 /// Parameters of `gen.shell`.
@@ -96,6 +145,9 @@ pub struct ShellParams {
     /// Origin position in the parent's space (the outline's origin).
     #[serde(default)]
     pub position: [Length; 3],
+    /// Mesh object to rebuild in place from the outline (it keeps its name, transform, parent and children) instead of making a new object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 /// `gen.shell`.
@@ -128,7 +180,8 @@ impl Op for GenShell {
                    width), `bend` lifts its tip (a share of the length) and `twist` turns it toward the tip. With `thickness` it \
                    becomes a closed solid with groups `front`, `back` and `rim`; without, a one-sided card facing +Z (group \
                    `front`) for alpha-textured foliage, feathers and hair. Outlines are SVG path data in meters (curves welcome) \
-                   or point lists; `holes` cut it.\n\n\
+                   or point lists; `holes` cut it. With `target` the outline rebuilds that mesh object in place (it keeps its \
+                   name, transform, parent and children), so its history holds the outline to edit and run again.\n\n\
                    **Use for** thin organic parts an agent can describe with an outline and three numbers: an elf ear with \
                    `cup` 0.4 and a little `bend`, leaf cards, membrane wings, fins, cloth flaps.",
             examples: &[OpExample {
@@ -143,7 +196,7 @@ impl Op for GenShell {
     }
 
     fn validate(doc: &Document, p: &ShellParams) -> Result<(), OpError> {
-        check_new_object(doc, p.name.as_deref(), p.parent.as_deref())?;
+        check_place(doc, p.target.as_deref(), p.name.as_deref(), p.parent.as_deref(), &p.position)?;
         if let Some(d) = p.detail {
             check_length("/detail", d, MIN_DETAIL, MAX_DETAIL)?;
         }
@@ -156,8 +209,7 @@ impl Op for GenShell {
     fn apply(tx: &mut Tx, p: &ShellParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
         let spec = Self::spec(p)?;
         let m = shell(&spec).map_err(|e| OpError::invalid("/outline", e.to_string()))?;
-        let key = create_mesh_object(tx, p.name.as_deref(), "shell", p.parent.as_deref(), &p.position, m)?;
-        Ok(created_summary(tx, key, "shell"))
+        place(tx, p.target.as_deref(), p.name.as_deref(), p.parent.as_deref(), &p.position, "shell", m)
     }
 }
 
@@ -190,6 +242,9 @@ pub struct SilhouettesParams {
     /// Origin position in the parent's space.
     #[serde(default)]
     pub position: [Length; 3],
+    /// Mesh object to rebuild in place from the outlines (it keeps its name, transform, parent and children) instead of making a new object.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 /// `sdf.silhouettes`.
@@ -231,7 +286,8 @@ impl Op for SdfSilhouettes {
                    then every edge is rounded by `round`. Draw what the part looks like from the front and from the side (and \
                    the top when needed) as SVG path data in meters or point lists: an axe head, a helmet, a sword guard, a \
                    creature's body plan. The result is an even closed quad mesh; refine it with `remesh.quad`, details with \
-                   other parts.\n\n\
+                   other parts. With `target` the outlines rebuild that mesh object in place (it keeps its name, transform, \
+                   parent and children), so its history holds the outlines to edit and run again.\n\n\
                    **Use for** turning concept outlines into a blockout without guessing depth.",
             examples: &[OpExample {
                 args: r#"{"name": "axe_head", "front": "M -0.02 0 L 0.12 -0.06 C 0.16 0 0.16 0.08 0.12 0.14 L -0.02 0.08 Z", "side": [[-0.015, -0.06], [0.015, -0.06], [0.015, 0.14], [-0.015, 0.14]], "round": "3mm", "detail": "4mm"}"#,
@@ -245,7 +301,7 @@ impl Op for SdfSilhouettes {
     }
 
     fn validate(doc: &Document, p: &SilhouettesParams) -> Result<(), OpError> {
-        check_new_object(doc, p.name.as_deref(), p.parent.as_deref())?;
+        check_place(doc, p.target.as_deref(), p.name.as_deref(), p.parent.as_deref(), &p.position)?;
         if let Some(d) = p.detail {
             check_length("/detail", d, MIN_DETAIL, MAX_DETAIL)?;
         }
@@ -259,7 +315,6 @@ impl Op for SdfSilhouettes {
         let (field, voxel) = Self::field(p)?;
         ctx.check_cancel()?;
         let r = mesh(&field, &MeshSpec { voxel }).map_err(|e| OpError::new(ErrorCode::Topology, e.to_string()).at("/detail"))?;
-        let key = create_mesh_object(tx, p.name.as_deref(), "silhouettes", p.parent.as_deref(), &p.position, r.mesh)?;
-        Ok(created_summary(tx, key, "silhouettes"))
+        place(tx, p.target.as_deref(), p.name.as_deref(), p.parent.as_deref(), &p.position, "silhouettes", r.mesh)
     }
 }

@@ -53,9 +53,15 @@ impl JobCard {
     }
 }
 
-/// Whether an op runs in the card: long running, on a `target`.
+/// Whether an op runs in the card: long running, on a required `target`
+/// (ops that may also make a new object, such as `sdf.silhouettes`, run
+/// as usual).
 pub fn runs_in_card(registry: &p3d_ops::Registry, op: &str) -> bool {
-    registry.get(op).is_ok_and(|o| o.meta().flags.contains(OpFlags::LONG_RUNNING) && o.params_schema().pointer("/properties/target").is_some())
+    registry.get(op).is_ok_and(|o| {
+        let schema = o.params_schema();
+        let required = schema.get("required").and_then(Value::as_array).is_some_and(|r| r.iter().any(|k| k == "target"));
+        o.meta().flags.contains(OpFlags::LONG_RUNNING) && required
+    })
 }
 
 /// A mesh's surface area, largest side and open edges.
@@ -338,6 +344,16 @@ mod tests {
             std::thread::sleep(Duration::from_millis(5));
         }
         panic!("the run did not finish");
+    }
+
+    #[test]
+    fn only_ops_on_a_required_target_run_in_the_card() {
+        let session = p3d_engine::Session::new();
+        let r = session.registry();
+        assert!(runs_in_card(r, "remesh.quad") && runs_in_card(r, "sdf.from_mesh"));
+        // Long running, but it makes new objects; its target is optional.
+        assert!(!runs_in_card(r, "sdf.silhouettes"));
+        assert!(!runs_in_card(r, "prim.box"));
     }
 
     #[test]
