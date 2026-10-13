@@ -128,7 +128,7 @@ Acceptance:
 Acceptance:
 
 - [x] T11 geometry built in at most 6 agent calls with no image calls (`docs/agents/examples/feature_head.json`: brief plus one spec call, brief 8/8)
-- [ ] The diagnostics corpus passes
+- [x] The diagnostics corpus passes (`crates/mcp/tests/diagnostics_corpus.rs`: 21 broken specs and meshes through the agent tools (floating ear, penetrating hair, asymmetric mirror, missing joint and face loops, micro detail, wrong proportions, bald spot, one case per new code, the geometry problems); each asserts the code on the part, the landmark or position, the cause path, the token budget, that `explain` predicts the top fix resolves it and that `diagnose fix` makes it go away; 17 s)
 - [x] Feature templates keep clean topology across their parameter ranges (property tests)
 
 ## Phase 4: UV
