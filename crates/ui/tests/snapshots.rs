@@ -436,3 +436,25 @@ fn hair_cards_on_a_head_in_the_viewport() {
     let rgba = image::RgbaImage::from_raw(img.width, img.height, img.pixels).unwrap();
     egui_kittest::image_snapshot_options(&rgba, "hair_viewport", &options("hair_viewport"));
 }
+
+#[test]
+fn spec_tab_with_a_strands_part() {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = ThemePref::Light;
+    a.run(
+        "spec.set",
+        json!({ "name": "elf", "spec": { "category": "humanoid_head", "parts": {
+            "head": { "feature": "head_base", "detail": "5mm" },
+            "hair": { "strands": "hair", "params": { "on": "head", "region": ["hairline_front", "temple_l", "nape", "temple_r"], "length": "12cm" } }
+        } } }),
+    )
+    .unwrap();
+    a.run("ui.dock", json!({ "operation": "close", "panel": "health" })).unwrap();
+    a.run("ui.bottom", json!({ "on": false })).unwrap();
+    a.run("ui.dock", json!({ "operation": "close", "panel": "outliner" })).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("spec.select_part", json!({ "root": "elf", "part": "hair" })).unwrap();
+    h.run_steps(20);
+    snapshot(&mut h, "spec_strands_light");
+}
