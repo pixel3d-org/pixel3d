@@ -141,6 +141,7 @@ icons! {
     Outline => d::BEZIER, false;
     Leaf => d::LEAF, false;
     Blueprint => d::BLUEPRINT, false;
+    Handles => d::HANDLES, false;
 }
 
 /// The flattened outlines of an icon, parsed on first use.

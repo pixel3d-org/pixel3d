@@ -18,6 +18,7 @@ pub mod docking;
 pub mod elements;
 pub mod files;
 pub mod gizmo;
+pub mod handles;
 pub mod health;
 pub mod i18n;
 mod icon_data;
@@ -78,6 +79,8 @@ pub enum Tool {
     Scale,
     /// Edit Mode: drag a line to cut the faces it crosses.
     Knife,
+    /// Object Mode: pull points of the surface; it follows within a radius.
+    Handles,
 }
 
 /// Whole objects or mesh elements.
@@ -295,6 +298,8 @@ pub struct PixelApp {
     pub spec: spec::SpecEditor,
     /// The outline editor (the Outline tab: shells and silhouettes).
     pub outline: outline::OutlineEditor,
+    /// The Handles tool (sculpting by numbers in the viewport).
+    pub handles: handles::HandleTool,
     /// The run card of a long op (remesh) and its background run.
     pub job_card: jobcard::JobCard,
     /// Poles of the shown meshes, for the pole overlay.
@@ -369,6 +374,7 @@ impl PixelApp {
             sdf: sdf::SdfEditor::default(),
             spec: spec::SpecEditor::default(),
             outline: outline::OutlineEditor::default(),
+            handles: handles::HandleTool::default(),
             job_card: jobcard::JobCard::default(),
             poles: poles::PoleCache::default(),
             coalesce: None,
@@ -418,6 +424,7 @@ impl PixelApp {
             + usize::from(self.sdf.busy())
             + usize::from(self.spec.busy())
             + usize::from(self.outline.busy())
+            + usize::from(self.handles.busy())
             + usize::from(self.job_card.busy())
     }
 
@@ -630,7 +637,7 @@ impl PixelApp {
             self.ui.element_mode = mode;
         }
         self.ui.mode = mode;
-        if !mode.is_edit() && self.ui.tool == Tool::Knife {
+        if (!mode.is_edit() && self.ui.tool == Tool::Knife) || (mode.is_edit() && self.ui.tool == Tool::Handles) {
             self.ui.tool = Tool::Select;
         }
         // Follow the edited mesh now, so commands right after see it.
@@ -865,6 +872,7 @@ impl PixelApp {
         self.sdf = sdf::SdfEditor::default();
         self.spec = spec::SpecEditor::default();
         self.outline = outline::OutlineEditor::default();
+        self.handles = handles::HandleTool::default();
         self.job_card = jobcard::JobCard::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
@@ -1018,6 +1026,8 @@ impl PixelApp {
             shapes_cmd if shapes_cmd.starts_with("shapes.") => self.sdf_command(shapes_cmd, params),
             // The outline editor: points, views, holes and fields; Add > Shell and Silhouettes.
             outline_cmd if outline_cmd.starts_with("outline.") => self.outline_command(outline_cmd, params),
+            // The Handles tool: place, pin and pull points; its radius.
+            handles_cmd if handles_cmd.starts_with("handles.") => self.handles_command(handles_cmd, params),
             // The Spec tab: starters, parts, the raw source, landmarks.
             "spec.starter" | "spec.select_part" | "spec.json" | "spec.pick_landmark" | "spec.set_landmark" | "landmarks.toggle"
             | "view.landmarks" => self.spec_command(id, params),
@@ -1269,6 +1279,9 @@ impl PixelApp {
                 let tool = serde_json::from_value::<Tool>(params.get("tool").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
                 if tool == Tool::Knife && !self.ui.mode.is_edit() {
                     return Err(t("The knife works in Edit Mode (Tab).").to_owned());
+                }
+                if tool == Tool::Handles && self.ui.mode.is_edit() {
+                    return Err(t("Handles work in Object Mode (Tab).").to_owned());
                 }
                 self.ui.tool = tool;
                 Ok(json!({ "tool": tool }))
@@ -1718,6 +1731,7 @@ impl PixelApp {
         self.spec_tick(ctx);
         self.sdf_tick(ctx);
         self.outline_tick(ctx);
+        self.handles_tick(ctx);
         self.job_card_tick(ctx);
         if let Some((_, at)) = &self.status {
             let left = STATUS_TIME.saturating_sub(at.elapsed());
@@ -1774,7 +1788,8 @@ impl PixelApp {
                     .map(|(d, n)| (d, n | (1 << 63)))
                     .or_else(|| self.action_preview.doc.clone().map(|(d, n)| (d, n | (1 << 62))))
                     .or_else(|| self.sdf.preview_doc().map(|(d, n)| (d, n | (1 << 61))))
-                    .or_else(|| self.outline.preview_doc().map(|(d, n)| (d, n | (1 << 60))));
+                    .or_else(|| self.outline.preview_doc().map(|(d, n)| (d, n | (1 << 60))))
+                    .or_else(|| self.handles.preview_doc().map(|(d, n)| (d, n | (1 << 59))));
                 let (doc, key) = match preview {
                     Some((d, n)) => (d, n),
                     None => (std::sync::Arc::clone(self.session.doc()), self.scene_key()),
@@ -1801,7 +1816,11 @@ impl PixelApp {
                 };
                 self.viewport.pick_elements = element_mode && self.edit.object.is_some();
                 self.viewport.knife = element_mode && self.ui.tool == Tool::Knife;
-                self.viewport.suppress = self.gizmo.modal();
+                // The Handles tool takes the viewport's clicks and drags (and
+                // the wheel while pulling).
+                let handles = self.ui.tool == Tool::Handles && !self.ui.mode.is_edit();
+                self.viewport.suppress = self.gizmo.modal() || handles;
+                self.viewport.take_scroll = handles && self.handles.dragging();
                 let view_rect = chrome::viewport_header(self, ui, ui.max_rect());
                 viewport_events = ui
                     .scope_builder(egui::UiBuilder::new().max_rect(view_rect), |ui| {
@@ -1813,6 +1832,7 @@ impl PixelApp {
                 spec::overlay(self, ui, &mut viewport_events);
                 spec::provenance_tip(self, ui);
                 outline::overlay(self, ui);
+                handles::overlay(self, ui);
                 poles::overlay(self, ui);
                 let gizmo_rect = self.viewport.rect;
                 gizmo::show(self, ui, gizmo_rect);
