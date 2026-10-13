@@ -393,7 +393,7 @@ impl Feature for Wing {
             trailing = tips.get(tips.len() / 2).copied().unwrap_or(trailing);
         } else {
             let solid = p.choice("feathers") == "solid";
-            let thick = (span * 0.004).max(0.0005);
+            let thick = (span * 0.0028).max(0.0005);
             let mut s = Sheet::default();
             // Primaries: along the hand, fanning from trailing to along the hand.
             let np = p.count("primaries").max(3);
@@ -401,7 +401,7 @@ impl Feature for Wing {
             for i in 0..np {
                 let t = (i as f32 + 0.5) / np as f32;
                 let root = b.wrist + hand * (t * 0.85);
-                let dir = back(hand).lerp(hand.normalize_or(Vec3::X), 0.15 + 0.75 * t * t);
+                let dir = back(hand).lerp(hand.normalize_or(Vec3::X), 0.1 + 0.8 * t.powf(1.5));
                 let len = chord * (0.85 + 0.35 * t);
                 let lift = up * (thick * 1.2 * (np - i) as f32);
                 s.feather("primaries", root + lift, dir, up, len, len * 0.2, 0.32, solid, thick);
@@ -411,7 +411,7 @@ impl Feature for Wing {
             for i in 0..ns {
                 let t = (i as f32 + 0.5) / ns as f32;
                 let root = b.elbow.lerp(b.wrist, t);
-                let dir = back(b.wrist - b.elbow) + (b.wrist - b.elbow).normalize_or(Vec3::X) * 0.15 * t;
+                let dir = back(b.wrist - b.elbow) + (b.wrist - b.elbow).normalize_or(Vec3::X) * (0.4 * t - 0.25);
                 let len = chord * (0.72 + 0.08 * t);
                 s.feather("secondaries", root + up * (thick * 1.1 * i as f32), dir, up, len, len * 0.27, 0.4, solid, thick);
             }
@@ -427,7 +427,7 @@ impl Feature for Wing {
             let chain = [b.shoulder, b.elbow, b.wrist, b.tip];
             for r in 0..rows {
                 let n = (np + ns) * 3 / 4 + 4;
-                let share = [0.38f32, 0.24, 0.14][r];
+                let share = [0.45f32, 0.3, 0.18][r];
                 for i in 0..n {
                     let t = (i as f32 + 0.5) / n as f32 * 0.92;
                     let at = along(&chain, t);
@@ -435,7 +435,7 @@ impl Feature for Wing {
                     let dir = back(next - at) + (next - at).normalize_or(Vec3::X) * 0.25 * t;
                     let len = chord * share * (1.0 - 0.35 * t);
                     let root = at + up * (thick * (6.0 + 3.0 * r as f32) + r0 * 0.3) - back(next - at) * (chord * 0.04 * r as f32);
-                    s.feather("coverts", root, dir, up, len, len * 0.42, 0.45, solid, thick);
+                    s.feather("coverts", root, dir, up, len, len * 0.55, 0.45, solid, thick);
                 }
             }
             mesh.append(&s.finish()?);

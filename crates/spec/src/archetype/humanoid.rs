@@ -132,7 +132,8 @@ struct Race {
     ear: (&'static str, f32, f64, f64),
     /// Hand width, thickness, finger length and finger width.
     hand: (f64, f64, f64, f64),
-    boots: bool,
+    /// Boot weight: 0 bare feet, 1 light boots, 2 heavy boots.
+    boots: u8,
     tusks: bool,
     /// Eyebrow length in head heights.
     brows: f32,
@@ -158,7 +159,7 @@ const RACES: [Race; 5] = [
         nose: &[],
         ear: ("human", 0.27, 0.0, 15.0),
         hand: (0.45, 0.15, 1.0, 1.0),
-        boots: true,
+        boots: 1,
         tusks: false,
         brows: 0.06,
         culture: "human_medieval",
@@ -175,7 +176,7 @@ const RACES: [Race; 5] = [
         nose: &[("length", 0.19), ("width", 0.12), ("bridge", 0.7), ("tip", 0.8)],
         ear: ("elf", 0.42, 0.9, 30.0),
         hand: (0.42, 0.13, 1.2, 0.85),
-        boots: true,
+        boots: 1,
         tusks: false,
         brows: 0.06,
         culture: "elven",
@@ -201,7 +202,7 @@ const RACES: [Race; 5] = [
         nose: &[("length", 0.2), ("width", 0.16), ("bridge", 0.8), ("tip", 1.8), ("flare", 1.3), ("upturn", -5.0)],
         ear: ("human", 0.25, 0.0, 18.0),
         hand: (0.52, 0.19, 0.85, 1.3),
-        boots: true,
+        boots: 2,
         tusks: false,
         brows: 0.1,
         culture: "dwarven",
@@ -212,13 +213,13 @@ const RACES: [Race; 5] = [
         summary: "A massive orc, 7 heads tall: huge shoulders and traps, a forward head with a heavy brow and jaw, pointed ears and tusks.",
         aliases: &["orcish", "half orc", "brute", "ogre"],
         params: &ORC_PARAMS,
-        neck: 0.2,
-        hunch: 0.12,
+        neck: 0.24,
+        hunch: 0.08,
         head: &[("width", 0.74), ("jaw", 1.25), ("chin", 0.7), ("brow", 1.0), ("cheekbones", 0.4), ("sockets", 0.8)],
         nose: &[("length", 0.15), ("width", 0.17), ("bridge", 0.2), ("tip", 1.4), ("flare", 1.8), ("upturn", 20.0)],
         ear: ("elf", 0.25, 0.7, 40.0),
         hand: (0.5, 0.18, 0.95, 1.3),
-        boots: true,
+        boots: 2,
         tusks: true,
         brows: 0.05,
         culture: "orcish",
@@ -235,7 +236,7 @@ const RACES: [Race; 5] = [
         nose: &[("length", 0.15), ("width", 0.13), ("bridge", 0.3), ("tip", 1.3), ("upturn", 15.0)],
         ear: ("elf", 0.27, 0.35, 25.0),
         hand: (0.47, 0.15, 0.95, 1.05),
-        boots: false,
+        boots: 0,
         tusks: false,
         brows: 0.05,
         culture: "human_medieval",
@@ -571,7 +572,7 @@ impl Archetype for Humanoid {
             let df = (wr - el).normalize_or(Vec3::NEG_Y);
             let front = (Vec3::Z - du * du.z).try_normalize().unwrap_or(Vec3::Z);
             let out = (Vec3::X * s - df * df.x * s).try_normalize().unwrap_or(Vec3::X * s);
-            let k = 0.06 * t;
+            let k = 0.085 * t;
             let mm = 1.0 + 0.4 * bu;
             let arm = vec![
                 ellipsoid("deltoid", at(shj + Vec3::new(s * 0.05 * t, 0.0, 0.0)), Vec3::new(0.19 * t, 0.22 * t, 0.22 * t) * (0.9 + 0.35 * bu), None),
@@ -642,7 +643,7 @@ impl Archetype for Humanoid {
             let (hip, knee, ankle, toe) = (rig.at(&n("hip")), rig.at(&n("knee")), rig.at(&n("ankle")), rig.at(&n("toe")));
             let dt = (knee - hip).normalize_or(Vec3::NEG_Y);
             let fwd = (Vec3::Z - dt * dt.z).try_normalize().unwrap_or(Vec3::Z);
-            let k = 0.06 * t;
+            let k = 0.085 * t;
             let mm = 1.0 + 0.4 * bu;
             let mut leg = vec![
                 capsule("thigh", at(hip), at(knee), 0.26 * t * (0.85 + 0.3 * bu), Some(0.15 * t * (0.9 + 0.2 * bu)), None),
@@ -670,8 +671,8 @@ impl Archetype for Humanoid {
                     Some(0.12 * t * mm),
                     Some(k),
                 ),
-                sphere("knee", at(knee + fwd * 0.03 * t), 0.12 * t * (0.9 + 0.2 * bu), Some(0.08 * t)),
-                capsule("shin", at(knee), at(ankle), 0.12 * t * (0.9 + 0.2 * bu), Some(0.085 * t * (0.9 + 0.2 * bu)), Some(k)),
+                sphere("knee", at(knee + fwd * 0.03 * t), 0.14 * t * (0.9 + 0.25 * bu), Some(0.1 * t)),
+                capsule("shin", at(knee), at(ankle), 0.14 * t * (0.9 + 0.25 * bu), Some(0.095 * t * (0.9 + 0.2 * bu)), Some(0.1 * t)),
                 capsule(
                     "calf",
                     at(knee + (ankle - knee) * 0.1 - fwd * 0.08 * t),
@@ -687,18 +688,19 @@ impl Archetype for Humanoid {
             let len = b.foot;
             let heel_z = -0.22 * len;
             let mid = |along: f32, y: f32| Vec3::new(ankle.x, y, ankle.z) + dir * (heel_z + along * len);
-            if race.boots {
-                let sole = 0.09 * t;
-                let wide = len * 0.42;
+            if race.boots > 0 {
+                let heavy = race.boots >= 2;
+                let sole = if heavy { 0.11 * t } else { 0.07 * t };
+                let wide = len * if heavy { 0.42 } else { 0.36 };
                 let vamp = ankle.y * 0.95 + 0.05 * t;
-                let mut s1 = boxed("sole", at(mid(0.5, sole * 0.5)), Vec3::new(wide, sole, len * 0.97), sole * 0.45, Some(0.02 * t));
+                let mut s1 = boxed("sole", at(mid(0.49, sole * 0.5)), Vec3::new(wide * 1.03, sole, len * 0.95), sole * 0.35, Some(0.03 * t));
                 s1["rotate"] = json!([0, yaw, 0]);
                 let mut s2 = boxed(
                     "vamp",
-                    at(mid(0.48, sole + vamp * 0.5 - 0.01 * t)),
-                    Vec3::new(wide * 0.96, vamp, len * 0.93),
-                    (vamp.min(wide) * 0.45).min(0.2 * t),
-                    Some(0.025 * t),
+                    at(mid(0.47, sole + vamp * 0.5 - 0.015 * t)),
+                    Vec3::new(wide, vamp, len * 0.93),
+                    (vamp.min(wide) * 0.4).min(0.2 * t),
+                    Some(0.04 * t),
                 );
                 s2["rotate"] = json!([0, yaw, 0]);
                 leg.push(s1);
@@ -707,18 +709,18 @@ impl Archetype for Humanoid {
                 leg.push(capsule(
                     "boot_shaft",
                     at(ankle - Vec3::Y * 0.12 * t),
-                    at(ankle + (knee - ankle) * 0.5),
-                    0.19 * t * (1.0 + 0.2 * bu),
-                    Some(0.2 * t * (1.0 + 0.2 * bu)),
-                    Some(0.03 * t),
+                    at(ankle + (knee - ankle) * 0.55),
+                    t * (1.0 + 0.2 * bu) * if heavy { 0.17 } else { 0.145 },
+                    Some(t * (1.0 + 0.2 * bu) * if heavy { 0.18 } else { 0.15 }),
+                    Some(0.05 * t),
                 ));
                 leg.push(capsule(
                     "boot_cuff",
                     at(ankle + (knee - ankle) * 0.5),
-                    at(ankle + (knee - ankle) * 0.55),
-                    0.22 * t * (1.0 + 0.2 * bu),
+                    at(ankle + (knee - ankle) * 0.56),
+                    t * (1.0 + 0.2 * bu) * if heavy { 0.19 } else { 0.16 },
                     None,
-                    Some(0.012 * t),
+                    Some(0.02 * t),
                 ));
             } else {
                 let wide = len * 0.38;

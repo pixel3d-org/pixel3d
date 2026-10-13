@@ -170,6 +170,10 @@ fn archetype_mistakes_point_into_the_block() {
     assert!(s.parts.contains_key("torso") && s.parts.contains_key("elf_torso"));
     assert_eq!(s.parts["elf_nose"].anchor.as_ref().unwrap().on.as_deref(), Some("elf_head"));
     assert!((s.skeletons["b"].joints["root"].frame().0 - Vec3::X).length() < 1e-6);
+    // Strands follow the prefix too: what they grow on and stay outside of.
+    let s = p3d_spec::parse(&json!({ "archetypes": { "d": { "kind": "dwarf", "prefix": "d_" } } })).unwrap();
+    let beard = s.parts["d_beard"].params.as_ref().unwrap();
+    assert_eq!((beard["on"].as_str(), beard["collide"][0].as_str()), (Some("d_head"), Some("d_torso")));
 }
 
 #[test]

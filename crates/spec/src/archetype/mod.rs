@@ -364,10 +364,13 @@ fn rename_refs(part: &mut Value, instance: &str, prefix: &str, local: &BTreeSet<
             rename(v);
         }
     }
-    if part.get("strands").is_some()
-        && let Some(on) = part.pointer_mut("/params/on")
-    {
-        rename(on);
+    if part.get("strands").is_some() {
+        if let Some(on) = part.pointer_mut("/params/on") {
+            rename(on);
+        }
+        if let Some(Value::Array(list)) = part.pointer_mut("/params/collide") {
+            list.iter_mut().for_each(rename);
+        }
     }
 }
 
