@@ -1,0 +1,34 @@
+{
+  "task": "T2",
+  "prompt": "Sci-fi crate with panel details and handles",
+  "asset_class": "prop_medium",
+  "calls": [
+    {
+      "tool": "run",
+      "args": {
+        "ops": [
+          { "op": "prim.box", "args": { "name": "crate", "width": 0.8, "height": 0.6, "depth": 0.6 } },
+          { "op": "expect.add", "args": { "name": "size", "expect": { "dims": { "target": "crate", "width": { "min": 0.8, "max": 0.95 }, "height": { "min": 0.58, "max": 0.62 }, "depth": { "min": 0.58, "max": 0.62 } } } } },
+          { "op": "expect.add", "args": { "name": "budget", "expect": { "budget": { "target": "crate", "min_tris": 1500, "max_tris": 6000 } } } },
+          { "op": "expect.add", "args": { "name": "closed", "expect": { "watertight": { "target": "crate" } } } },
+          { "op": "edit.inset", "label": "panel_front", "args": { "target": "crate", "select": { "faces": { "group": "front" } }, "thickness": "6cm", "depth": "-1.5cm" } },
+          { "op": "edit.inset", "label": "panel_back", "args": { "target": "crate", "select": { "faces": { "group": "back" } }, "thickness": "6cm", "depth": "-1.5cm" } },
+          { "op": "edit.inset", "label": "panel_left", "args": { "target": "crate", "select": { "faces": { "group": "left" } }, "thickness": "6cm", "depth": "-1.5cm" } },
+          { "op": "edit.inset", "label": "panel_right", "args": { "target": "crate", "select": { "faces": { "group": "right" } }, "thickness": "6cm", "depth": "-1.5cm" } },
+          { "op": "edit.inset", "label": "plate_front", "args": { "target": "crate", "select": { "faces": { "group": "panel_front.inner" } }, "thickness": "4cm", "depth": "8mm" } },
+          { "op": "edit.inset", "label": "plate_back", "args": { "target": "crate", "select": { "faces": { "group": "panel_back.inner" } }, "thickness": "4cm", "depth": "8mm" } },
+          { "op": "gen.pipe", "args": { "name": "handle_r", "radius": "1.2cm", "segments": 8, "path": [[0.36, 0.42, -0.13], [0.46, 0.42, -0.13], [0.46, 0.42, 0.13], [0.36, 0.42, 0.13]] } },
+          { "op": "gen.pipe", "args": { "name": "handle_l", "radius": "1.2cm", "segments": 8, "path": [[-0.36, 0.42, -0.13], [-0.46, 0.42, -0.13], [-0.46, 0.42, 0.13], [-0.36, 0.42, 0.13]] } },
+          { "op": "edit.boolean", "label": "handles", "args": { "target": "crate", "tool": ["handle_r", "handle_l"], "operation": "union" } },
+          { "op": "prim.box", "args": { "name": "slot", "width": 0.36, "height": 0.04, "depth": 0.025, "position": [0, 0.585, -0.12] } },
+          { "op": "gen.array", "args": { "target": "slot", "count": 5, "offset": [0, 0, 0.06], "weld": 0 } },
+          { "op": "edit.boolean", "label": "vents", "args": { "target": "crate", "tool": "slot" } },
+          { "op": "edit.bevel", "label": "edges", "args": { "target": "crate", "select": { "edges": { "sharp": true } }, "width": "4mm", "segments": 2 } },
+          { "op": "shade.smooth_by_angle", "args": { "target": "crate", "angle": 30 } },
+          { "op": "shade.weighted_normals", "args": { "target": "crate" } }
+        ]
+      }
+    },
+    { "tool": "describe", "args": { "target": "crate" } }
+  ]
+}

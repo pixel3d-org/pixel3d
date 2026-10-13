@@ -1,0 +1,655 @@
+{
+ "task": "T4",
+ "prompt": "Modular wall piece 4 m x 3 m with a doorway",
+ "asset_class": "environment_modular",
+ "calls": [
+  {
+   "tool": "run",
+   "args": {
+    "ops": [
+     {
+      "op": "gen.extrude_shape",
+      "args": {
+       "name": "wall",
+       "depth": 0.25,
+       "outline": [
+        [
+         0,
+         0
+        ],
+        [
+         1.45,
+         0
+        ],
+        [
+         1.45,
+         2.15
+        ],
+        [
+         2.55,
+         2.15
+        ],
+        [
+         2.55,
+         0
+        ],
+        [
+         4,
+         0
+        ],
+        [
+         4,
+         3
+        ],
+        [
+         0,
+         3
+        ]
+       ]
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "size",
+       "expect": {
+        "dims": {
+         "target": "wall",
+         "width": {
+          "min": 3.99,
+          "max": 4.01
+         },
+         "height": {
+          "min": 2.99,
+          "max": 3.01
+         },
+         "depth": {
+          "min": 0.25,
+          "max": 0.32
+         }
+        }
+       }
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "budget",
+       "expect": {
+        "budget": {
+         "target": "wall",
+         "min_tris": 1000,
+         "max_tris": 10000
+        }
+       }
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed",
+       "expect": {
+        "watertight": {
+         "target": "wall"
+        }
+       }
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "bed_f",
+       "width": 4.2,
+       "height": 0.012,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        2,
+        0.5,
+        0.25
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "bed_f",
+       "count": 5,
+       "offset": [
+        0,
+        0.5,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_f0",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.8,
+        0.25,
+        0.25
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_f0",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_f1",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.4,
+        0.75,
+        0.25
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_f1",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_f2",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.8,
+        1.25,
+        0.25
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_f2",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_f3",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.4,
+        1.75,
+        0.25
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_f3",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_f4",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.8,
+        2.25,
+        0.25
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_f4",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_f5",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.4,
+        2.75,
+        0.25
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_f5",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "bed_b",
+       "width": 4.2,
+       "height": 0.012,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        2,
+        0.5,
+        0
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "bed_b",
+       "count": 5,
+       "offset": [
+        0,
+        0.5,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_b0",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.8,
+        0.25,
+        0
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_b0",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_b1",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.4,
+        0.75,
+        0
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_b1",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_b2",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.8,
+        1.25,
+        0
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_b2",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_b3",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.4,
+        1.75,
+        0
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_b3",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_b4",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.8,
+        2.25,
+        0
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_b4",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "joint_b5",
+       "width": 0.012,
+       "height": 0.5,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.4,
+        2.75,
+        0
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "joint_b5",
+       "count": 5,
+       "offset": [
+        0.8,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "edit.boolean",
+      "label": "mortar",
+      "args": {
+       "target": "wall",
+       "tool": [
+        "bed_f",
+        "joint_f0",
+        "joint_f1",
+        "joint_f2",
+        "joint_f3",
+        "joint_f4",
+        "joint_f5",
+        "bed_b",
+        "joint_b0",
+        "joint_b1",
+        "joint_b2",
+        "joint_b3",
+        "joint_b4",
+        "joint_b5"
+       ]
+      }
+     },
+     {
+      "op": "gen.extrude_shape",
+      "args": {
+       "name": "frame",
+       "depth": 0.31,
+       "position": [
+        0,
+        0,
+        -0.03
+       ],
+       "outline": [
+        [
+         1.33,
+         0
+        ],
+        [
+         1.45,
+         0
+        ],
+        [
+         1.45,
+         2.15
+        ],
+        [
+         2.55,
+         2.15
+        ],
+        [
+         2.55,
+         0
+        ],
+        [
+         2.67,
+         0
+        ],
+        [
+         2.67,
+         2.27
+        ],
+        [
+         1.33,
+         2.27
+        ]
+       ],
+       "bevel": {
+        "width": "1cm",
+        "segments": 1,
+        "sides": "both"
+       }
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "base_l",
+       "width": 1.33,
+       "height": 0.12,
+       "depth": 0.29,
+       "position": [
+        0.665,
+        0,
+        0.125
+       ],
+       "bevel": {
+        "width": "1cm",
+        "segments": 1
+       }
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "base_r",
+       "width": 1.33,
+       "height": 0.12,
+       "depth": 0.29,
+       "position": [
+        3.335,
+        0,
+        0.125
+       ],
+       "bevel": {
+        "width": "1cm",
+        "segments": 1
+       }
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "cap",
+       "width": 4,
+       "height": 0.1,
+       "depth": 0.31,
+       "position": [
+        2,
+        2.9,
+        0.125
+       ],
+       "bevel": {
+        "width": "1cm",
+        "segments": 1
+       }
+      }
+     },
+     {
+      "op": "edit.boolean",
+      "label": "trim",
+      "args": {
+       "target": "wall",
+       "tool": [
+        "frame",
+        "base_l",
+        "base_r",
+        "cap"
+       ],
+       "operation": "union"
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "wall",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "wall"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "describe",
+   "args": {
+    "target": "wall"
+   }
+  }
+ ]
+}

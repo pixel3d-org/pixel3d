@@ -1,0 +1,36 @@
+{
+  "task": "T1",
+  "prompt": "Wooden barrel with metal hoops",
+  "asset_class": "prop_medium",
+  "calls": [
+    {
+      "tool": "run",
+      "args": {
+        "ops": [
+          {
+            "op": "gen.lathe",
+            "args": {
+              "name": "barrel",
+              "segments": 32,
+              "profile": [
+                [0.255, 0], [0.2708, 0.07], [0.2786, 0.11], [0.2902, 0.18], [0.2991, 0.25], [0.303, 0.29], [0.3083, 0.37], [0.31, 0.45],
+                [0.3083, 0.53], [0.303, 0.61], [0.2991, 0.65], [0.2902, 0.72], [0.2786, 0.79], [0.2708, 0.83], [0.255, 0.9]
+              ]
+            }
+          },
+          { "op": "expect.add", "args": { "name": "size", "expect": { "dims": { "target": "barrel", "width": { "min": 0.6, "max": 0.66 }, "height": { "min": 0.86, "max": 0.94 }, "depth": { "min": 0.6, "max": 0.66 } } } } },
+          { "op": "expect.add", "args": { "name": "budget", "expect": { "budget": { "target": "barrel", "min_tris": 1500, "max_tris": 6000 } } } },
+          { "op": "expect.add", "args": { "name": "closed", "expect": { "watertight": { "target": "barrel" } } } },
+          { "op": "edit.extrude", "label": "hoop_1", "args": { "target": "barrel", "select": { "faces": { "group": "profile_1" } }, "distance": "6mm" } },
+          { "op": "edit.extrude", "label": "hoop_2", "args": { "target": "barrel", "select": { "faces": { "group": "profile_4" } }, "distance": "6mm" } },
+          { "op": "edit.extrude", "label": "hoop_3", "args": { "target": "barrel", "select": { "faces": { "group": "profile_9" } }, "distance": "6mm" } },
+          { "op": "edit.extrude", "label": "hoop_4", "args": { "target": "barrel", "select": { "faces": { "group": "profile_12" } }, "distance": "6mm" } },
+          { "op": "edit.inset", "label": "lid", "args": { "target": "barrel", "select": { "faces": { "group": "cap_top" } }, "thickness": "8mm", "depth": "-1cm" } },
+          { "op": "shade.smooth_by_angle", "args": { "target": "barrel", "angle": 40 } },
+          { "op": "shade.weighted_normals", "args": { "target": "barrel" } }
+        ]
+      }
+    },
+    { "tool": "describe", "args": { "target": "barrel" } }
+  ]
+}

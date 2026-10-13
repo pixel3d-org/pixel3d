@@ -1,0 +1,834 @@
+{
+ "task": "T5",
+ "prompt": "First-person pistol, hard surface, bevels, weighted normals",
+ "asset_class": "weapon_fp",
+ "calls": [
+  {
+   "tool": "run",
+   "args": {
+    "ops": [
+     {
+      "op": "scene.create_empty",
+      "args": {
+       "name": "pistol"
+      }
+     },
+     {
+      "op": "gen.extrude_shape",
+      "args": {
+       "name": "slide",
+       "parent": "pistol",
+       "depth": 0.026,
+       "position": [
+        0,
+        0,
+        -0.013
+       ],
+       "bevel": {
+        "width": "1.5mm",
+        "segments": 3,
+        "sides": "both"
+       },
+       "outline": [
+        [
+         0,
+         0.1
+        ],
+        [
+         0.186,
+         0.1
+        ],
+        [
+         0.19,
+         0.104
+        ],
+        [
+         0.19,
+         0.127
+        ],
+        [
+         0.184,
+         0.132
+        ],
+        [
+         0.012,
+         0.132
+        ],
+        [
+         0,
+         0.126
+        ]
+       ]
+      }
+     },
+     {
+      "op": "gen.extrude_shape",
+      "args": {
+       "name": "frame",
+       "parent": "pistol",
+       "depth": 0.024,
+       "position": [
+        0,
+        0,
+        -0.012
+       ],
+       "bevel": {
+        "width": "1.5mm",
+        "segments": 3,
+        "sides": "both"
+       },
+       "outline": [
+        [
+         0.006,
+         0.1
+        ],
+        [
+         0.178,
+         0.1
+        ],
+        [
+         0.178,
+         0.086
+        ],
+        [
+         0.12,
+         0.084
+        ],
+        [
+         0.114,
+         0.063
+        ],
+        [
+         0.102,
+         0.055
+        ],
+        [
+         0.07,
+         0.055
+        ],
+        [
+         0.058,
+         0.062
+        ],
+        [
+         0.05,
+         0.071
+        ],
+        [
+         0.04,
+         0.071
+        ],
+        [
+         0.022,
+         0.002
+        ],
+        [
+         0.017,
+         -0.006
+        ],
+        [
+         -0.022,
+         -0.006
+        ],
+        [
+         -0.028,
+         0
+        ],
+        [
+         -0.012,
+         0.07
+        ],
+        [
+         -0.009,
+         0.09
+        ]
+       ],
+       "holes": [
+        [
+         [
+          0.064,
+          0.069
+         ],
+         [
+          0.07,
+          0.062
+         ],
+         [
+          0.1,
+          0.062
+         ],
+         [
+          0.107,
+          0.067
+         ],
+         [
+          0.109,
+          0.081
+         ],
+         [
+          0.064,
+          0.081
+         ]
+        ]
+       ]
+      }
+     },
+     {
+      "op": "gen.extrude_shape",
+      "args": {
+       "name": "grip_panels",
+       "parent": "pistol",
+       "depth": 0.031,
+       "position": [
+        0,
+        0,
+        -0.0155
+       ],
+       "bevel": {
+        "width": "2mm",
+        "segments": 2,
+        "sides": "both"
+       },
+       "outline": [
+        [
+         0.031,
+         0.066
+        ],
+        [
+         0.016,
+         0.004
+        ],
+        [
+         -0.017,
+         0.004
+        ],
+        [
+         -0.02,
+         0.01
+        ],
+        [
+         -0.006,
+         0.07
+        ],
+        [
+         0,
+         0.08
+        ]
+       ]
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "stud",
+       "width": 0.0028,
+       "height": 0.0028,
+       "depth": 0.0018,
+       "origin": "center",
+       "position": [
+        -0.01,
+        0.012,
+        0.0155
+       ],
+       "bevel": {
+        "width": "0.5mm",
+        "segments": 1
+       }
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "stud",
+       "count": 11,
+       "offset": [
+        0.0016,
+        0.0052,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "stud",
+       "count": 5,
+       "offset": [
+        0.0052,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "gen.mirror",
+      "args": {
+       "target": "stud",
+       "axis": "z",
+       "offset": -0.0155
+      }
+     },
+     {
+      "op": "edit.boolean",
+      "label": "stipple",
+      "args": {
+       "target": "pistol/grip_panels",
+       "tool": "stud",
+       "operation": "union"
+      }
+     },
+     {
+      "op": "gen.extrude_shape",
+      "args": {
+       "name": "trigger",
+       "parent": "pistol",
+       "depth": 0.007,
+       "position": [
+        0,
+        0,
+        -0.0035
+       ],
+       "bevel": {
+        "width": "0.6mm",
+        "segments": 1,
+        "sides": "both"
+       },
+       "outline": [
+        [
+         0.083,
+         0.0815
+        ],
+        [
+         0.092,
+         0.0815
+        ],
+        [
+         0.091,
+         0.071
+        ],
+        [
+         0.087,
+         0.064
+        ],
+        [
+         0.08,
+         0.061
+        ],
+        [
+         0.0785,
+         0.0665
+        ],
+        [
+         0.0825,
+         0.073
+        ]
+       ]
+      }
+     },
+     {
+      "op": "prim.cylinder",
+      "args": {
+       "name": "barrel",
+       "parent": "pistol",
+       "radius": 0.0068,
+       "height": 0.026,
+       "segments": 24,
+       "origin": "center",
+       "position": [
+        0.18,
+        0.116,
+        0
+       ]
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "pistol/barrel",
+       "rotation": [
+        0,
+        0,
+        90
+       ]
+      }
+     },
+     {
+      "op": "prim.cylinder",
+      "args": {
+       "name": "bore",
+       "radius": 0.0045,
+       "height": 0.03,
+       "segments": 24,
+       "origin": "center",
+       "position": [
+        0.185,
+        0.116,
+        0
+       ]
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "bore",
+       "rotation": [
+        0,
+        0,
+        90
+       ]
+      }
+     },
+     {
+      "op": "edit.boolean",
+      "label": "barrel_hole",
+      "args": {
+       "target": "pistol/slide",
+       "tool": "pistol/barrel",
+       "keep_tool": true
+      }
+     },
+     {
+      "op": "edit.boolean",
+      "label": "muzzle",
+      "args": {
+       "target": "pistol/barrel",
+       "tool": "bore"
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "serration",
+       "width": 0.0022,
+       "height": 0.02,
+       "depth": 0.004,
+       "origin": "center",
+       "position": [
+        0.012,
+        0.116,
+        0.0135
+       ]
+      }
+     },
+     {
+      "op": "gen.array",
+      "args": {
+       "target": "serration",
+       "count": 9,
+       "offset": [
+        0.0055,
+        0,
+        0
+       ],
+       "weld": 0
+      }
+     },
+     {
+      "op": "gen.mirror",
+      "args": {
+       "target": "serration",
+       "axis": "z",
+       "offset": -0.0135
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "port",
+       "width": 0.042,
+       "height": 0.02,
+       "depth": 0.02,
+       "origin": "center",
+       "position": [
+        0.112,
+        0.131,
+        0.007
+       ]
+      }
+     },
+     {
+      "op": "edit.boolean",
+      "label": "cuts",
+      "args": {
+       "target": "pistol/slide",
+       "tool": [
+        "serration",
+        "port"
+       ]
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "front_sight",
+       "parent": "pistol",
+       "width": 0.006,
+       "height": 0.0055,
+       "depth": 0.0035,
+       "position": [
+        0.178,
+        0.1315,
+        0
+       ],
+       "bevel": {
+        "width": "0.6mm",
+        "segments": 1
+       }
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "rear_sight",
+       "parent": "pistol",
+       "width": 0.008,
+       "height": 0.0065,
+       "depth": 0.021,
+       "position": [
+        0.018,
+        0.1315,
+        0
+       ],
+       "bevel": {
+        "width": "0.6mm",
+        "segments": 1
+       }
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "notch",
+       "width": 0.012,
+       "height": 0.005,
+       "depth": 0.0035,
+       "origin": "center",
+       "position": [
+        0.018,
+        0.138,
+        0
+       ]
+      }
+     },
+     {
+      "op": "edit.boolean",
+      "label": "notch",
+      "args": {
+       "target": "pistol/rear_sight",
+       "tool": "notch"
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "slide_stop",
+       "parent": "pistol",
+       "width": 0.022,
+       "height": 0.006,
+       "depth": 0.003,
+       "position": [
+        0.06,
+        0.092,
+        0.0135
+       ],
+       "bevel": {
+        "width": "0.8mm",
+        "segments": 1
+       }
+      }
+     },
+     {
+      "op": "prim.box",
+      "args": {
+       "name": "mag_base",
+       "parent": "pistol",
+       "width": 0.044,
+       "height": 0.007,
+       "depth": 0.03,
+       "position": [
+        -0.003,
+        -0.012,
+        0
+       ],
+       "bevel": {
+        "width": "1.5mm",
+        "segments": 2
+       }
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "size",
+       "expect": {
+        "dims": {
+         "target": "pistol",
+         "width": {
+          "min": 0.02,
+          "max": 0.04
+         },
+         "height": {
+          "min": 0.13,
+          "max": 0.16
+         },
+         "depth": {
+          "min": 0.18,
+          "max": 0.23
+         }
+        }
+       }
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "budget",
+       "expect": {
+        "budget": {
+         "target": "pistol",
+         "min_tris": 3000,
+         "max_tris": 50000
+        }
+       }
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed_slide",
+       "expect": {
+        "watertight": {
+         "target": "pistol/slide"
+        }
+       }
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "pistol/slide",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "pistol/slide"
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed_frame",
+       "expect": {
+        "watertight": {
+         "target": "pistol/frame"
+        }
+       }
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "pistol/frame",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "pistol/frame"
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed_grip_panels",
+       "expect": {
+        "watertight": {
+         "target": "pistol/grip_panels"
+        }
+       }
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "pistol/grip_panels",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "pistol/grip_panels"
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed_trigger",
+       "expect": {
+        "watertight": {
+         "target": "pistol/trigger"
+        }
+       }
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "pistol/trigger",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "pistol/trigger"
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed_barrel",
+       "expect": {
+        "watertight": {
+         "target": "pistol/barrel"
+        }
+       }
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "pistol/barrel",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "pistol/barrel"
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed_front_sight",
+       "expect": {
+        "watertight": {
+         "target": "pistol/front_sight"
+        }
+       }
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "pistol/front_sight",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "pistol/front_sight"
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed_rear_sight",
+       "expect": {
+        "watertight": {
+         "target": "pistol/rear_sight"
+        }
+       }
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "pistol/rear_sight",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "pistol/rear_sight"
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed_slide_stop",
+       "expect": {
+        "watertight": {
+         "target": "pistol/slide_stop"
+        }
+       }
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "pistol/slide_stop",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "pistol/slide_stop"
+      }
+     },
+     {
+      "op": "expect.add",
+      "args": {
+       "name": "closed_mag_base",
+       "expect": {
+        "watertight": {
+         "target": "pistol/mag_base"
+        }
+       }
+      }
+     },
+     {
+      "op": "shade.smooth_by_angle",
+      "args": {
+       "target": "pistol/mag_base",
+       "angle": 30
+      }
+     },
+     {
+      "op": "shade.weighted_normals",
+      "args": {
+       "target": "pistol/mag_base"
+      }
+     },
+     {
+      "op": "scene.set_transform",
+      "args": {
+       "target": "pistol",
+       "rotation": [
+        0,
+        -90,
+        0
+       ]
+      }
+     }
+    ]
+   }
+  },
+  {
+   "tool": "describe",
+   "args": {
+    "target": "pistol"
+   }
+  }
+ ]
+}
