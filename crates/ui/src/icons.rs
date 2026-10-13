@@ -143,6 +143,7 @@ icons! {
     Blueprint => d::BLUEPRINT, false;
     Handles => d::HANDLES, false;
     Features => d::PUZZLE, false;
+    Strands => d::STRANDS, false;
 }
 
 /// The flattened outlines of an icon, parsed on first use.

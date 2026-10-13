@@ -439,3 +439,45 @@ fn insert_a_feature_template_from_the_panel() {
     wait_for(30, || Some(inspect(&mut c)).filter(|s| s["scene"]["objects"].as_u64() == Some(objects)));
     let _ = c.call("ui.command", json!({ "id": "app.quit" }));
 }
+
+#[test]
+#[ignore = "needs a display and a GPU"]
+fn grow_hair_in_a_clicked_landmark_loop() {
+    let dir = temp_dir("strands");
+    let (_app, mut c) = start(&["--command".to_owned(), "ui.start on=false".to_owned()]);
+    c.call("ui.command", json!({ "id": "gen.feature", "params": { "name": "head", "feature": "head_base", "detail": "5mm" } })).unwrap();
+    c.call("ui.command", json!({ "id": "ui.dock", "params": { "operation": "close", "panel": "properties" } })).unwrap();
+    // Add > Strands > Hair, from the top so the loop's landmarks spread out.
+    c.call("ui.command", json!({ "id": "strands.start", "params": { "kind": "hair" } })).unwrap();
+    c.call("ui.command", json!({ "id": "view.set", "params": { "view": "top" } })).unwrap();
+    c.call("ui.command", json!({ "id": "view.frame" })).unwrap();
+    settle_camera(&mut c);
+    let radio = wait_for(30, || {
+        let r = c.call("ui.elements", json!({ "label": "Landmark loop" })).ok()?;
+        r["elements"].as_array().and_then(|e| e.iter().find(|w| w["role"] == json!("radio")).cloned())
+    });
+    c.call("ui.click", json!({ "target": { "id": radio["id"] } })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["strands"]["onScreen"].as_array().is_some_and(|l| l.len() > 4)));
+    let dots = s["strands"]["onScreen"].as_array().unwrap().clone();
+    for name in ["hairline_front", "temple_l", "nape", "temple_r"] {
+        let dot = dots.iter().find(|d| d["name"] == json!(name)).cloned().unwrap();
+        c.call("ui.click", json!({ "target": { "at": dot["at"] } })).unwrap();
+    }
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["strands"]["region"].as_array().is_some_and(|r| r.len() == 4)));
+    assert_eq!(s["strands"]["region"], json!(["hairline_front", "temple_l", "nape", "temple_r"]));
+    // Grow: one object, its coverage reported.
+    let objects = s["scene"]["objects"].as_u64().unwrap();
+    let grow = wait_for(30, || {
+        let r = c.call("ui.elements", json!({ "label": "Grow strands" })).ok()?;
+        r["elements"].as_array().and_then(|e| e.first().cloned())
+    });
+    c.call("ui.click", json!({ "target": { "id": grow["id"] } })).unwrap();
+    let s = wait_for(60, || Some(inspect(&mut c)).filter(|s| s["scene"]["objects"].as_u64() == Some(objects + 1)));
+    assert!(s["strands"]["coverage"].as_f64().is_some_and(|c| c > 0.5), "{}", s["strands"]);
+    let shot = dir.join("strands.png");
+    c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
+    assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    c.call("ui.command", json!({ "id": "edit.undo" })).unwrap();
+    wait_for(30, || Some(inspect(&mut c)).filter(|s| s["scene"]["objects"].as_u64() == Some(objects)));
+    let _ = c.call("ui.command", json!({ "id": "app.quit" }));
+}

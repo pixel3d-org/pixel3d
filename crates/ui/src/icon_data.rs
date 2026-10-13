@@ -307,3 +307,6 @@ pub const HANDLES: &[&str] = &["M3 18c4 0 5 -8 9 -8s5 8 9 8", "M12 10v-6", "M10 
 pub const PUZZLE: &[&str] = &[
     "M4 7h3a1 1 0 0 0 1 -1v-1a2 2 0 0 1 4 0v1a1 1 0 0 0 1 1h3a1 1 0 0 1 1 1v3a1 1 0 0 0 1 1h1a2 2 0 0 1 0 4h-1a1 1 0 0 0 -1 1v3a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-1a2 2 0 0 0 -4 0v1a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1h1a2 2 0 0 0 0 -4h-1a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1",
 ];
+
+/// Three curved strands from a root line: hair, fur, grass.
+pub const STRANDS: &[&str] = &["M4 20c1 -6 -1 -11 2 -16", "M10 20c0 -6 3 -10 1 -16", "M16 20c1 -5 4 -8 3 -15", "M3 20h18"];

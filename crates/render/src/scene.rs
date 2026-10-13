@@ -14,7 +14,13 @@ pub struct Vertex {
     pub pos: [f32; 3],
     pub normal: [f32; 3],
     pub part: u32,
+    /// Strands (hair cards, fur): how far along the strand, 0 at the root to
+    /// 1 at the tip (the UV v); negative for other surfaces.
+    pub strand: f32,
 }
+
+/// [`Vertex::strand`] of surfaces that are not strands.
+pub const NOT_STRAND: f32 = -1.0;
 
 /// A line-list vertex.
 #[repr(C)]
@@ -83,7 +89,7 @@ pub fn prepare(doc: &Document, root: Option<ObjectKey>) -> RenderScene {
             lo = lo.min(w);
             hi = hi.max(w);
             let wn = (normal_m * *n).normalize_or_zero();
-            s.vertices.push(Vertex { pos: w.to_array(), normal: wn.to_array(), part });
+            s.vertices.push(Vertex { pos: w.to_array(), normal: wn.to_array(), part, strand: NOT_STRAND });
         }
         // A mirroring transform flips the winding; keep triangles facing out.
         let flip = world.matrix3.determinant() < 0.0;
@@ -182,16 +188,25 @@ pub fn view_meshes(doc: &Document) -> Vec<(ObjectKey, std::sync::Arc<p3d_mesh::M
     out
 }
 
-/// Builds the object-space geometry of `list` (from [`view_meshes`]).
+/// Builds the object-space geometry of `list` (from [`view_meshes`]);
+/// objects in `strands` (hair cards, fur) carry how far along the strand
+/// each vertex is, from their first UV layer's v.
 ///
-/// Complexity: O(total mesh size).
-pub fn prepare_view(list: &[(ObjectKey, std::sync::Arc<p3d_mesh::Mesh>)]) -> ViewScene {
+/// Complexity: O(total mesh size + parts x log strands).
+pub fn prepare_view(list: &[(ObjectKey, std::sync::Arc<p3d_mesh::Mesh>)], strands: &std::collections::BTreeSet<ObjectKey>) -> ViewScene {
     let mut s = ViewScene::default();
     for (part, (key, mesh)) in list.iter().enumerate() {
         let part = part as u32;
-        let tb = mesh.to_tri_buffers(&TriOptions { normals: true, uvs: false, colors: false });
+        let strand = strands.contains(key);
+        let tb = mesh.to_tri_buffers(&TriOptions { normals: true, uvs: strand, colors: false });
         let base = s.vertices.len() as u32;
-        s.vertices.extend(tb.positions.iter().zip(&tb.normals).map(|(p, n)| Vertex { pos: p.to_array(), normal: n.to_array(), part }));
+        let along = tb.uvs.first().filter(|uv| strand && uv.len() == tb.positions.len());
+        s.vertices.extend(tb.positions.iter().zip(&tb.normals).enumerate().map(|(i, (p, n))| Vertex {
+            pos: p.to_array(),
+            normal: n.to_array(),
+            part,
+            strand: along.map_or(if strand { 1.0 } else { NOT_STRAND }, |uv| uv[i].y.clamp(0.0, 1.0)),
+        }));
         s.indices.extend(tb.indices.iter().map(|i| base + i));
         for e in mesh.edges() {
             let [a, b] = mesh.edge_verts(e);

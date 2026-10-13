@@ -361,3 +361,78 @@ fn spec_tab_with_a_feature_part() {
     h.run_steps(20);
     snapshot(&mut h, "spec_feature_dark");
 }
+
+/// A head with hair grown in a landmark loop, the Strands panel open on it.
+fn strands_app(theme: ThemePref) -> Harness<'static, PixelApp> {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = theme;
+    a.run("ui.dock", json!({ "operation": "close", "panel": "health" })).unwrap();
+    a.run("ui.dock", json!({ "operation": "close", "panel": "properties" })).unwrap();
+    a.run("gen.feature", json!({ "name": "head", "feature": "head_base", "detail": "5mm" })).unwrap();
+    a.run("strands.start", json!({ "kind": "hair" })).unwrap();
+    a.run("strands.region", json!({ "landmarks": ["hairline_front", "temple_l", "nape", "temple_r"] })).unwrap();
+    a.run("strands.set", json!({ "length": 0.12 })).unwrap();
+    a.run("strands.grow", Value::Null).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("view.frame", Value::Null).unwrap();
+    h.run_steps(20);
+    h
+}
+
+#[test]
+fn strands_panel_dark() {
+    let mut h = strands_app(ThemePref::Dark);
+    snapshot(&mut h, "strands_dark");
+}
+
+#[test]
+fn strands_panel_light() {
+    let mut h = strands_app(ThemePref::Light);
+    snapshot(&mut h, "strands_light");
+}
+
+/// Hair cards on a head, drawn by the viewport renderer itself (the GPU
+/// picture the other snapshots leave out): two-sided, darker at the roots.
+#[test]
+fn hair_cards_on_a_head_in_the_viewport() {
+    use p3d_render::{OrbitCamera, Renderer, Shading, ViewFrame, ViewKind, ViewStyle, ViewportRenderer};
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.run("gen.feature", json!({ "name": "head", "feature": "head_base", "detail": "4mm" })).unwrap();
+    a.run("gen.strands", json!({ "on": "head", "region": ["hairline_front", "temple_l", "nape", "temple_r"], "length": "12cm" })).unwrap();
+    let doc = a.session.doc();
+    let list = p3d_render::view_meshes(doc);
+    let strands: std::collections::BTreeSet<_> =
+        list.iter().filter(|(k, _)| doc.object(*k).is_some_and(|o| o.tags.iter().any(|t| t == "strands"))).map(|(k, _)| *k).collect();
+    assert_eq!(strands.len(), 1);
+    let view = p3d_render::prepare_view(&list, &strands);
+    assert!(view.vertices.iter().any(|v| v.strand >= 0.0) && view.vertices.iter().any(|v| v.strand < 0.0));
+    let models = p3d_render::part_matrices(doc, &view.parts);
+    let (mut lo, mut hi) = (glam::Vec3::splat(f32::INFINITY), glam::Vec3::splat(f32::NEG_INFINITY));
+    for (p, m) in view.parts.iter().zip(&models) {
+        let (a, b) = p3d_render::world_bounds(p, *m);
+        lo = lo.min(a);
+        hi = hi.max(b);
+    }
+    let r = Renderer::new().unwrap();
+    let mut v = ViewportRenderer::new(r.device(), p3d_render::wgpu::TextureFormat::Rgba8UnormSrgb, 1);
+    v.upload(r.device(), &view, 1);
+    v.set_transforms(r.device(), r.queue(), &models);
+    let mut camera = OrbitCamera::default();
+    camera.set_view(ViewKind::ThreeQuarter);
+    camera.frame(lo, hi, 4.0 / 3.0);
+    let frame = ViewFrame {
+        width: 480,
+        height: 360,
+        camera,
+        shading: Shading::Solid,
+        grid: false,
+        style: ViewStyle::default(),
+        ids: false,
+        pick: None,
+        xray: None,
+    };
+    let img = v.snapshot(r.device(), r.queue(), &frame).unwrap();
+    let rgba = image::RgbaImage::from_raw(img.width, img.height, img.pixels).unwrap();
+    egui_kittest::image_snapshot_options(&rgba, "hair_viewport", &options("hair_viewport"));
+}

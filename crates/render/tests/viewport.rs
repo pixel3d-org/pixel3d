@@ -43,7 +43,7 @@ struct Scene {
 }
 
 fn scene(doc: &Document) -> Scene {
-    let view = prepare_view(&view_meshes(doc));
+    let view = prepare_view(&view_meshes(doc), &Default::default());
     let models = part_matrices(doc, &view.parts);
     let (mut lo, mut hi) = (Vec3::splat(f32::INFINITY), Vec3::splat(f32::NEG_INFINITY));
     for (p, m) in view.parts.iter().zip(&models) {

@@ -409,7 +409,7 @@ fn detail(app: &mut PixelApp, ui: &mut egui::Ui, info: &FeatureInfo) {
         });
         app.features.place = if active.is_none() { Place::Cursor } else { place };
     });
-    let insert = ui.add_sized([ui.available_width(), 26.0], egui::Button::new(RichText::new(t("Insert")).strong()));
+    let insert = ui.add_sized([ui.available_width(), 26.0], egui::Button::new(RichText::new(t("Insert")).color(tk.on_accent)).fill(tk.accent));
     crate::control::record_widget(ui, &insert, t("Insert feature"), "button", None);
     if insert.on_hover_text(t("Add the feature as a new object (one undo step); then parameter edits update it")).clicked()
         && let Err(e) = app.features_insert()

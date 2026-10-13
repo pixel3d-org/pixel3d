@@ -43,6 +43,7 @@ pub mod sdf;
 pub mod snap;
 pub mod spec;
 pub mod stats;
+pub mod strands;
 pub mod theme;
 pub mod transform;
 pub mod transform_bar;
@@ -306,6 +307,8 @@ pub struct PixelApp {
     pub bisect: bisect::BisectState,
     /// The Features panel (feature templates).
     pub features: features::FeatureBrowser,
+    /// The Strands panel (hair, fur, grass).
+    pub strands: strands::StrandsTool,
     /// The run card of a long op (remesh) and its background run.
     pub job_card: jobcard::JobCard,
     /// Poles of the shown meshes, for the pole overlay.
@@ -383,6 +386,7 @@ impl PixelApp {
             handles: handles::HandleTool::default(),
             bisect: bisect::BisectState::default(),
             features: features::FeatureBrowser::default(),
+            strands: strands::StrandsTool::default(),
             job_card: jobcard::JobCard::default(),
             poles: poles::PoleCache::default(),
             coalesce: None,
@@ -883,6 +887,8 @@ impl PixelApp {
         self.handles = handles::HandleTool::default();
         self.bisect = bisect::BisectState::default();
         self.features.inserted = None;
+        self.strands.grown = None;
+        self.strands.report = None;
         self.job_card = jobcard::JobCard::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
@@ -1040,6 +1046,8 @@ impl PixelApp {
             handles_cmd if handles_cmd.starts_with("handles.") => self.handles_command(handles_cmd, params),
             // The Features panel: search, pick, set and insert feature templates.
             features_cmd if features_cmd.starts_with("features.") => self.features_command(features_cmd, params),
+            // The Strands panel: kind, region, parameters and Grow.
+            strands_cmd if strands_cmd.starts_with("strands.") => self.strands_command(strands_cmd, params),
             "view.feature_landmarks" => {
                 self.ui.view.feature_landmarks = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.feature_landmarks);
                 Ok(json!({ "featureLandmarks": self.ui.view.feature_landmarks }))
@@ -1846,7 +1854,11 @@ impl PixelApp {
                 // The Handles tool takes the viewport's clicks and drags (and
                 // the wheel while pulling).
                 let handles = self.ui.tool == Tool::Handles && !self.ui.mode.is_edit();
-                self.viewport.suppress = self.gizmo.modal() || handles;
+                // Picking a strands loop takes the clicks too.
+                let picking = self.strands.picking
+                    && matches!(self.strands.mode, strands::Mode::Landmarks | strands::Mode::Points)
+                    && self.ui.docking.is_visible(docking::Panel::Strands);
+                self.viewport.suppress = self.gizmo.modal() || handles || picking;
                 self.viewport.take_scroll = handles && self.handles.dragging();
                 let view_rect = chrome::viewport_header(self, ui, ui.max_rect());
                 viewport_events = ui
@@ -1861,6 +1873,7 @@ impl PixelApp {
                 outline::overlay(self, ui);
                 handles::overlay(self, ui);
                 features::overlay(self, ui);
+                strands::overlay(self, ui);
                 poles::overlay(self, ui);
                 let gizmo_rect = self.viewport.rect;
                 gizmo::show(self, ui, gizmo_rect);
@@ -1881,6 +1894,7 @@ impl PixelApp {
                     docking::Panel::Bake => panels::bake(self, ui),
                     docking::Panel::Export => panels::export(self, ui),
                     docking::Panel::Features => features::show(self, ui),
+                    docking::Panel::Strands => strands::show(self, ui),
                 });
             }
         });

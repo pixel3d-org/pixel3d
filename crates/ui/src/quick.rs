@@ -25,6 +25,7 @@ const SKIP: &[&str] = &[
     "sdf.silhouettes",
     "deform.handles",
     "gen.feature",
+    "gen.strands",
     "spec.set",
     "spec.patch",
     "spec.compile",

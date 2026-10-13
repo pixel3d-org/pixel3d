@@ -91,10 +91,12 @@ struct SurfaceOut {
     @location(1) world: vec3<f32>,
     @location(2) @interpolate(flat) part: u32,
     @location(3) @interpolate(flat) mirrored: u32,
+    // Strands: 0 at the root to 1 at the tip; negative for other surfaces.
+    @location(4) strand: f32,
 };
 
 @vertex
-fn vs_surface(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) part: u32) -> SurfaceOut {
+fn vs_surface(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) part: u32, @location(3) strand: f32) -> SurfaceOut {
     let xf = parts[part];
     let world = (xf.model * vec4<f32>(pos, 1.0)).xyz;
     var o: SurfaceOut;
@@ -103,6 +105,7 @@ fn vs_surface(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, @loca
     o.world = world;
     o.part = part;
     o.mirrored = xf.flags.x;
+    o.strand = strand;
     return o;
 }
 
@@ -140,7 +143,11 @@ fn fs_surface(i: SurfaceOut, @builtin(front_facing) facing: bool) -> @location(0
         let spec = pow(max(dot(n, h), 0.0), 48.0) * 0.18;
         color = v.surface.rgb * (hemi + vec3<f32>(0.80) * key) + vec3<f32>(spec);
     }
-    if (!front) {
+    if (i.strand >= 0.0) {
+        // Hair cards read the same from both sides, darker at the roots
+        // (until a hair atlas textures them).
+        color = color * mix(0.42, 1.08, i.strand);
+    } else if (!front) {
         // The back of open surfaces (planes, cards) is legitimate: shade it a
         // little darker. Inside-out parts are a Health finding, not a color.
         color = color * 0.7;
