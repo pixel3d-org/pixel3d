@@ -9,3 +9,20 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+glam = { workspace = true }
+p3d-geo = { workspace = true }
+p3d-mesh = { workspace = true }
+p3d-scene = { workspace = true }
+rustc-hash = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true }
+criterion = { workspace = true }
+p3d-testdata = { workspace = true }
+
+[[bench]]
+name = "scale"
+harness = false
