@@ -283,23 +283,17 @@ fn workspace_tabs(app: &mut PixelApp, ui: &mut egui::Ui, r: Rect) -> f32 {
         let rect = Rect::from_min_size(pos2(x, r.center().y - 13.0), vec2(w, 26.0));
         let resp = ui.interact(rect, ui.id().with(("workspace", *ws)), Sense::click());
         let current = app.ui.workspace == *ws;
-        let enabled = ws.unavailable().is_none();
+        let hot = ui.ctx().animate_bool_with_time(resp.id.with("hot"), resp.hovered(), 0.1);
         if current {
             ui.painter().rect_filled(rect, 6.0, tk.tab_active);
-        } else if resp.hovered() && enabled {
-            ui.painter().rect_filled(rect, 6.0, tk.control.gamma_multiply(0.6));
+        } else if hot > 0.0 {
+            ui.painter().rect_filled(rect, 6.0, tk.control.gamma_multiply(0.6 * hot));
         }
-        let color = if current {
-            tk.text
-        } else if enabled {
-            tk.text_dim
-        } else {
-            tk.text_faint.gamma_multiply(0.7)
-        };
+        let color = if current { tk.text } else { crate::widgets::mix(tk.text_dim, tk.text, hot) };
         ui.painter().text(rect.center(), Align2::CENTER_CENTER, ws.label(), theme::body(), color);
         icons::describe_control(ui, &resp, ws.label(), Some(current));
-        let tip = ws.unavailable().map_or_else(|| format!("{} {}", ws.label(), t("workspace")), str::to_owned);
-        if resp.on_hover_text(tip).clicked() && enabled {
+        crate::widgets::tooltip(&resp, Tip::new(ws.label()).desc(ws.describe()), egui::RectAlign::BOTTOM);
+        if resp.clicked() {
             chosen = Some(*ws);
         }
         x += w;

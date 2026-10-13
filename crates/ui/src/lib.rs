@@ -139,15 +139,15 @@ impl WorkspaceKind {
         }
     }
 
-    /// Why the workspace cannot be used yet, if it cannot.
-    pub fn unavailable(self) -> Option<&'static str> {
+    /// What the workspace is for (its tab's tooltip).
+    pub fn describe(self) -> &'static str {
         match self {
-            WorkspaceKind::Model => None,
-            WorkspaceKind::Uv => Some(t("Needs the UV editor, which is not built yet.")),
-            WorkspaceKind::Bake => Some(t("Needs baking, which is not built yet.")),
-            WorkspaceKind::Rig => Some(t("Needs rigging, which is not built yet.")),
-            WorkspaceKind::Animate => Some(t("Needs animation, which is not built yet.")),
-            WorkspaceKind::Export => Some(t("Needs the exporters, which are not built yet.")),
+            WorkspaceKind::Model => t("Modelling: the viewport, Outliner, Properties and Health"),
+            WorkspaceKind::Uv => t("UVs: the viewport beside the UV editor"),
+            WorkspaceKind::Bake => t("Baking: high and low poly pairs and their maps"),
+            WorkspaceKind::Rig => t("Rigging: a tall Outliner for the bone hierarchy"),
+            WorkspaceKind::Animate => t("Animation: the timeline under the viewport"),
+            WorkspaceKind::Export => t("Export: budget and health checks before export"),
         }
     }
 }
@@ -157,6 +157,8 @@ impl WorkspaceKind {
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
     pub docking: docking::Workspace,
+    /// The layouts of the other workspaces, restored when switching back.
+    pub layouts: std::collections::BTreeMap<WorkspaceKind, docking::Workspace>,
     pub theme: theme::ThemePref,
     pub view: ViewSettings,
     /// The tool settings row under the top bar.
@@ -186,6 +188,7 @@ impl Default for UiState {
     fn default() -> Self {
         UiState {
             docking: docking::Workspace::default(),
+            layouts: std::collections::BTreeMap::new(),
             theme: theme::ThemePref::default(),
             view: ViewSettings::default(),
             show_toolbar: true,
@@ -898,7 +901,8 @@ impl PixelApp {
             }
             "ui.dock" => self.ui.docking.command(params),
             "ui.dock.reset" => {
-                self.ui.docking = docking::Workspace::default();
+                // The current workspace's preset.
+                self.ui.docking = docking::preset(self.ui.workspace);
                 Ok(json!({}))
             }
             "ui.start" => {
@@ -917,10 +921,13 @@ impl PixelApp {
             "ui.workspace" => {
                 let ws =
                     serde_json::from_value::<WorkspaceKind>(params.get("workspace").cloned().unwrap_or(Value::Null)).map_err(|e| e.to_string())?;
-                if let Some(why) = ws.unavailable() {
-                    return Err(format!("{}: {why}", ws.label()));
+                if ws != self.ui.workspace {
+                    // Keep this workspace's layout; bring back the other's, or its preset.
+                    let current = std::mem::take(&mut self.ui.docking);
+                    self.ui.layouts.insert(self.ui.workspace, current);
+                    self.ui.docking = self.ui.layouts.remove(&ws).unwrap_or_else(|| docking::preset(ws));
+                    self.ui.workspace = ws;
                 }
-                self.ui.workspace = ws;
                 Ok(json!({ "workspace": ws }))
             }
             "view.snap" => {
@@ -1394,6 +1401,10 @@ impl PixelApp {
                     docking::Panel::Health => health::show(self, ui),
                     docking::Panel::History => panels::history(self, ui),
                     docking::Panel::Console | docking::Panel::Viewport => panels::console(self, ui),
+                    docking::Panel::UvEditor => panels::uv_editor(self, ui),
+                    docking::Panel::Timeline => panels::timeline(self, ui),
+                    docking::Panel::Bake => panels::bake(self, ui),
+                    docking::Panel::Export => panels::export(self, ui),
                 });
             }
         });
@@ -1483,6 +1494,31 @@ mod tests {
 
     fn app() -> PixelApp {
         PixelApp::new(Session::new(), Services::default())
+    }
+
+    #[test]
+    fn workspaces_switch_layouts_and_keep_their_own() {
+        let mut a = app();
+        let model = a.ui.docking.clone();
+        a.run("ui.workspace", json!({ "workspace": "uv" })).unwrap();
+        assert!(a.ui.docking.is_visible(docking::Panel::UvEditor), "the UV preset shows the UV editor");
+        assert!(a.ui.docking.validate().is_ok());
+        // A change in the UV workspace stays with it.
+        a.ui.docking.set_visible(docking::Panel::Outliner, false).unwrap();
+        a.run("ui.workspace", json!({ "workspace": "model" })).unwrap();
+        assert_eq!(a.ui.docking, model);
+        a.run("ui.workspace", json!({ "workspace": "uv" })).unwrap();
+        assert!(!a.ui.docking.is_visible(docking::Panel::Outliner));
+        // Saved with the preferences and restored.
+        let mut b = app();
+        b.load_prefs(&a.prefs_json());
+        assert_eq!((b.ui.workspace, &b.ui.docking), (WorkspaceKind::Uv, &a.ui.docking));
+        // Reset brings back this workspace's preset.
+        a.run("ui.dock.reset", Value::Null).unwrap();
+        assert_eq!(a.ui.docking, docking::preset(WorkspaceKind::Uv));
+        for ws in WorkspaceKind::ALL {
+            assert!(docking::preset(ws).validate().is_ok(), "{ws:?}");
+        }
     }
 
     #[test]

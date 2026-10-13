@@ -20,10 +20,26 @@ pub enum Panel {
     Health,
     History,
     Console,
+    /// The editors of the other workspaces.
+    UvEditor,
+    Timeline,
+    Bake,
+    Export,
 }
 
 impl Panel {
-    pub const ALL: &[Panel] = &[Panel::Viewport, Panel::Outliner, Panel::Properties, Panel::Health, Panel::History, Panel::Console];
+    pub const ALL: &[Panel] = &[
+        Panel::Viewport,
+        Panel::Outliner,
+        Panel::Properties,
+        Panel::Health,
+        Panel::History,
+        Panel::Console,
+        Panel::UvEditor,
+        Panel::Timeline,
+        Panel::Bake,
+        Panel::Export,
+    ];
 
     pub fn id(self) -> &'static str {
         match self {
@@ -33,6 +49,10 @@ impl Panel {
             Panel::Health => "health",
             Panel::History => "history",
             Panel::Console => "console",
+            Panel::UvEditor => "uvEditor",
+            Panel::Timeline => "timeline",
+            Panel::Bake => "bake",
+            Panel::Export => "export",
         }
     }
 
@@ -44,12 +64,16 @@ impl Panel {
             Panel::Health => t("Health"),
             Panel::History => t("History"),
             Panel::Console => t("Console"),
+            Panel::UvEditor => t("UV Editor"),
+            Panel::Timeline => t("Timeline"),
+            Panel::Bake => t("Bake"),
+            Panel::Export => t("Export"),
         }
     }
 
     fn default_side(self) -> Zone {
         match self {
-            Panel::History | Panel::Console => Zone::Bottom,
+            Panel::History | Panel::Console | Panel::Timeline => Zone::Bottom,
             _ => Zone::Right,
         }
     }
@@ -77,6 +101,52 @@ fn split(axis: SplitAxis, size: SplitSize, first: Node<Panel>, second: Node<Pane
 pub struct Workspace {
     pub layout: Layout<Panel>,
     pub hidden: Vec<(Panel, Location<Panel>)>,
+}
+
+/// The preset layout of a workspace (project spec 20.4): which editors
+/// sit around the viewport for that kind of work.
+pub fn preset(kind: crate::WorkspaceKind) -> Workspace {
+    use crate::WorkspaceKind as W;
+    let stack = |entries: &[(Panel, f32)]| Node::Stack {
+        entries: entries.iter().map(|&(panel, h)| StackEntry { panel, open: true, height: Some(h) }).collect(),
+    };
+    let bottom = |panels: &[Panel], h: f32| split(SplitAxis::Vertical, SplitSize::FixedSecond(h), tabs(&[Panel::Viewport]), tabs(panels));
+    let root = match kind {
+        W::Model => return Workspace::default(),
+        // The viewport and the UV editor side by side.
+        W::Uv => split(
+            SplitAxis::Horizontal,
+            SplitSize::FixedSecond(320.0),
+            split(SplitAxis::Horizontal, SplitSize::Ratio(0.5), bottom(&[Panel::History, Panel::Console], 150.0), tabs(&[Panel::UvEditor])),
+            stack(&[(Panel::Outliner, 260.0), (Panel::Properties, 520.0)]),
+        ),
+        W::Bake => split(
+            SplitAxis::Horizontal,
+            SplitSize::FixedSecond(340.0),
+            bottom(&[Panel::History, Panel::Console], 150.0),
+            stack(&[(Panel::Outliner, 240.0), (Panel::Bake, 360.0), (Panel::Health, 220.0)]),
+        ),
+        W::Rig => split(
+            SplitAxis::Horizontal,
+            SplitSize::FixedSecond(320.0),
+            bottom(&[Panel::History, Panel::Console], 150.0),
+            stack(&[(Panel::Outliner, 460.0), (Panel::Properties, 360.0)]),
+        ),
+        // The timeline under the viewport.
+        W::Animate => split(
+            SplitAxis::Horizontal,
+            SplitSize::FixedSecond(320.0),
+            bottom(&[Panel::Timeline, Panel::History], 200.0),
+            stack(&[(Panel::Outliner, 300.0), (Panel::Properties, 460.0)]),
+        ),
+        W::Export => split(
+            SplitAxis::Horizontal,
+            SplitSize::FixedSecond(340.0),
+            bottom(&[Panel::History, Panel::Console], 150.0),
+            stack(&[(Panel::Export, 420.0), (Panel::Health, 240.0), (Panel::Outliner, 200.0)]),
+        ),
+    };
+    Workspace { layout: Layout { root: Some(root), floating: Vec::new() }, hidden: Vec::new() }
 }
 
 impl Default for Workspace {
@@ -202,8 +272,9 @@ impl Workspace {
 fn limits(panel: &Panel) -> PanelLimits {
     let (min, max_width) = match panel {
         Panel::Viewport => (egui::vec2(240.0, 160.0), 1_000_000.0),
-        Panel::History | Panel::Console => (egui::vec2(200.0, 80.0), 1_000_000.0),
-        Panel::Outliner | Panel::Properties | Panel::Health => (egui::vec2(220.0, 90.0), 720.0),
+        Panel::History | Panel::Console | Panel::Timeline => (egui::vec2(200.0, 80.0), 1_000_000.0),
+        Panel::UvEditor => (egui::vec2(240.0, 160.0), 1_000_000.0),
+        Panel::Outliner | Panel::Properties | Panel::Health | Panel::Bake | Panel::Export => (egui::vec2(220.0, 90.0), 720.0),
     };
     PanelLimits { min, max: egui::vec2(max_width, 1_000_000.0) }
 }
@@ -245,7 +316,9 @@ mod tests {
     fn default_layout_is_valid_and_viewport_is_protected() {
         let mut w = Workspace::default();
         w.validate().unwrap();
-        assert!(Panel::ALL.iter().all(|p| w.is_visible(*p)));
+        // The Model layout: every panel but the other workspaces' editors.
+        let editors = [Panel::UvEditor, Panel::Timeline, Panel::Bake, Panel::Export];
+        assert!(Panel::ALL.iter().all(|p| w.is_visible(*p) != editors.contains(p)));
         assert!(w.apply(Action::Close { panel: Panel::Viewport }).is_err());
         assert!(w.set_visible(Panel::Viewport, false).is_err());
         w.validate().unwrap();

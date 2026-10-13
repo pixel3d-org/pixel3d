@@ -77,3 +77,9 @@ fn command_palette() {
     let mut h = harness(app(ThemePref::Dark, &[("ui.palette", Value::Null)]));
     h.snapshot_options("palette_dark", &options());
 }
+
+#[test]
+fn uv_workspace() {
+    let mut h = harness(app(ThemePref::Dark, &[("ui.workspace", json!({ "workspace": "uv" }))]));
+    h.snapshot_options("workspace_uv_dark", &options());
+}

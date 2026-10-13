@@ -208,7 +208,7 @@ Acceptance:
 - [x] Contextual toolbar for all ops, live preview, Quick Properties, Dynamic Input (`actions.rs`: the tool settings row offers every op that applies to the selection, generated from the registry's categories, flags and schemas (Object Mode meshes or curves, generators that take a curve, Edit Mode element ops), with a More menu by category; hovering an action previews it on a working copy on a background thread; tested in `actions::tests`. `quick.rs`: Adjust Last Operation card. `gizmo.rs`: typed values with units during gizmo drags and the modal G, R, S (`gizmo::tests::typed_values_and_constraints_override_the_pointer`, and the keyboard run in `apps/pixel3d/tests/control.rs`))
 - [ ] UV Editor
 - [ ] Health, Bake and Export panels
-- [ ] Workspaces
+- [x] Workspaces (`docking::preset`: Model, UV, Bake, Rig, Animate and Export layouts with the UV Editor, Timeline, Bake and Export panels; switching keeps each workspace's own arrangement and saves it with the preferences, Reset panel layout restores the current preset; tested in `tests::workspaces_switch_layouts_and_keep_their_own` and the `workspace_uv_dark` snapshot. The UV, bake, rig, animation and export tools themselves arrive with their phases)
 - [ ] `pixel3d-cli mcp --connect` to watch agents live
 
 Acceptance:
