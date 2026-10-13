@@ -157,7 +157,7 @@ fn sdf_app(theme: ThemePref) -> Harness<'static, PixelApp> {
     a.stable = true;
     a.ui.theme = theme;
     a.run(
-        p3d_ui::sdf::OP,
+        "shapes.new",
         json!({ "name": "creature", "detail": 0.03, "shapes": [
             { "name": "body", "ellipsoid": { "at": [0, 0.35, 0], "radii": [0.3, 0.35, 0.25] } },
             { "name": "head", "smooth_union": 0.08, "sphere": { "at": [0, 0.82, 0], "radius": 0.18 } },

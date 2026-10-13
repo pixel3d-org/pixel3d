@@ -29,10 +29,22 @@ use crate::viewport::ViewportEvent;
 use crate::{PixelApp, inspector};
 use shapes::Path;
 
-/// The op that builds and rebuilds SDF objects.
-pub const OP: &str = "gen.sdf";
-/// Op ids an SDF object's history may hold (the op's earlier and later names).
-const OPS: [&str; 2] = ["gen.sdf", "sdf.mesh"];
+/// Names of the op that builds and rebuilds SDF objects, newest first
+/// (`gen.sdf` became `sdf.mesh`); an object's history may hold either.
+const OPS: [&str; 2] = ["sdf.mesh", "gen.sdf"];
+
+/// The SDF op's id in `registry`: its newest name that is registered.
+pub fn op_id(registry: &p3d_ops::Registry) -> &'static str {
+    OPS.iter().copied().find(|id| registry.get(id).is_ok()).unwrap_or(OPS[1])
+}
+
+/// The shapes Add > SDF Shape starts with: a body and a head blended.
+pub fn starter() -> Value {
+    json!({ "shapes": [
+        { "name": "body", "ellipsoid": { "at": [0, 0.35, 0], "radii": [0.3, 0.35, 0.25] } },
+        { "name": "head", "smooth_union": 0.08, "sphere": { "at": [0, 0.82, 0], "radius": 0.18 } }
+    ] })
+}
 /// The op's voxel size limits (meters).
 const MIN_DETAIL: f64 = 1e-4;
 const MAX_DETAIL: f64 = 0.5;
@@ -202,7 +214,7 @@ impl PixelApp {
         if let Some(d) = detail.or(self.sdf.detail) {
             p["detail"] = json!(d);
         }
-        Some(OpCall::new(OP, p))
+        Some(OpCall::new(op_id(self.session.registry()), p))
     }
 
     /// Replaces the shapes and previews or commits them.
@@ -610,7 +622,7 @@ mod tests {
     pub(crate) fn blob() -> PixelApp {
         let mut a = PixelApp::new(p3d_engine::Session::new(), Services::default());
         a.run(
-            OP,
+            "shapes.new",
             json!({ "name": "blob", "detail": 0.02, "shapes": [
                 { "name": "body", "sphere": { "at": [0, 0.1, 0], "radius": 0.1 } },
                 { "name": "head", "sphere": { "at": [0, 0.22, 0], "radius": 0.06 }, "smooth_union": 0.03 }

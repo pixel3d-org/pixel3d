@@ -956,6 +956,17 @@ impl PixelApp {
                 self.import_files(&[PathBuf::from(path)], &rest)
             }
             "file.sample" => self.sample(),
+            // A new SDF object (Add > SDF Shape): the starter shapes unless
+            // `shapes` is given; the SDF op without shapes does the same.
+            "shapes.new" => {
+                let mut p = params.as_object().cloned().unwrap_or_default();
+                if !p.contains_key("shapes") {
+                    p.extend(sdf::starter().as_object().cloned().unwrap_or_default());
+                }
+                let op = sdf::op_id(self.session.registry());
+                self.execute(&[OpCall::new(op, Value::Object(p))])
+            }
+            op if sdf::is_sdf_op(op) && params.get("shapes").is_none() => self.run_inner("shapes.new", params),
             shapes_cmd if shapes_cmd.starts_with("shapes.") => self.sdf_command(shapes_cmd, params),
             "edit.undo" => {
                 let label = self.session.undo().map_err(|e| e.message)?;

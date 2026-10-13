@@ -297,7 +297,7 @@ fn shape_fields(app: &PixelApp, ui: &mut egui::Ui, list: &[Value], path: &Path, 
     let Some(shape) = shapes::get(list, path) else { return };
     let prim = shapes::prim_key(shape).unwrap_or("sphere");
     let label = shapes::label(list, path);
-    let Ok(op) = app.session.registry().get(super::OP) else { return };
+    let Ok(op) = app.session.registry().get(super::op_id(app.session.registry())) else { return };
     let root = op.params_schema();
     let title = format!("{}: {label}", schema_form::humanize(prim));
     let base = egui::Id::new(("sdf-fields", path));
@@ -392,7 +392,7 @@ fn shape_fields(app: &PixelApp, ui: &mut egui::Ui, list: &[Value], path: &Path, 
 /// The mesh settings: the detail, what a rebuild drops, and errors.
 fn mesh_fields(app: &PixelApp, ui: &mut egui::Ui, out: &mut Out) {
     let tk = Tokens::get();
-    let Ok(op) = app.session.registry().get(super::OP) else { return };
+    let Ok(op) = app.session.registry().get(super::op_id(app.session.registry())) else { return };
     let root = op.params_schema();
     panel(ui, "sdf-mesh", t("Mesh"), true, |ui| {
         let schema = json!({ "type": "object", "properties": { "detail": {

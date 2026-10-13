@@ -190,7 +190,7 @@ fn sculpt_an_sdf_shape_with_the_gizmo() {
     // An SDF object: selecting it opens the editor.
     c.call(
         "ui.command",
-        json!({ "id": "gen.sdf", "params": { "name": "blob", "detail": 0.02, "shapes": [
+        json!({ "id": "shapes.new", "params": { "name": "blob", "detail": 0.02, "shapes": [
         { "name": "body", "sphere": { "at": [0, 0.2, 0], "radius": 0.2 } },
         { "name": "head", "smooth_union": 0.05, "sphere": { "at": [0, 0.45, 0], "radius": 0.12 } }
     ] } }),
