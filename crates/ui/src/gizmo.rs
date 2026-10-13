@@ -157,6 +157,8 @@ struct Drag {
     snapped: Option<crate::snap::Hit>,
     /// Dynamic Input: the typed value.
     typed: String,
+    /// The drag moves a shape of the SDF editor, not objects.
+    sdf: bool,
 }
 
 /// The gizmo between frames: the drag, the handle under the pointer, a
@@ -175,6 +177,11 @@ pub struct GizmoState {
 impl GizmoState {
     pub fn dragging(&self) -> bool {
         self.drag.is_some()
+    }
+
+    /// The pointer is on a handle, or a drag runs: clicks belong to the gizmo.
+    pub fn over_handle(&self) -> bool {
+        self.hot.is_some() || self.drag.is_some()
     }
 
     /// A modal transform has the keyboard and the pointer.
@@ -302,6 +309,24 @@ fn active_element(app: &PixelApp, doc: &Document) -> Option<Vec3> {
 fn frame(app: &PixelApp, doc: &Document, cam: &OrbitCamera) -> Option<Frame> {
     let s = &app.ui.transform;
     let edit = app.ui.mode.is_edit();
+    // A shape selected in the SDF editor: the gizmo sits on it.
+    if let Some((center, rot)) = app.sdf_gizmo_subject() {
+        let own = [rot * Vec3::X, rot * Vec3::Y, rot * Vec3::Z];
+        let axes = match s.orientation {
+            Orientation::Global => [Vec3::X, Vec3::Y, Vec3::Z],
+            Orientation::View => {
+                let inv = cam.view().inverse();
+                [inv.x_axis.truncate().normalize(), inv.y_axis.truncate().normalize(), inv.z_axis.truncate().normalize()]
+            }
+            Orientation::Cursor => {
+                let q = s.cursor_rotation();
+                [q * Vec3::X, q * Vec3::Y, q * Vec3::Z]
+            }
+            _ => own,
+        };
+        let pivot = if s.pivot == Pivot::Cursor { s.cursor() } else { center };
+        return Some(Frame { pivot, axes });
+    }
     let (points, active_world): (Vec<Vec3>, Option<Mat4>) = if edit {
         let (_, model, pts) = edit_points(app, doc)?;
         (pts, Some(model))
@@ -767,7 +792,11 @@ fn begin(app: &mut PixelApp, kind: Kind, handle: Handle, modal: bool, f: Frame, 
     let rect = app.viewport.rect;
     let doc = Arc::clone(app.session.doc());
     let edit = app.ui.mode.is_edit();
-    let moved = if edit { Vec::new() } else { moved_objects(app, &doc) };
+    let sdf = !edit && app.sdf_gizmo_subject().is_some();
+    if sdf {
+        app.sdf_begin_drag();
+    }
+    let moved = if edit || sdf { Vec::new() } else { moved_objects(app, &doc) };
     let objects: Vec<Moved> = moved
         .iter()
         .map(|&k| {
@@ -780,6 +809,8 @@ fn begin(app: &mut PixelApp, kind: Kind, handle: Handle, modal: bool, f: Frame, 
     // The points that move, for Snap With.
     let (sources, active) = if edit {
         (edit_points(app, &doc).map(|(_, _, p)| p).unwrap_or_default(), active_element(app, &doc))
+    } else if sdf {
+        (vec![f.pivot], Some(f.pivot))
     } else {
         let mut pts = Vec::new();
         for (_, m, _) in &objects {
@@ -804,8 +835,10 @@ fn begin(app: &mut PixelApp, kind: Kind, handle: Handle, modal: bool, f: Frame, 
     let geometry = s.snap_targets.iter().any(|t| !matches!(t, SnapTarget::Increment | SnapTarget::Grid));
     let mut snap_meshes = Vec::new();
     if geometry {
-        let moving: std::collections::BTreeSet<ObjectKey> =
+        let mut moving: std::collections::BTreeSet<ObjectKey> =
             objects.iter().flat_map(|(k, _, below)| std::iter::once(*k).chain(below.iter().map(|(c, _)| *c))).collect();
+        // A shape never snaps onto its own mesh.
+        moving.extend(app.sdf.object.filter(|_| sdf));
         for (object, mesh, model) in app.viewport.parts_list() {
             let edited = edit && Some(object) == app.edit.object;
             let take = if edit { if edited { s.include_edited } else { s.include_nonedited } } else { !moving.contains(&object) };
@@ -830,6 +863,7 @@ fn begin(app: &mut PixelApp, kind: Kind, handle: Handle, modal: bool, f: Frame, 
         snap_meshes,
         snapped: None,
         typed: String::new(),
+        sdf,
     }
 }
 
@@ -977,6 +1011,12 @@ fn update(app: &mut PixelApp, cam: &OrbitCamera, rect: Rect, p: Pos2, snapping: 
 fn preview(app: &mut PixelApp, cam: &OrbitCamera) {
     let Some(drag) = &app.gizmo.drag else { return };
     let view_axis = cam.toward();
+    if drag.sdf {
+        // The shape's numbers change; the mesh previews coarsely.
+        let m = delta_matrix(&drag.delta, drag.frame.pivot, drag.frame.axes, view_axis);
+        app.sdf_drag(m);
+        return;
+    }
     if drag.edit.is_some() {
         let Some(params) = edit_params(app, drag, cam) else { return };
         let mut work = p3d_engine::Session::with_registry(Arc::clone(app.session.registry()));
@@ -1007,6 +1047,12 @@ fn commit(app: &mut PixelApp, cam: &OrbitCamera) {
     app.gizmo.preview = None;
     let label = drag.kind.label();
     let moved = drag.delta.translate != Vec3::ZERO || drag.delta.rotate.is_some_and(|(_, a)| a != 0.0) || drag.delta.scale != Vec3::ONE;
+    if drag.sdf {
+        let name = app.sdf.selected.as_ref().map(|p| crate::sdf::shapes::label(&app.sdf.shapes, p)).unwrap_or_default();
+        let full = format!("{label} {name}");
+        app.sdf_end_drag(moved.then_some(full.as_str()));
+        return;
+    }
     if !moved {
         return;
     }
@@ -1026,9 +1072,12 @@ fn commit(app: &mut PixelApp, cam: &OrbitCamera) {
 
 /// Drops a drag and its preview.
 fn cancel(app: &mut PixelApp) {
-    if app.gizmo.drag.take().is_some() {
+    if let Some(d) = app.gizmo.drag.take() {
         app.viewport.preview.clear();
         app.gizmo.preview = None;
+        if d.sdf {
+            app.sdf_end_drag(None);
+        }
     }
     app.gizmo.hot = None;
 }

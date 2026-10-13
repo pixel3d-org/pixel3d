@@ -662,6 +662,11 @@ impl ViewportState {
         events
     }
 
+    /// Drops the object pick of this frame's click (an overlay took it).
+    pub fn cancel_pick(&mut self) {
+        self.pending_pick = None;
+    }
+
     fn poll_pick(&mut self, cache: &SceneCache, events: &mut Vec<ViewportEvent>) {
         let Some((request, add, at)) = self.pending_pick else { return };
         let Some(slot) = &self.picks else { return };

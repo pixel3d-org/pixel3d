@@ -67,6 +67,14 @@ pub fn shortcut_text(ctx: &egui::Context, s: &KeyboardShortcut) -> String {
     ctx.format_shortcut(s)
 }
 
+/// The shapes Add > SDF Shape starts with: a body and a head blended.
+fn sdf_start() -> Value {
+    json!({ "shapes": [
+        { "name": "body", "ellipsoid": { "at": [0, 0.35, 0], "radii": [0.3, 0.35, 0.25] } },
+        { "name": "head", "smooth_union": 0.08, "sphere": { "at": [0, 0.82, 0], "radius": 0.18 } }
+    ] })
+}
+
 /// Whether a boolean can run on the selection, or why not.
 fn boolean_ready(app: &PixelApp) -> Result<(), String> {
     app.tools_on_active().map(|_| ())
@@ -246,6 +254,8 @@ pub fn menus() -> Vec<Menu> {
                         || json!({ "points": 16, "sections": [[[-0.2, 0, -0.2], [0.2, 0, -0.2], [0.2, 0, 0.2], [-0.2, 0, 0.2]], [[0.15, 0.5, 0], [0, 0.5, -0.15], [-0.15, 0.5, 0], [0, 0.5, 0.15]]] }),
                     ),
                 ),
+                // Blended shapes to sculpt in the Shapes tab.
+                icon(Icon::Shapes, with("SDF shape", crate::sdf::OP, sdf_start)),
                 None,
                 header("Generate (lathe)"),
                 icon(Icon::Tube, with("Barrel", "gen.lathe", || json!({ "profile": "barrel" }))),

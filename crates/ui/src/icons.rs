@@ -134,6 +134,7 @@ icons! {
     BoolIntersect => d::BOOL_INTERSECT, false;
     CleanUp => d::SPARKLES, false;
     Report => d::REPORT, false;
+    Shapes => d::BLOBS, false;
 }
 
 /// The flattened outlines of an icon, parsed on first use.
