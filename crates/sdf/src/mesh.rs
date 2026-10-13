@@ -21,6 +21,48 @@ use smallvec::SmallVec;
 
 use crate::tree::{Sdf, SdfError};
 
+/// A signed distance field the mesher can sample: negative inside, positive
+/// outside, with a bound on its gradient for skipping empty space.
+pub trait Field: Sync {
+    /// Signed distance (or a bound of it) at `p`.
+    fn eval(&self, p: Vec3) -> f32;
+    /// Upper bound of the gradient length.
+    fn lipschitz(&self) -> f32;
+    /// Box holding the surface.
+    fn bounds(&self) -> (Vec3, Vec3);
+    /// The item a surface point belongs to (0 when there are no items).
+    fn leaf(&self, _p: Vec3) -> u32 {
+        0
+    }
+    /// Gradient by central differences of step `h`.
+    fn gradient(&self, p: Vec3, h: f32) -> Vec3 {
+        let d = |o: Vec3| self.eval(p + o) - self.eval(p - o);
+        Vec3::new(d(Vec3::X * h), d(Vec3::Y * h), d(Vec3::Z * h)) / (2.0 * h)
+    }
+}
+
+impl Field for Sdf {
+    fn eval(&self, p: Vec3) -> f32 {
+        Sdf::eval(self, p)
+    }
+
+    fn lipschitz(&self) -> f32 {
+        Sdf::lipschitz(self)
+    }
+
+    fn bounds(&self) -> (Vec3, Vec3) {
+        Sdf::bounds(self)
+    }
+
+    fn leaf(&self, p: Vec3) -> u32 {
+        self.eval_item(p).1
+    }
+
+    fn gradient(&self, p: Vec3, h: f32) -> Vec3 {
+        Sdf::gradient(self, p, h)
+    }
+}
+
 /// Voxels per block side.
 pub const BLOCK: i32 = 8;
 /// Most voxels along one axis.
@@ -184,7 +226,7 @@ fn pieces(value: impl Fn([i32; 3]) -> f32) -> ([u8; 12], u8) {
 /// Blocks near the surface, by octree descent over the block grid.
 ///
 /// Complexity: O(b log n) for b blocks near the surface in an n-block grid.
-fn active_blocks(sdf: &Sdf, origin: Vec3, h: f32, blocks: IVec3) -> Vec<IVec3> {
+fn active_blocks<F: Field>(sdf: &F, origin: Vec3, h: f32, blocks: IVec3) -> Vec<IVec3> {
     let side = blocks.max_element().max(1) as u32;
     let top = side.next_power_of_two() as i32;
     let size = h * BLOCK as f32;
@@ -220,7 +262,7 @@ fn active_blocks(sdf: &Sdf, origin: Vec3, h: f32, blocks: IVec3) -> Vec<IVec3> {
 /// surface by a Newton step and kept near the voxel.
 ///
 /// Complexity: O(BLOCK^3 x items).
-fn sample(sdf: &Sdf, origin: Vec3, h: f32, at: IVec3) -> Block {
+fn sample<F: Field>(sdf: &F, origin: Vec3, h: f32, at: IVec3) -> Block {
     let base = at * BLOCK;
     let pos = |p: IVec3| origin + (base + p).as_vec3() * h;
     let mut corners = vec![0.0f32; (C * C * C) as usize];
@@ -354,7 +396,7 @@ pub const MAX_REFINE: u32 = 2;
 /// (about the surface area over the voxel area, times the block size), plus
 /// O(b log n) for the block search; blocks are sampled in parallel. Each
 /// refinement costs about four times the previous pass.
-pub fn mesh(sdf: &Sdf, spec: &MeshSpec) -> Result<SdfMesh, SdfError> {
+pub fn mesh<F: Field>(sdf: &F, spec: &MeshSpec) -> Result<SdfMesh, SdfError> {
     let h = spec.voxel;
     if !(h.is_finite() && h > 0.0) {
         return Err(SdfError::Invalid { path: "voxel".into(), message: "the voxel size must be positive".into() });
@@ -377,7 +419,7 @@ pub fn mesh(sdf: &Sdf, spec: &MeshSpec) -> Result<SdfMesh, SdfError> {
 /// One meshing pass at voxel size `h`.
 ///
 /// Complexity: see [`mesh`].
-fn mesh_at(sdf: &Sdf, h: f32) -> Result<SdfMesh, SdfError> {
+fn mesh_at<F: Field>(sdf: &F, h: f32) -> Result<SdfMesh, SdfError> {
     let (lo, hi) = sdf.bounds();
     let start = ((lo / h).floor() - Vec3::splat(2.0)).as_ivec3();
     let end = ((hi / h).ceil() + Vec3::splat(2.0)).as_ivec3();
@@ -440,7 +482,7 @@ fn mesh_at(sdf: &Sdf, h: f32) -> Result<SdfMesh, SdfError> {
         .faces()
         .map(|f| {
             let c = mesh.face_verts(f).map(|v| mesh.positions[v as usize]).sum::<Vec3>() / mesh.face_len(f) as f32;
-            sdf.eval_item(c).1
+            sdf.leaf(c)
         })
         .collect();
     Ok(SdfMesh { mesh, face_leaf, repair: report, sampled, voxel: h, unresolved, specks })

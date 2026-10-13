@@ -1,0 +1,174 @@
+//! `remesh.*`: new topology for an existing surface (kernels in
+//! `p3d_remesh`).
+
+use glam::Affine3A;
+use p3d_geo::bvh::TriBvh;
+use p3d_mesh::{ElementKind, Mesh};
+use p3d_remesh::{QuadReport, QuadSpec, RemeshError, quad_remesh};
+use p3d_scene::Document;
+use p3d_sdf::{MeshField, MeshSpec, mesh as sdf_mesh};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+use crate::common::{check_count, check_length, label, mesh_target, thousands};
+use crate::error::{ErrorCode, OpError};
+use crate::op::{Category, Op, OpCtx, OpExample, OpFlags, OpMeta, OpOutput};
+use crate::params::Length;
+use crate::tx::Tx;
+
+/// Parameters of `remesh.quad`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuadRemeshParams {
+    /// Mesh object (name, path or id); it must be closed.
+    pub target: String,
+    /// Target edge length; about a fortieth of the largest side when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge: Option<Length>,
+    /// Smoothing sweeps of the direction and position fields per level (more is smoother and slower).
+    #[serde(default = "twelve")]
+    pub iterations: u32,
+    /// Relaxation sweeps onto the original surface.
+    #[serde(default = "four")]
+    pub relax: u32,
+}
+
+fn twelve() -> u32 {
+    12
+}
+
+fn four() -> u32 {
+    4
+}
+
+/// `remesh.quad`.
+pub struct QuadRemesh;
+
+fn remesh_error(e: RemeshError) -> OpError {
+    match e {
+        RemeshError::BadEdge => OpError::out_of_range("/edge", e.to_string()),
+        RemeshError::Empty => OpError::new(ErrorCode::EmptySelection, "the mesh has no faces").at("/target"),
+        RemeshError::TooLarge(n) => {
+            OpError::new(ErrorCode::BudgetExceeded, format!("{} samples would be needed", thousands(n))).at("/edge").with_hint("use a longer edge")
+        }
+        RemeshError::Build(m) => OpError::new(ErrorCode::Topology, m).at("/edge").with_hint("try a shorter edge, or cleanup.auto the mesh first"),
+    }
+}
+
+/// Face groups and materials of the old faces, carried to the new faces by
+/// the nearest old face.
+///
+/// Complexity: O(F log n) for F new faces over n old triangles, plus
+/// O(F x G) for G face groups.
+fn carry(old: &Mesh, new: &mut Mesh) {
+    let bvh = TriBvh::from_mesh(old, Affine3A::IDENTITY);
+    let reach = old.bounds().map_or(1.0, |(lo, hi)| (hi - lo).length());
+    let faces: Vec<u32> = new.faces().collect();
+    let src: Vec<Option<u32>> = faces
+        .iter()
+        .map(|&f| {
+            let c = new.face_verts(f).map(|v| new.positions[v as usize]).sum::<glam::Vec3>() / new.face_len(f) as f32;
+            bvh.closest(c, reach).map(|h| h.face)
+        })
+        .collect();
+    for (&f, s) in faces.iter().zip(&src) {
+        if let Some(s) = s {
+            new.face_material[f as usize] = old.face_material(*s);
+        }
+    }
+    for (name, g) in old.groups().filter(|(_, g)| g.kind() == ElementKind::Face) {
+        let list: Vec<u32> = faces.iter().zip(&src).filter(|(_, s)| s.is_some_and(|s| g.contains(s))).map(|(&f, _)| f).collect();
+        if !list.is_empty() {
+            // The faces are live, so this cannot fail.
+            let _ = new.set_group(name, ElementKind::Face, list);
+        }
+    }
+}
+
+impl Op for QuadRemesh {
+    const ID: &'static str = "remesh.quad";
+    type Params = QuadRemeshParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Quad remesh",
+            category: Category::Remesh,
+            summary: "Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field.",
+            docs: "Field-aligned quad remeshing (Instant Meshes, Jakob et al. 2015): a smooth direction field and a lattice of \
+                   points about `edge` apart are solved on the surface, quads are extracted from the lattice and subdivided \
+                   once, so every face is a quad and poles sit where the field needs them. The new vertices are relaxed onto \
+                   the old surface; face groups and materials carry over by the nearest old face. UVs, creases and edge groups \
+                   do not.\n\n\
+                   **Use for** turning `sdf.mesh` results, boolean-heavy blockouts and scans into clean, even quads before \
+                   UVs, subdivision or rigging. Hard edges round off: remesh organic parts, model hard-surface parts directly.",
+            examples: &[OpExample {
+                args: r#"{"target": "post", "edge": "8mm"}"#,
+                result: "post (o:3): remeshed into 5,352 quads (5,352 faces, edge 8 mm); poles 271 of valence 3, 218 of 5, 49 of 6, 43 of 7 or more",
+            }],
+            aliases: &["quad remesh", "quadriflow", "instant meshes", "retopology", "retopo", "zremesher", "autoretopo"],
+            complexity: "O(S x iterations) for the S samples (about area / (edge / 1.25)^2), plus O(S log S) for the hierarchy",
+            flags: OpFlags::UNDOABLE.union(OpFlags::LONG_RUNNING),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &QuadRemeshParams) -> Result<(), OpError> {
+        mesh_target(doc, &p.target)?;
+        if let Some(e) = p.edge {
+            check_length("/edge", e, 1e-4, 10.0)?;
+        }
+        check_count("/iterations", p.iterations, 1, 100)?;
+        check_count("/relax", p.relax, 0, 50)
+    }
+
+    fn apply(tx: &mut Tx, p: &QuadRemeshParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = mesh_target(tx.doc(), &p.target)?;
+        let old = tx.mesh(key, "/target")?;
+        let open = old.edges().filter(|&e| old.is_boundary_edge(e)).count();
+        if open > 0 {
+            return Err(OpError::new(
+                ErrorCode::NonManifoldInput,
+                format!("{} has {} open edges; quad remesh needs a closed surface", label(tx.doc(), key), thousands(open)),
+            )
+            .at("/target")
+            .with_hint("close it with edit.fill or cleanup.auto first"));
+        }
+        let size = old.bounds().map_or(1.0, |(lo, hi)| (hi - lo).max_element());
+        let edge = p.edge.map_or(size / 40.0, |e| e.0 as f32);
+        let spec = QuadSpec { edge, iterations: p.iterations, relax: p.relax, seed: ctx.seed, ..QuadSpec::default() };
+        ctx.check_cancel()?;
+        // Long thin faces (primitives, CAD-like meshes) are resampled evenly
+        // first: the direction field needs an even sampling.
+        let longest = old
+            .edges()
+            .map(|e| {
+                let [a, b] = old.edge_verts(e);
+                old.positions[a as usize].distance(old.positions[b as usize])
+            })
+            .fold(0.0f32, f32::max);
+        let resampled = if longest > edge {
+            let field = MeshField::new(old).ok_or_else(|| OpError::new(ErrorCode::EmptySelection, "the mesh has no faces").at("/target"))?;
+            Some(sdf_mesh(&field, &MeshSpec { voxel: edge * 0.6 }).map_err(|e| OpError::new(ErrorCode::Topology, e.to_string()).at("/edge"))?.mesh)
+        } else {
+            None
+        };
+        let (mut mesh, r): (Mesh, QuadReport) = quad_remesh(resampled.as_ref().unwrap_or(old), &spec).map_err(remesh_error)?;
+        carry(old, &mut mesh);
+        ctx.check_cancel()?;
+        let faces = mesh.face_count();
+        *tx.mesh_mut(key, "/target")? = mesh;
+        let mut out = OpOutput::summary(format!(
+            "{}: remeshed into {} quads ({} faces, edge {} mm); poles {} of valence 3, {} of 5, {} of 6, {} of 7 or more",
+            label(tx.doc(), key),
+            thousands(r.quads),
+            thousands(faces),
+            (f64::from(edge) * 1000.0).round(),
+            thousands(r.poles[0]),
+            thousands(r.poles[1]),
+            thousands(r.poles[2]),
+            thousands(r.poles[3])
+        ));
+        out.changed.push(key);
+        Ok(out)
+    }
+}

@@ -110,7 +110,8 @@ pub fn for_category(c: Category) -> Tx {
         Category::Prim | Category::Io => Tx::new(Document::new()),
         Category::Edit | Category::Shade | Category::Subd | Category::Deform | Category::Cleanup => edit_fixture(),
         Category::Expect => expect_fixture(),
-        Category::Curve | Category::Gen => curve_fixture(),
+        Category::Curve | Category::Gen | Category::Sdf => curve_fixture(),
+        Category::Remesh => edit_fixture(),
         _ => fixture(),
     }
 }

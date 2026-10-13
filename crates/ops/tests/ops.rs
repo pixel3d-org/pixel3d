@@ -1012,11 +1012,11 @@ fn io_import_refuses_paths_outside_and_missing_files() {
 }
 
 #[test]
-fn gen_sdf_blends_named_shapes_and_mirrors() {
+fn sdf_mesh_blends_named_shapes_and_mirrors() {
     let mut tx = Tx::new(Document::new());
     let s = ok(
         &mut tx,
-        "gen.sdf",
+        "sdf.mesh",
         json!({ "name": "head", "detail": "6mm", "shapes": [
             { "ellipsoid": { "at": [0, 0.13, 0], "radii": [0.075, 0.105, 0.09] }, "name": "cranium" },
             { "ellipsoid": { "at": [0, 0.06, 0.035], "radii": [0.055, 0.045, 0.055] }, "name": "jaw", "smooth_union": "2.5cm" },
@@ -1038,26 +1038,70 @@ fn gen_sdf_blends_named_shapes_and_mirrors() {
 }
 
 #[test]
-fn gen_sdf_errors_are_precise() {
+fn sdf_mesh_errors_are_precise() {
     let mut tx = Tx::new(Document::new());
-    let e = err(&mut tx, "gen.sdf", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 }, "smooth_unoin": 0.02 }] }));
+    let e = err(&mut tx, "sdf.mesh", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 }, "smooth_unoin": 0.02 }] }));
     assert!(e.message.contains("smooth_unoin"), "{}", e.message);
     let e = err(
         &mut tx,
-        "gen.sdf",
+        "sdf.mesh",
         json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 }, "box": { "at": [0, 0, 0], "size": [1, 1, 1] } }] }),
     );
     assert!(e.message.contains("one primitive"), "{}", e.message);
-    let e = err(&mut tx, "gen.sdf", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 }, "subtract": true, "intersect": true }] }));
+    let e = err(&mut tx, "sdf.mesh", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 }, "subtract": true, "intersect": true }] }));
     assert_eq!(e.path.as_deref(), Some("/shapes/0"));
-    let e = err(&mut tx, "gen.sdf", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": -0.1 } }] }));
+    let e = err(&mut tx, "sdf.mesh", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": -0.1 } }] }));
     assert_eq!(e.path.as_deref(), Some("/shapes/0"));
     let e = err(
         &mut tx,
-        "gen.sdf",
+        "sdf.mesh",
         json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 } }, { "sphere": { "at": [0, 0, 0], "radius": 0.2 }, "subtract": true }] }),
     );
     assert_eq!(e.code, ErrorCode::Topology);
-    let e = err(&mut tx, "gen.sdf", json!({ "shapes": [] }));
+    let e = err(&mut tx, "sdf.mesh", json!({ "shapes": [] }));
     assert_eq!(e.path.as_deref(), Some("/shapes"));
+}
+
+#[test]
+fn remesh_quad_turns_a_torus_into_even_quads() {
+    let mut tx = Tx::new(Document::new());
+    ok(&mut tx, "prim.torus", json!({ "name": "ring", "major_radius": 0.3, "minor_radius": 0.1 }));
+    ok(
+        &mut tx,
+        "select.save",
+        json!({ "target": "ring", "select": { "faces": { "normal": { "dir": [0, 1, 0], "within_deg": 30 } } }, "name": "top" }),
+    );
+    let s = ok(&mut tx, "remesh.quad", json!({ "target": "ring", "edge": "3cm" }));
+    assert!(s.starts_with("ring (o:1): remeshed into"), "{s}");
+    let m = tx.doc().object_mesh(tx.resolve("ring", "/t").unwrap()).unwrap();
+    assert!(m.faces().all(|f| m.face_len(f) == 4), "quads only");
+    assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "closed");
+    // The face group follows the surface it covered.
+    let top = m.group("top").expect("the face group carries over");
+    let up = top.iter().filter(|&f| m.face_normal(f).y > 0.5).count();
+    assert!(up * 10 > top.count() * 9, "{up} of {}", top.count());
+}
+
+#[test]
+fn remesh_quad_refuses_open_meshes() {
+    let mut tx = Tx::new(Document::new());
+    ok(&mut tx, "prim.plane", json!({ "name": "floor" }));
+    let e = err(&mut tx, "remesh.quad", json!({ "target": "floor" }));
+    assert_eq!(e.code, ErrorCode::NonManifoldInput);
+    assert!(e.message.contains("open edges"), "{}", e.message);
+    let e = err(&mut tx, "remesh.quad", json!({ "target": "floor", "iterations": 0 }));
+    assert_eq!(e.path.as_deref(), Some("/iterations"));
+}
+
+#[test]
+fn sdf_from_mesh_fuses_overlapping_parts() {
+    let mut tx = Tx::new(Document::new());
+    ok(&mut tx, "prim.box", json!({ "name": "block", "width": 0.4, "height": 0.4, "depth": 0.4 }));
+    ok(&mut tx, "prim.box", json!({ "name": "lid", "width": 0.4, "height": 0.4, "depth": 0.4, "position": [0.2, 0.1, 0] }));
+    ok(&mut tx, "scene.join", json!({ "targets": ["block", "lid"] }));
+    let s = ok(&mut tx, "sdf.from_mesh", json!({ "target": "block", "detail": "2cm" }));
+    assert!(s.contains("voxel remeshed at 20 mm"), "{s}");
+    let m = tx.doc().object_mesh(tx.resolve("block", "/t").unwrap()).unwrap();
+    assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "closed");
+    assert!(m.faces().all(|f| m.face_len(f) == 4), "quads only");
 }

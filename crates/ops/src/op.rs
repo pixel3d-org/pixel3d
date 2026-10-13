@@ -44,6 +44,8 @@ pub enum Category {
     Cleanup,
     Expect,
     Io,
+    Sdf,
+    Remesh,
 }
 
 impl Category {
@@ -61,6 +63,8 @@ impl Category {
             Category::Cleanup => "cleanup",
             Category::Expect => "expect",
             Category::Io => "io",
+            Category::Sdf => "sdf",
+            Category::Remesh => "remesh",
         }
     }
 }

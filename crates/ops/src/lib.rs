@@ -22,6 +22,7 @@ mod op;
 pub mod params;
 pub mod prim;
 mod registry;
+pub mod remesh;
 pub mod scene;
 pub mod sdf;
 pub mod select;

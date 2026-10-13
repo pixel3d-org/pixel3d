@@ -19,6 +19,7 @@ p3d-math = { workspace = true }
 p3d-mesh = { workspace = true }
 p3d-perceive = { workspace = true }
 p3d-query = { workspace = true }
+p3d-remesh = { workspace = true }
 p3d-scene = { workspace = true }
 p3d-sdf = { workspace = true }
 schemars = { workspace = true }

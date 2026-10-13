@@ -6,8 +6,10 @@
 //! hard or smooth operators ([`tree`]); [`mesh`] turns the zero set into a
 //! closed quad mesh, sampling only near the surface.
 
+pub mod from_mesh;
 pub mod mesh;
 pub mod tree;
 
-pub use mesh::{BLOCK, MeshSpec, SdfMesh, mesh};
+pub use from_mesh::MeshField;
+pub use mesh::{BLOCK, Field, MeshSpec, SdfMesh, mesh};
 pub use tree::{Combine, Item, MAX_DEPTH, MAX_ITEMS, Modifiers, Noise, Prim, Sdf, SdfError, Shape};

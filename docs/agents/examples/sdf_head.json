@@ -6,7 +6,7 @@
    "args": {
     "ops": [
      {
-      "op": "gen.sdf",
+      "op": "sdf.mesh",
       "args": {
        "name": "head",
        "detail": "4mm",

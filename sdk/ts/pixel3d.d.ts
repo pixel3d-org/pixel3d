@@ -1129,8 +1129,8 @@ export type GenScatterParams = {
   target: string;
 };
 
-/** `gen.sdf`: Builds an organic shape from named primitives blended in order (smooth unions, cuts) into a closed quad mesh. */
-export type GenSdfParams = {
+/** `sdf.mesh`: Builds an organic shape from named primitives blended in order (smooth unions, cuts) into a closed quad mesh. */
+export type SdfMeshParams = {
   /** Voxel size, about the edge length of the result: smaller is finer. The default fits about 64 voxels across the largest side. */
   detail?: Length | null;
   /** Object name; a free name such as `sdf_1` is picked when omitted. */
@@ -1141,6 +1141,26 @@ export type GenSdfParams = {
   position?: [Length, Length, Length] | null;
   /** The shapes in order: each joins the shapes before it. */
   shapes: SdfShape[];
+};
+
+/** `sdf.from_mesh`: Rebuilds a closed mesh from its distance field as even quads about `detail` apart (a voxel remesh). */
+export type SdfFromMeshParams = {
+  /** Voxel size, about the edge length of the result; about a sixtieth of the largest side when omitted. */
+  detail?: Length | null;
+  /** Mesh object (name, path or id); it must be closed. */
+  target: string;
+};
+
+/** `remesh.quad`: Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field. */
+export type RemeshQuadParams = {
+  /** Target edge length; about a fortieth of the largest side when omitted. */
+  edge?: Length | null;
+  /** Smoothing sweeps of the direction and position fields per level (more is smoother and slower). */
+  iterations?: number;
+  /** Relaxation sweeps onto the original surface. */
+  relax?: number;
+  /** Mesh object (name, path or id); it must be closed. */
+  target: string;
 };
 
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
@@ -1737,7 +1757,9 @@ export interface OpParams {
   "gen.array": GenArrayParams;
   "gen.mirror": GenMirrorParams;
   "gen.scatter": GenScatterParams;
-  "gen.sdf": GenSdfParams;
+  "sdf.mesh": SdfMeshParams;
+  "sdf.from_mesh": SdfFromMeshParams;
+  "remesh.quad": RemeshQuadParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;

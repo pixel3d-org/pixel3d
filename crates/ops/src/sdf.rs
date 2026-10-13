@@ -1,4 +1,4 @@
-//! `gen.sdf`: organic shapes from a list of named primitives blended in
+//! `sdf.mesh`: organic shapes from a list of named primitives blended in
 //! order (kernel in `p3d_sdf`). This is the agent's sculpting tool: every
 //! shape is a few numbers, every join a word, and every face remembers the
 //! shape it came from.
@@ -310,7 +310,7 @@ impl JsonSchema for SdfShapeParam {
     }
 }
 
-/// Parameters of `gen.sdf`.
+/// Parameters of `sdf.mesh`.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SdfParams {
@@ -445,17 +445,17 @@ fn sdf_error(e: SdfError) -> OpError {
     }
 }
 
-/// `gen.sdf`.
-pub struct GenSdf;
+/// `sdf.mesh`.
+pub struct SdfMesh;
 
-impl Op for GenSdf {
-    const ID: &'static str = "gen.sdf";
+impl Op for SdfMesh {
+    const ID: &'static str = "sdf.mesh";
     type Params = SdfParams;
 
     fn meta() -> OpMeta {
         OpMeta {
             label: "SDF shape",
-            category: Category::Gen,
+            category: Category::Sdf,
             summary: "Builds an organic shape from named primitives blended in order (smooth unions, cuts) into a closed quad mesh.",
             docs: "The sculpting tool for agents: write the shapes in order, each one primitive (`sphere`, `ellipsoid`, `box` with \
                    `corner` rounding, `capsule` with an optional `radius_b` taper, `cone`, `torus`, `cylinder`, or a `group` of shapes) \
@@ -543,4 +543,83 @@ impl Op for GenSdf {
 fn fmt_mm(m: f32) -> String {
     let mm = f64::from(m) * 1000.0;
     if mm >= 10.0 { format!("{mm:.0}") } else { format!("{mm:.2}").trim_end_matches('0').trim_end_matches('.').to_owned() }
+}
+
+// ---- sdf.from_mesh -------------------------------------------------------------------------
+
+/// Parameters of `sdf.from_mesh`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FromMeshParams {
+    /// Mesh object (name, path or id); it must be closed.
+    pub target: String,
+    /// Voxel size, about the edge length of the result; about a sixtieth of the largest side when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<Length>,
+}
+
+/// `sdf.from_mesh`.
+pub struct FromMesh;
+
+impl Op for FromMesh {
+    const ID: &'static str = "sdf.from_mesh";
+    type Params = FromMeshParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Voxel remesh",
+            category: Category::Sdf,
+            summary: "Rebuilds a closed mesh from its distance field as even quads about `detail` apart (a voxel remesh).",
+            docs: "Samples the mesh's signed distance (nearest triangle, inside by ray parity) on a narrow band of voxels and \
+                   meshes the surface with surface nets: even quads, one closed surface, overlapping parts fused, bad topology \
+                   and long thin faces gone. Details smaller than `detail` are lost and sharp edges round slightly; groups, UVs \
+                   and materials do not carry over.\n\n\
+                   **Use for** fusing overlapping blockout parts into one skin, repairing broken scans or imports, and evening \
+                   out a mesh before `remesh.quad`.",
+            examples: &[OpExample {
+                args: r#"{"target": "crate", "detail": "2cm"}"#,
+                result: "crate (o:1): voxel remeshed at 20 mm: 6,296 faces (was 6)",
+            }],
+            aliases: &["voxel remesh", "remesh voxel", "dynamesh", "fuse parts", "make watertight", "volume remesh"],
+            complexity: "O(v log n) for the v voxels near the surface over n triangles, parallel",
+            flags: OpFlags::UNDOABLE.union(OpFlags::LONG_RUNNING),
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &FromMeshParams) -> Result<(), OpError> {
+        crate::common::mesh_target(doc, &p.target)?;
+        if let Some(d) = p.detail {
+            check_length("/detail", d, MIN_DETAIL, MAX_DETAIL)?;
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &FromMeshParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let key = crate::common::mesh_target(tx.doc(), &p.target)?;
+        let old = tx.mesh(key, "/target")?;
+        let open = old.edges().filter(|&e| old.is_boundary_edge(e)).count();
+        if open > 0 {
+            return Err(OpError::new(ErrorCode::NonManifoldInput, format!("the mesh has {} open edges; it needs a closed surface", thousands(open)))
+                .at("/target")
+                .with_hint("close it with edit.fill or cleanup.auto first"));
+        }
+        let field = p3d_sdf::MeshField::new(old).ok_or_else(|| OpError::new(ErrorCode::EmptySelection, "the mesh has no faces").at("/target"))?;
+        let size = old.bounds().map_or(1.0, |(lo, hi)| (hi - lo).max_element());
+        let voxel = p.detail.map_or((size / 60.0).clamp(MIN_DETAIL as f32, MAX_DETAIL as f32), f);
+        ctx.check_cancel()?;
+        let r = mesh(&field, &MeshSpec { voxel }).map_err(sdf_error)?;
+        let before = old.face_count();
+        let faces = r.mesh.face_count();
+        *tx.mesh_mut(key, "/target")? = r.mesh;
+        let mut out = OpOutput::summary(format!(
+            "{}: voxel remeshed at {} mm: {} faces (was {})",
+            crate::common::label(tx.doc(), key),
+            fmt_mm(r.voxel),
+            thousands(faces),
+            thousands(before)
+        ));
+        out.changed.push(key);
+        Ok(out)
+    }
 }
