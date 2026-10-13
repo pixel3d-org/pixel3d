@@ -144,8 +144,16 @@ fn read_png(path: &std::path::Path) -> (Vec<u8>, u32, u32) {
     (buf, info.width, info.height)
 }
 
+/// Path of a golden (or of its `.new` render): `tests/golden/<os>/<name>.png`
+/// when that baseline exists, otherwise `tests/golden/<name>.png`. `<os>`
+/// is `std::env::consts::OS`; rasterizers differ in thin-line coverage (WARP
+/// on Windows), so a platform may carry its own baseline, taken from a CI
+/// artifact after checking it shows the same picture.
 fn golden_path(name: &str, suffix: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(format!("{name}{suffix}.png"))
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let os = dir.join(std::env::consts::OS);
+    let base = if os.join(format!("{name}.png")).exists() { os } else { dir };
+    base.join(format!("{name}{suffix}.png"))
 }
 
 /// Compares with a golden PNG ([`compare`], [`close_enough`]). A failing
@@ -211,4 +219,25 @@ fn golden_tolerance_forgives_shifts_only() {
     assert!(dark > 100, "{dark}");
     let (mean, off) = compare(&wire, &erased, w, h);
     assert!(!close_enough((mean, off), n), "mean {mean:.2}, {off} off");
+}
+
+/// Every platform baseline (`tests/golden/<os>/`) shows the same picture as
+/// the shared golden: rasterizer differences only, never a different render.
+#[test]
+fn platform_goldens_match_the_shared_ones() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    for os in ["windows", "linux", "macos"] {
+        let Ok(entries) = std::fs::read_dir(dir.join(os)) else { continue };
+        for e in entries.filter_map(Result::ok) {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if !name.ends_with(".png") || name.ends_with(".new.png") {
+                continue;
+            }
+            let (a, w, h) = read_png(&e.path());
+            let (b, w2, h2) = read_png(&dir.join(&name));
+            assert_eq!((w, h), (w2, h2), "{os}/{name}: size");
+            let (mean, off) = compare(&a, &b, w as usize, h as usize);
+            assert!(mean < 2.0, "{os}/{name}: mean difference {mean:.2} ({off} pixels off) is another picture");
+        }
+    }
 }
