@@ -30,4 +30,4 @@ Field-aligned quad remeshing (Instant Meshes, Jakob et al. 2015): a smooth direc
 {"edge":"8mm","target":"post"}
 ```
 
-Result: `post (o:3): remeshed into 5,196 quads (5,196 faces, edge 8 mm); poles 150 of valence 3, 142 of 5, 0 of 6, 0 of 7 or more`
+Result: `post (o:3): remeshed into 5,176 quads (5,176 faces, edge 8 mm); poles 163 of valence 3, 155 of 5, 0 of 6, 0 of 7 or more`

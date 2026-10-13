@@ -474,6 +474,8 @@ fn mesh_at<F: Field>(sdf: &F, h: f32) -> Result<SdfMesh, SdfError> {
         }
     };
     let mut mesh = mesh;
+    // Pinched cells can also place two vertices on one point.
+    separate_pinches(&mut mesh, h);
     let specks = drop_specks(&mut mesh, h);
     if mesh.face_count() == 0 {
         return Err(SdfError::Empty);
@@ -508,6 +510,35 @@ fn drop_specks(mesh: &mut Mesh, h: f32) -> usize {
         return 0;
     }
     vol.iter().filter(|&&v| v < limit).count()
+}
+
+/// Pulls apart vertices that pinched cells (or the repair's copies of a
+/// pinched vertex) put on one point: they sit an ulp apart, and the edges between them would read
+/// as degenerate (they break normals, UVs and bakes). Each copy moves a
+/// twentieth of a voxel toward the center of its own other neighbours.
+/// Returns how many vertices moved.
+///
+/// Complexity: O(E) plus the neighbours of the moved vertices.
+fn separate_pinches(mesh: &mut Mesh, h: f32) -> usize {
+    let tiny = (h * 1e-3).max(1e-6);
+    let short: Vec<u32> = mesh.edges().filter(|&e| mesh.edge_length(e) < tiny).collect();
+    let mut moves: Vec<(u32, Vec3)> = Vec::with_capacity(short.len() * 2);
+    for e in short {
+        let [a, b] = mesh.edge_verts(e);
+        for (v, other) in [(a, b), (b, a)] {
+            let p = mesh.positions[v as usize];
+            let (sum, n) =
+                mesh.vert_neighbors(v).filter(|&u| u != other).fold((Vec3::ZERO, 0u32), |(s, n), u| (s + mesh.positions[u as usize], n + 1));
+            if n > 0 {
+                let to = (sum / n as f32 - p).normalize_or_zero();
+                moves.push((v, p + to * h * 0.05));
+            }
+        }
+    }
+    for &(v, p) in &moves {
+        mesh.positions[v as usize] = p;
+    }
+    moves.len()
 }
 
 /// Most edges of a crack the mesher closes with a polygon.
@@ -576,6 +607,17 @@ mod tests {
                 a.dot(b.cross(c)) / 6.0
             })
             .sum()
+    }
+
+    #[test]
+    fn surfaces_touching_grid_planes_leave_no_tiny_edges() {
+        // Poles exactly on grid planes, where several cells' vertices meet.
+        for (r, h) in [(0.5f32, 0.05f32), (0.23, 0.0025), (0.3, 0.01)] {
+            let s = Sdf::new(vec![Item::prim(Prim::Sphere { radius: r }, Vec3::ZERO)]).unwrap();
+            let m = mesh(&s, &MeshSpec { voxel: h }).unwrap().mesh;
+            let shortest = m.edges().map(|e| m.edge_length(e)).fold(f32::INFINITY, f32::min);
+            assert!(shortest > (h * 1e-3).max(1e-6), "r {r} h {h}: shortest edge {shortest:e}");
+        }
     }
 
     #[test]

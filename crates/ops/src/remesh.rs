@@ -129,7 +129,7 @@ impl Op for QuadRemesh {
                    spec part with `humanoid_head` landmarks gets loops around its eyes and mouth by itself.",
             examples: &[OpExample {
                 args: r#"{"target": "post", "edge": "8mm"}"#,
-                result: "post (o:3): remeshed into 5,196 quads (5,196 faces, edge 8 mm); poles 150 of valence 3, 142 of 5, 0 of 6, 0 of 7 or more",
+                result: "post (o:3): remeshed into 5,176 quads (5,176 faces, edge 8 mm); poles 163 of valence 3, 155 of 5, 0 of 6, 0 of 7 or more",
             }],
             aliases: &["quad remesh", "quadriflow", "instant meshes", "retopology", "retopo", "zremesher", "autoretopo"],
             complexity: "O(S x iterations) for the S samples (about area / (edge / 1.25)^2), plus O(S log S) for the hierarchy",
