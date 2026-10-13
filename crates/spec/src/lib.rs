@@ -14,7 +14,7 @@ pub mod ops;
 pub mod patch;
 pub mod surface;
 
-pub use compile::{CompileReport, PartReport, PartStatus, compile, fingerprint};
+pub use compile::{CompileReport, LandmarkPoint, PartReport, PartStatus, compile, face_provenance, fingerprint, part_landmarks};
 pub use model::{ModelSpec, Part, parse};
 
 /// A problem in a spec, at a JSON pointer into it.

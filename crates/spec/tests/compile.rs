@@ -276,3 +276,22 @@ fn every_spec_example_produces_its_documented_result() {
         }
     }
 }
+
+#[test]
+fn landmarks_and_provenance_can_be_queried() {
+    let mut tx = Tx::new(Document::new());
+    ok(&mut tx, "spec.set", json!({ "name": "elf_head", "spec": elf_head(), "position": [1, 0, 0] }));
+    let root = key(&tx, "elf_head");
+    let marks = p3d_spec::part_landmarks(tx.doc(), root, "head").unwrap();
+    let names: Vec<&str> = marks.iter().map(|m| m.name.as_str()).collect();
+    for n in ["center", "top", "crown", "ear_root_l", "cranium", "jaw"] {
+        assert!(names.contains(&n), "{n} in {names:?}");
+    }
+    let crown = marks.iter().find(|m| m.name == "crown").unwrap();
+    assert!(crown.point.x > 0.99 && crown.point.y > 0.2 && crown.normal.y > 0.9, "world space: {crown:?}");
+    let head = key(&tx, "elf_head/head");
+    let mesh = tx.doc().object_mesh(head).unwrap();
+    let ear_face = mesh.group("ear_l.lobe").unwrap().iter().next().unwrap();
+    let (part, entry) = p3d_spec::face_provenance(tx.doc(), head, ear_face).unwrap();
+    assert_eq!((part.as_str(), entry.path.as_str()), ("head", "/parts/ear_l/sdf/0"));
+}

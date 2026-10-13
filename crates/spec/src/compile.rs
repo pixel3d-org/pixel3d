@@ -816,19 +816,11 @@ fn leaf_groups(shapes: &[SdfShapeParam], path: &str, prefix: &str, leaf: &mut us
     }
 }
 
-/// Compiles the spec on `root` into part objects under it, reusing parts
-/// whose content hash is unchanged (`force` rebuilds all).
+/// Blend children by the part they blend into, following mirror chains
+/// (a mirror joins like its source); checks every join.
 ///
-/// Complexity: the parts' own build costs for changed parts, plus O(V + C)
-/// per part for fingerprints and O(parts log parts) bookkeeping.
-pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result<CompileReport, OpError> {
-    let record: SpecRecord =
-        tx.doc().spec(root).cloned().ok_or_else(|| OpError::new(ErrorCode::InvalidParam, "the object has no spec").at("/target"))?;
-    let spec = parse(&record.source).map_err(spec_err)?;
-    let registry: &Registry = match ctx.registry {
-        Some(r) => r,
-        None => fallback(),
-    };
+/// Complexity: O(parts x mirror chain length).
+fn blend_targets(spec: &ModelSpec) -> Result<BTreeMap<String, Vec<String>>, OpError> {
     let mut blends: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (name, part) in &spec.parts {
         let path = format!("/parts/{name}");
@@ -868,6 +860,23 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
             Join::Separate | Join::Decal => {}
         }
     }
+    Ok(blends)
+}
+
+/// Compiles the spec on `root` into part objects under it, reusing parts
+/// whose content hash is unchanged (`force` rebuilds all).
+///
+/// Complexity: the parts' own build costs for changed parts, plus O(V + C)
+/// per part for fingerprints and O(parts log parts) bookkeeping.
+pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result<CompileReport, OpError> {
+    let record: SpecRecord =
+        tx.doc().spec(root).cloned().ok_or_else(|| OpError::new(ErrorCode::InvalidParam, "the object has no spec").at("/target"))?;
+    let spec = parse(&record.source).map_err(spec_err)?;
+    let registry: &Registry = match ctx.registry {
+        Some(r) => r,
+        None => fallback(),
+    };
+    let blends = blend_targets(&spec)?;
     let report = {
         let doc = tx.doc();
         let mut c = Compiler {
@@ -1062,4 +1071,90 @@ fn apply(tx: &mut Tx, root: ObjectKey, spec: &ModelSpec, record: &SpecRecord, pl
     report.parts.sort_by(|a, b| a.name.cmp(&b.name));
     tx.doc_mut().set_spec(root, Some(SpecRecord { source: record.source.clone(), parts })).map_err(internal)?;
     Ok(report)
+}
+
+/// A read-only compiler over an already compiled spec: every part is a
+/// cache hit, so queries need no rebuild.
+fn query<'a>(doc: &'a Document, root: ObjectKey, spec: &'a ModelSpec, record: &'a SpecRecord) -> Result<Compiler<'a>, OpError> {
+    Ok(Compiler {
+        spec,
+        old: &record.parts,
+        doc,
+        root,
+        registry: fallback(),
+        cancel: None,
+        force: false,
+        blends: blend_targets(spec)?,
+        trs: BTreeMap::new(),
+        items: BTreeMap::new(),
+        surfaces: BTreeMap::new(),
+        built: BTreeMap::new(),
+        active: Vec::new(),
+        warnings: Vec::new(),
+    })
+}
+
+/// A landmark of a part: its name, and its point and normal in world space.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LandmarkPoint {
+    pub name: String,
+    pub point: Vec3,
+    pub normal: Vec3,
+}
+
+/// Every landmark of a part of the spec on `root`: `center`, the generic
+/// extremes, its category's, its own named ones and its named SDF shapes,
+/// in world space. Landmarks that miss the surface are left out.
+///
+/// Complexity: one surface query per landmark, plus the part's surface
+/// (a BVH build for mesh parts).
+pub fn part_landmarks(doc: &Document, root: ObjectKey, part: &str) -> Result<Vec<LandmarkPoint>, OpError> {
+    let record = doc.spec(root).ok_or_else(|| OpError::new(ErrorCode::InvalidParam, "the object has no spec").at("/target"))?;
+    let spec = parse(&record.source).map_err(spec_err)?;
+    let mut c = query(doc, root, &spec, record)?;
+    let p = c.part(part, &format!("/parts/{part}"))?;
+    let mut names: Vec<String> = vec!["center".into()];
+    names.extend(landmarks::GENERIC.iter().map(|(n, _)| (*n).to_owned()));
+    if let Some(t) = c.category_of(p).as_deref().and_then(landmarks::category) {
+        names.extend(t.iter().map(|(n, _)| (*n).to_owned()));
+    }
+    if let Some(Landmarks::Named(map)) = &p.landmarks {
+        names.extend(map.keys().cloned());
+    }
+    if let Some(source) = c.sdf_source(part) {
+        let mut groups = Vec::new();
+        leaf_groups(spec.parts[source].sdf.as_deref().unwrap_or(&[]), "", "", &mut 0, &mut groups);
+        names.extend(groups.into_iter().map(|(g, _)| g).filter(|g| !g.starts_with("shape_")));
+    }
+    let mut seen = BTreeSet::new();
+    names.retain(|n| seen.insert(n.clone()));
+    let world = doc.world_affine(root).unwrap_or(Affine3A::IDENTITY);
+    let mut out = Vec::with_capacity(names.len());
+    for name in names {
+        if let Ok(h) = c.landmark(part, &name, "", 0) {
+            out.push(LandmarkPoint {
+                name,
+                point: world.transform_point3(h.point),
+                normal: world.transform_vector3(h.normal).normalize_or(h.normal),
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// The spec node that made a face of a compiled part object: the part's
+/// name and the provenance entry, or none for objects outside specs and
+/// meshes edited since their compile.
+///
+/// Complexity: O(faces) to find the face's position, plus O(runs).
+pub fn face_provenance(doc: &Document, object: ObjectKey, face: u32) -> Option<(String, ProvEntry)> {
+    let o = doc.object(object)?;
+    let record = doc.spec(o.parent()?)?;
+    let part = record.parts.get(o.name())?;
+    let mesh = doc.object_mesh(object)?;
+    if part.provenance.face_count() != mesh.face_count() {
+        return None;
+    }
+    let i = mesh.faces().position(|f| f == face)?;
+    part.provenance.entry_of(i).map(|e| (o.name().to_owned(), e.clone()))
 }
