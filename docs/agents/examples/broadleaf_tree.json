@@ -1,0 +1,35 @@
+{
+ "prompt": "A mature broadleaf tree for a realistic open-world game: about 12 m tall, the crown as wide as the tree is tall, the first fork at about 37%, 3 to 5 scaffold limbs, buttress roots, leaf cluster cards, about 10k triangles",
+ "calls": [
+  {
+   "tool": "spec",
+   "args": {
+    "action": "set",
+    "target": "oak",
+    "spec": {
+     "dna": { "vegetation": "broadleaf" },
+     "parts": {
+      "tree": { "feature": "tree", "params": { "species": "broadleaf", "height": "12m", "crown": "dome", "seed": 3 } }
+     }
+    }
+   }
+  },
+  {
+   "tool": "perceive",
+   "args": { "target": "oak", "aspect": "vegetation" }
+  },
+  {
+   "tool": "run",
+   "args": {
+    "ops": [
+     { "op": "expect.add", "args": { "name": "crown", "expect": { "vegetation": { "target": "oak", "crown_width": { "min": "10.5m", "max": "14m" }, "crown_height": { "min": "7m", "max": "10m" }, "coverage": { "min": 0.83 }, "max_overdraw": 3.5 } } } },
+     { "op": "expect.add", "args": { "name": "lod0", "expect": { "budget": { "target": "oak", "max_tris": 11000 } } } }
+    ]
+   }
+  },
+  {
+   "tool": "perceive",
+   "args": { "target": "oak", "aspect": "dna" }
+  }
+ ]
+}
