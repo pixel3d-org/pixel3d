@@ -48,6 +48,8 @@ pub struct ViewSettings {
     pub xray_alpha: f32,
     /// Marks poles (vertices of valence 3, 5, 6 or more) on the selected meshes.
     pub poles: bool,
+    /// Labelled landmark points of the selected spec part (with normal ticks).
+    pub landmarks: bool,
 }
 
 impl Default for ViewSettings {
@@ -63,6 +65,7 @@ impl Default for ViewSettings {
             xray: false,
             xray_alpha: 0.5,
             poles: false,
+            landmarks: false,
         }
     }
 }
@@ -347,6 +350,15 @@ impl ViewportState {
     /// Complexity: O(parts x log F) per call, plus O(F log F) for each mesh
     /// hit-tested for the first time.
     pub fn surface_at(&mut self, at: egui::Pos2) -> Option<Vec3> {
+        self.hit_at(at).map(|h| h.2)
+    }
+
+    /// The object, mesh face and world point of the nearest surface under
+    /// `at` (points).
+    ///
+    /// Complexity: O(parts x log F) per call, plus O(F log F) for each mesh
+    /// hit-tested for the first time.
+    pub fn hit_at(&mut self, at: egui::Pos2) -> Option<(ObjectKey, u32, Vec3)> {
         let (view, models) = {
             let c = self.cache.as_ref()?;
             (Arc::clone(&c.view), Arc::clone(&c.models))
@@ -355,7 +367,7 @@ impl ViewportState {
         self.bvhs.retain(|k, _| live.contains(k));
         let r = self.rect;
         let (o, d) = self.camera.ray(at.x - r.left(), at.y - r.top(), r.width(), r.height());
-        let mut best: Option<(f32, Vec3)> = None;
+        let mut best: Option<(f32, ObjectKey, u32, Vec3)> = None;
         for (i, (part, mesh)) in view.parts.iter().zip(&view.meshes).enumerate() {
             let Some(model) = models.get(i).copied() else { continue };
             let (lo, hi) = p3d_render::world_bounds(part, model);
@@ -372,11 +384,11 @@ impl ViewportState {
                 let p = model.transform_point3(lo + ld * h.t);
                 let dist = (p - o).length();
                 if best.is_none_or(|b| dist < b.0) {
-                    best = Some((dist, p));
+                    best = Some((dist, part.object, h.face, p));
                 }
             }
         }
-        best.map(|b| b.1)
+        best.map(|b| (b.1, b.2, b.3))
     }
 
     /// Where the ray under `at` meets the ground plane, else the depth of the

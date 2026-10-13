@@ -30,6 +30,8 @@ pub enum Tab {
     Mesh,
     /// The shapes of an SDF object (its editor).
     Shapes,
+    /// The Model Spec of a spec root or part object (its editor).
+    Spec,
 }
 
 impl Tab {
@@ -40,6 +42,7 @@ impl Tab {
             Tab::Object => Icon::ModeObject,
             Tab::Mesh => Icon::Mesh,
             Tab::Shapes => Icon::Shapes,
+            Tab::Spec => Icon::Spec,
         }
     }
 
@@ -50,6 +53,7 @@ impl Tab {
             Tab::Object => t("Object"),
             Tab::Mesh => t("Mesh data"),
             Tab::Shapes => t("Shapes (SDF)"),
+            Tab::Spec => t("Model Spec"),
         }
     }
 }
@@ -69,12 +73,13 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
     let strip = Rect::from_min_size(full.min, vec2(TAB_STRIP, full.height()));
     let active = app.active_object();
     let has_mesh = active.is_some_and(|k| app.doc().object_mesh(k).is_some());
-    let tabs: Vec<Tab> = [Tab::Tool, Tab::Scene, Tab::Object, Tab::Mesh, Tab::Shapes]
+    let tabs: Vec<Tab> = [Tab::Tool, Tab::Scene, Tab::Object, Tab::Mesh, Tab::Shapes, Tab::Spec]
         .into_iter()
         .filter(|t| match t {
             Tab::Object => active.is_some(),
             Tab::Mesh => has_mesh,
-            Tab::Shapes => app.sdf.object.is_some() && app.sdf.object == active,
+            Tab::Shapes => app.sdf.object.is_some() && app.sdf.object == active && app.sdf.part.is_none(),
+            Tab::Spec => app.spec.is_open(),
             _ => true,
         })
         .collect();
@@ -100,6 +105,7 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
                 (Tab::Object, Some(k)) => object_tab(app, ui, k),
                 (Tab::Mesh, Some(k)) => mesh_tab(app, ui, k),
                 (Tab::Shapes, Some(_)) => crate::sdf::panel::show(app, ui),
+                (Tab::Spec, Some(_)) => crate::spec::panel::show(app, ui),
                 _ => scene_tab(app, ui),
             }
         });

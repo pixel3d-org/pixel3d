@@ -108,8 +108,12 @@ struct Preview {
 /// The editor between frames.
 #[derive(Default)]
 pub struct SdfEditor {
-    /// The SDF object being edited (the active object).
+    /// The SDF object being edited (the active object), or the object of
+    /// the spec part being edited (none for a blended part).
     pub object: Option<ObjectKey>,
+    /// The spec root and SDF part being edited, when the shapes come from a
+    /// Model Spec: edits then go through `spec.patch`.
+    pub part: Option<(ObjectKey, String)>,
     /// The revision the shapes match (read from the history, or committed).
     revision: u64,
     /// The shapes as edited (the op's JSON).
@@ -183,9 +187,29 @@ impl SdfEditor {
         self.error = None;
     }
 
+    /// Whether the editor is open (on an SDF object or on a spec's SDF part).
+    pub fn is_open(&self) -> bool {
+        self.object.is_some() || self.part.is_some()
+    }
+
     fn load(&mut self, k: ObjectKey, revision: u64, src: Source) {
-        let keep = self.object == Some(k);
+        let keep = self.object == Some(k) && self.part.is_none();
+        self.part = None;
         self.object = Some(k);
+        self.fill(revision, src, keep);
+    }
+
+    /// Opens the editor on the SDF part `part` of the spec on `root`;
+    /// `object` is the part's object (none for a part blended into its
+    /// parent: no proxies or gizmo then).
+    fn load_part(&mut self, root: ObjectKey, part: &str, object: Option<ObjectKey>, revision: u64, src: Source) {
+        let keep = self.part.as_ref().is_some_and(|(r, p)| *r == root && p == part);
+        self.part = Some((root, part.to_owned()));
+        self.object = object;
+        self.fill(revision, src, keep);
+    }
+
+    fn fill(&mut self, revision: u64, src: Source, keep: bool) {
         self.revision = revision;
         self.shapes = src.shapes;
         self.detail = src.detail;
@@ -198,6 +222,28 @@ impl SdfEditor {
         }
         self.hovered = None;
     }
+
+    fn close(&mut self) {
+        self.object = None;
+        self.part = None;
+        self.selected = None;
+        self.hovered = None;
+        self.live = false;
+        self.drag_start = None;
+    }
+}
+
+/// The shapes and detail of an SDF part of the spec on `root`, with
+/// lengths in meters (the source may say `"2cm"`), or `None` when the part
+/// is not an SDF part.
+///
+/// Complexity: O(shapes of the part).
+pub fn spec_part_source(doc: &Document, root: ObjectKey, part: &str) -> Option<Source> {
+    let p = doc.spec(root)?.source.get("parts")?.get(part)?;
+    let shapes =
+        p.get("sdf")?.as_array()?.iter().map(|s| proxy::parse(s).and_then(|t| serde_json::to_value(t).ok()).unwrap_or_else(|| s.clone())).collect();
+    let detail = p.get("detail").and_then(|d| serde_json::from_value::<p3d_ops::params::Length>(d.clone()).ok()).map(|l| l.0);
+    Some(Source { shapes, detail, later: Vec::new() })
 }
 
 /// How a change of the shapes is applied.
@@ -212,6 +258,13 @@ impl PixelApp {
     /// The op call that rebuilds the edited object from the editor's shapes
     /// at `detail` (the set detail when `None`).
     fn sdf_call(&self, detail: Option<f64>) -> Option<OpCall> {
+        // A spec's SDF part: a merge patch of its shapes and detail.
+        if let Some((root, part)) = &self.sdf.part {
+            let id = self.doc().object(*root)?.public_id();
+            let d = detail.or(self.sdf.detail).map_or(Value::Null, |d| json!(d));
+            let merge = json!({ "parts": { part.as_str(): { "sdf": self.sdf.shapes, "detail": d } } });
+            return Some(OpCall::new("spec.patch", json!({ "target": id, "merge": merge })));
+        }
         let k = self.sdf.object?;
         let id = self.doc().object(k)?.public_id();
         let mut p = json!({ "target": id, "shapes": self.sdf.shapes });
@@ -343,7 +396,23 @@ impl PixelApp {
     /// Complexity: O(history length) when something changed.
     pub(crate) fn sdf_follow(&mut self) {
         let doc = Arc::clone(self.session.doc());
-        let active = self.active_object();
+        let idle = !self.sdf.live && self.sdf.commit.is_none() && self.sdf.queued.is_none();
+        // The Spec tab's selected part, when it is an SDF part.
+        if let Some((root, part)) = self.spec_sdf_part()
+            && let Some(s) = spec_part_source(&doc, root, &part)
+        {
+            let same = self.sdf.part.as_ref().is_some_and(|(r, p)| *r == root && *p == part);
+            if !same || (idle && doc.revision != self.sdf.revision) {
+                let object = crate::spec::part_object(&doc, root, &part);
+                self.sdf.load_part(root, &part, object, doc.revision, s);
+            }
+            return;
+        }
+        if self.sdf.part.is_some() {
+            self.sdf.close();
+        }
+        // Spec part objects are edited through their spec, never directly.
+        let active = self.active_object().filter(|k| crate::spec::spec_of(&doc, *k).is_none());
         let src = active.and_then(|k| source_of(&doc, k).map(|s| (k, s)));
         match src {
             Some((k, s)) if self.sdf.object != Some(k) => {
@@ -351,20 +420,25 @@ impl PixelApp {
                 self.ui.inspector_tab = inspector::Tab::Shapes;
             }
             Some((k, s)) => {
-                let idle = !self.sdf.live && self.sdf.commit.is_none() && self.sdf.queued.is_none();
                 if idle && doc.revision != self.sdf.revision {
                     self.sdf.load(k, doc.revision, s);
                 }
             }
             None => {
-                if self.sdf.object.take().is_some() {
-                    self.sdf.selected = None;
-                    self.sdf.hovered = None;
-                    self.sdf.live = false;
-                    self.sdf.drag_start = None;
+                if self.sdf.object.is_some() {
+                    self.sdf.close();
                 }
             }
         }
+    }
+
+    /// The object the editor's proxies and gizmo work on, while it is shown:
+    /// the edited object when it is active, or a spec part's object while
+    /// its root or itself is active.
+    pub fn sdf_shown_object(&self) -> Option<ObjectKey> {
+        let k = self.sdf.object?;
+        let active = self.active_object()?;
+        (active == k || self.sdf.part.as_ref().is_some_and(|(root, _)| *root == active)).then_some(k)
     }
 
     /// The selected shape's frame for the gizmo: its center and rotation in
@@ -375,7 +449,7 @@ impl PixelApp {
         if self.ui.mode.is_edit() {
             return None;
         }
-        let k = self.sdf.object.filter(|k| Some(*k) == self.active_object())?;
+        let k = self.sdf_shown_object()?;
         let path = self.sdf.selected.as_ref()?;
         let (c, r) = proxy::frame_of(&self.sdf.shapes, path)?;
         let world = Mat4::from(self.doc().world_affine(k)?);
@@ -447,7 +521,9 @@ impl PixelApp {
 
     /// Runs a `shapes.*` command (the panel's buttons, for agents and tests).
     pub(crate) fn sdf_command(&mut self, id: &str, params: &Value) -> Result<Value, String> {
-        self.sdf.object.ok_or(t("select an SDF object first"))?;
+        if !self.sdf.is_open() {
+            return Err(t("select an SDF object first").to_owned());
+        }
         let path_param = |key: &str| params.get(key).and_then(|v| serde_json::from_value::<Path>(v.clone()).ok());
         let selected = path_param("path").or_else(|| self.sdf.selected.clone());
         let mut list = self.sdf.shapes.clone();
@@ -561,7 +637,8 @@ impl PixelApp {
         let doc = self.doc();
         json!({
             "object": self.sdf.object.and_then(|k| doc.object(k)).map(|o| o.public_id()),
-            "shapes": self.sdf.object.map(|_| shapes::flatten(&self.sdf.shapes).into_iter().map(|(p, _)| json!({ "path": p, "label": shapes::label(&self.sdf.shapes, &p) })).collect::<Vec<_>>()),
+            "part": self.sdf.part.as_ref().map(|(_, p)| p.clone()),
+            "shapes": self.sdf.is_open().then(|| shapes::flatten(&self.sdf.shapes).into_iter().map(|(p, _)| json!({ "path": p, "label": shapes::label(&self.sdf.shapes, &p) })).collect::<Vec<_>>()),
             "selected": self.sdf.selected,
             "selectedShape": self.sdf.selected.as_ref().and_then(|p| shapes::get(&self.sdf.shapes, p)),
             "previewing": self.sdf.preview.doc.is_some(),
@@ -580,7 +657,7 @@ pub fn overlay(app: &mut PixelApp, ui: &egui::Ui, events: &mut Vec<ViewportEvent
     if app.ui.mode.is_edit() || !rect.is_positive() {
         return;
     }
-    let Some(k) = app.sdf.object.filter(|k| Some(*k) == app.active_object()) else { return };
+    let Some(k) = app.sdf_shown_object() else { return };
     let Some(world) = app.doc().world_affine(k).map(Mat4::from) else { return };
     let proxies = app.sdf.proxies();
     let vp = app.viewport.camera.view_proj(rect.width() / rect.height().max(1.0));

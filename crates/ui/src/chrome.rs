@@ -737,6 +737,10 @@ pub fn status_bar(app: &mut PixelApp, ui: &mut egui::Ui) {
         text(&p, &mut x, app.ui.mode.label(), tk.text);
         let sel = app.selection.len();
         text(&p, &mut x, &format!("{sel} {}", t("selected")), tk.text_dim);
+        // The spec node that made the face under the pointer.
+        if let Some(prov) = app.spec.hover_text() {
+            text(&p, &mut x, &prov, tk.text_dim);
+        }
         // Right side, laid out from the right edge.
         let mut rx = r.right() - 6.0;
         let br = Rect::from_min_size(pos2(rx - 20.0, y - 10.0), vec2(20.0, 20.0));

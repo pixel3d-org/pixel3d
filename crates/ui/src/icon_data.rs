@@ -280,3 +280,11 @@ pub const BLOBS: &[&str] = &["M9 14m-5 0a5 5 0 1 0 10 0a5 5 0 1 0 -10 0", "M15.5
 /// A vertex where five edges meet: a pole.
 pub const POLES: &[&str] =
     &["M12 12l0 -8", "M12 12l7.6 -2.5", "M12 12l4.7 6.5", "M12 12l-4.7 6.5", "M12 12l-7.6 -2.5", "M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"];
+
+/// A page with code braces: a Model Spec's source.
+pub const SPEC: &[&str] =
+    &["M14 3v4a1 1 0 0 0 1 1h4", "M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z", "M10 13l-1 2l1 2", "M14 13l1 2l-1 2"];
+
+/// A map pin: a landmark on a surface.
+pub const MAP_PIN: &[&str] =
+    &["M9 11a3 3 0 1 0 6 0a3 3 0 0 0 -6 0", "M17.657 16.657l-4.243 4.243a2 2 0 0 1 -2.827 0l-4.244 -4.243a8 8 0 1 1 11.314 0z"];

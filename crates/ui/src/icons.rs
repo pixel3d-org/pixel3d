@@ -136,6 +136,8 @@ icons! {
     Report => d::REPORT, false;
     Shapes => d::BLOBS, false;
     Poles => d::POLES, false;
+    Spec => d::SPEC, false;
+    Landmark => d::MAP_PIN, false;
 }
 
 /// The flattened outlines of an icon, parsed on first use.
