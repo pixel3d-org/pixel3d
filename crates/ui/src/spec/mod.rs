@@ -123,10 +123,10 @@ pub fn parts_of(doc: &Document, root: ObjectKey) -> Vec<PartInfo> {
                 Join::Weld => "weld",
                 Join::Decal => "decal",
             };
-            // A blended part merges into its parent, or further up when the
-            // parent is blended too (blended parts have no object).
+            // A blended or welded part merges into its parent, or further up
+            // when the parent merged too (such parts have no object).
             let mut blend_into = None;
-            if join == "blend" {
+            if matches!(join, "blend" | "weld") {
                 let mut at = on;
                 for _ in 0..bound {
                     let Some(n) = at else { break };
@@ -605,7 +605,9 @@ impl PixelApp {
         let prefix = format!("{name}.");
         let mut faces = std::collections::BTreeSet::new();
         for (g, group) in mesh.groups() {
-            if g.starts_with(&prefix) && group.kind() == p3d_mesh::ElementKind::Face {
+            // Blended parts' groups are `<part>.<shape>`; a welded part's
+            // faces are the group `<part>` too.
+            if (g == name || g.starts_with(&prefix)) && group.kind() == p3d_mesh::ElementKind::Face {
                 faces.extend(group.iter());
             }
         }

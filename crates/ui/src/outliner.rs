@@ -414,6 +414,7 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
             // A spec part's kind and join, after the name.
             let part_text = part_info.map(|p| match (p.join, blend.and(p.on.as_deref())) {
                 ("blend", Some(on)) => format!("{}, {} {on}", p.kind, t("blended into")),
+                ("weld", Some(on)) => format!("{}, {} {on}", p.kind, t("welded into")),
                 (join, _) => format!("{}, {}", p.kind, t(join)),
             });
             let label = match (row.node, obj, blend) {

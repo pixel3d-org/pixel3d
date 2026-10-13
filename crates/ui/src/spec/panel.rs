@@ -232,6 +232,7 @@ fn part_row(ui: &mut egui::Ui, p: &PartInfo, icon: Icon, selected: bool, depth: 
     crate::control::record_widget(ui, &resp, &p.name, "treeitem", Some(selected));
     let tip = match (p.join, p.on.as_deref()) {
         ("blend", Some(on)) => format!("{}, {} {on}", p.kind, t("blended into")),
+        ("weld", Some(on)) => format!("{}, {} {on}", p.kind, t("welded into")),
         (_, Some(on)) => format!("{}, {} {on}", p.kind, t("on")),
         _ => p.kind.clone(),
     };
@@ -398,6 +399,7 @@ fn join_fields(ui: &mut egui::Ui, src: &Value, root: &Value, out: &mut Out) {
         "join": { "oneOf": [
             { "const": "separate", "description": t("Its own mesh object") },
             { "const": "blend", "description": t("Merged into the parent's surface with a fillet (SDF parts)") },
+            { "const": "weld", "description": t("Unioned into the parent's mesh with a crisp seam (no object of its own)") },
             { "const": "decal", "description": t("Texture-only detail baked onto the parent later") }],
             "description": t("How the part joins the part it sits on") },
     });
@@ -417,7 +419,7 @@ fn join_fields(ui: &mut egui::Ui, src: &Value, root: &Value, out: &mut Out) {
                 fields["join"] = Value::Null;
                 fields["blend"] = Value::Null;
             }
-            Some("decal") => fields["blend"] = Value::Null,
+            Some("decal" | "weld") => fields["blend"] = Value::Null,
             _ => {}
         }
         out.patch = Some((fields, t("Join").to_owned(), o.dragging));
