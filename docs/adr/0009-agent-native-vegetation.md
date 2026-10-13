@@ -60,6 +60,20 @@ What makes cards look good becomes named parameters the agent sets, instead of h
 - **Density and coverage:** a coverage target for the crown silhouette (for example 85%) with gaps allowed where the hull says so, instead of a card count.
 - **Overdraw:** cards are clipped to their atlas alpha (trimmed card shapes, not plain quads), and an overdraw estimate is reported and budgeted.
 
+**Reference profile for the `broadleaf` preset.** Taken from a realistic mature broadleaf the user chose as the target. Each line is a default the agent can change and a check it can read back:
+
+- **Proportions:** the crown is about as wide as the tree is tall (width / height 0.9 to 1.1). The crown starts at about 35% of the height and is dome shaped, with the lower edge open and drooping.
+- **Trunk:** a single trunk to the first fork at 35 to 40% of the height. The diameter at 1.3 m is about 7% of the height. The base flares into 6 to 8 buttress roots spreading to about 1.5 times the trunk diameter, blended into the trunk, not stuck on.
+- **Limbs:**
+  - 3 to 5 scaffold limbs from the fork, 30 to 60 degrees from vertical, each splitting two or three more levels, tapering by about 0.7 per split;
+  - some limbs curve and the main ones twist slightly;
+  - branches stay visible through gaps in the lower and middle crown.
+- **Foliage:**
+  - leaf-cluster cards of about 0.4 to 0.8 m, densest at the outer shell of the crown;
+  - coverage about 85 to 90% of the silhouette, with gaps;
+  - a crown gradient (lighter, warmer leaves on the sunlit outside, darker inside), and per-card hue and brightness variation so no repetition shows.
+- **Budget:** about 10k triangles at LOD0, most of them in cards. The bark detail (ridges, moss) lives in the bark texture and normal map, not in geometry.
+
 Each style gets a reference session and checks in its phase:
 
 - triangle budget per LOD;
