@@ -456,6 +456,18 @@ export type SceneSeparateParams = {
   target: string;
 };
 
+/** `io.import`: Reads a glTF, GLB, OBJ or FBX file into the scene, in meters with +Y up, repairing its meshes. */
+export type IoImportParams = {
+  /** Name of the object that holds the file's contents. Default: the file's single top object keeps its name; several get a parent named after the file. */
+  name?: string | null;
+  /** Parent object for the import. */
+  parent?: string | null;
+  /** File to read: `.glb`, `.gltf`, `.fbx` or `.obj`, inside the allowed folders. Relative paths start in the project folder. */
+  path: string;
+  /** Vertices closer than this weld while repairing the meshes; 0 (default) welds identical positions only. */
+  weld?: Length;
+};
+
 /** `prim.box`: Creates a box with optional rounded or chamfered edges and groups top, bottom, front, back, left, right. */
 export type PrimBoxParams = {
   /** Rarely needed settings. */
@@ -1572,6 +1584,7 @@ export interface OpParams {
   "scene.set_metadata": SceneSetMetadataParams;
   "scene.join": SceneJoinParams;
   "scene.separate": SceneSeparateParams;
+  "io.import": IoImportParams;
   "prim.box": PrimBoxParams;
   "prim.cylinder": PrimCylinderParams;
   "prim.cone": PrimConeParams;

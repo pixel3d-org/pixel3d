@@ -84,10 +84,33 @@ fn edit_fixture() -> Tx {
     tx
 }
 
+/// A crate of two materials as OBJ text.
+const CRATE_OBJ: &str = "o crate\nv -0.3 0 -0.3\nv 0.3 0 -0.3\nv 0.3 0 0.3\nv -0.3 0 0.3\nv -0.3 0.6 -0.3\nv 0.3 0.6 -0.3\nv 0.3 0.6 0.3\nv -0.3 0.6 0.3\n\
+    usemtl wood\nf 1 2 3 4\nf 5 8 7 6\nf 1 5 6 2\nf 2 6 7 3\n\
+    usemtl metal\nf 3 7 8 4\nf 4 8 5 1\n";
+
+/// A fresh folder holding `props/crate.obj`, `props/open.obj` (the crate
+/// without its top) and `outside.obj` next to it but outside; file access
+/// is limited to the folder.
+fn io_folder() -> (std::path::PathBuf, p3d_ops::FileAccess) {
+    static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let base = std::env::temp_dir().join(format!("p3d-ops-io-{}-{n}", std::process::id()));
+    let dir = base.join("project");
+    let _ = std::fs::remove_dir_all(&base);
+    std::fs::create_dir_all(dir.join("props")).unwrap();
+    std::fs::write(dir.join("props/crate.obj"), CRATE_OBJ).unwrap();
+    std::fs::write(dir.join("props/open.obj"), CRATE_OBJ.replace("f 5 8 7 6\n", "")).unwrap();
+    std::fs::write(base.join("outside.obj"), CRATE_OBJ).unwrap();
+    let files = p3d_ops::FileAccess::new([dir.clone()]).unwrap();
+    (dir, files)
+}
+
 #[test]
 fn every_example_produces_its_documented_result() {
     let r = Registry::builtin();
     let mut failures = Vec::new();
+    let (_dir, files) = io_folder();
     for op in r.iter() {
         for ex in op.meta().examples {
             let args: Value = serde_json::from_str(ex.args).unwrap();
@@ -97,9 +120,10 @@ fn every_example_produces_its_documented_result() {
                 Category::Expect => expect_fixture(),
                 Category::Curve => curve_fixture(),
                 Category::Gen => curve_fixture(),
+                Category::Io => Tx::new(Document::new()),
                 _ => fixture(),
             };
-            match op.run(&mut tx, &args, &OpCtx::default()) {
+            match op.run(&mut tx, &args, &OpCtx { files: Some(&files), ..OpCtx::default() }) {
                 Ok(a) if a.output.summary == ex.result => {}
                 Ok(a) => failures.push(format!("{}: expected `{}`\n      got `{}`", op.id(), ex.result, a.output.summary)),
                 Err(e) => failures.push(format!("{}: {e}", op.id())),
@@ -1037,4 +1061,53 @@ fn edit_boolean_errors_are_precise() {
     assert!(e.message.contains("4 open edges"), "{}", e.message);
     let e = err(&mut tx, "edit.boolean", json!({ "target": "crate", "tool": "hinge" }));
     assert_eq!(e.path.as_deref(), Some("/tool"));
+}
+
+fn import(tx: &mut Tx, files: Option<&p3d_ops::FileAccess>, args: Value) -> Result<Applied, OpError> {
+    let r = Registry::builtin();
+    let applied = r.get("io.import")?.run(tx, &args, &OpCtx { files, ..OpCtx::default() })?;
+    tx.doc().check().map_err(OpError::internal)?;
+    Ok(applied)
+}
+
+#[test]
+fn io_import_reads_inside_the_allowed_folder() {
+    let (dir, files) = io_folder();
+    let mut tx = fixture();
+    let a = import(&mut tx, Some(&files), json!({ "path": "props/crate.obj", "parent": "post" })).unwrap();
+    // A second import of the same file gets a free name.
+    let b = import(&mut tx, Some(&files), json!({ "path": dir.join("props/crate.obj").display().to_string(), "name": "spare" })).unwrap();
+    assert!(a.output.summary.contains("into post/crate (o:5)"), "{}", a.output.summary);
+    assert!(b.output.summary.contains("into spare (o:6)"), "{}", b.output.summary);
+    let k = tx.resolve("post/crate", "/t").unwrap();
+    let m = tx.doc().object_mesh(k).unwrap();
+    assert_eq!((m.vert_count(), m.face_count()), (8, 6));
+    assert!(m.edges().all(|e| !m.is_boundary_edge(e)));
+    let o = tx.doc().object(k).unwrap();
+    assert_eq!(o.metadata["materials"], json!(["wood", "metal"]));
+    assert_eq!(o.metadata["source"], json!("crate.obj"));
+    // An open mesh comes in with a cleanup.auto suggestion.
+    let c = import(&mut tx, Some(&files), json!({ "path": "props/open.obj" })).unwrap();
+    let w = &c.output.warnings[0];
+    assert!(w.message.contains("cleanup.auto would fill 1 hole"), "{}", w.message);
+    assert_eq!(w.fix.as_ref().unwrap().op, "cleanup.auto");
+}
+
+#[test]
+fn io_import_refuses_paths_outside_and_missing_files() {
+    let (_dir, files) = io_folder();
+    let mut tx = fixture();
+    let before = tx.doc().object_count();
+    let e = import(&mut tx, Some(&files), json!({ "path": "../outside.obj" })).unwrap_err();
+    assert_eq!(e.code, ErrorCode::PathNotAllowed);
+    assert_eq!(e.path.as_deref(), Some("/path"));
+    let e = import(&mut tx, None, json!({ "path": "props/crate.obj" })).unwrap_err();
+    assert_eq!(e.code, ErrorCode::PathNotAllowed);
+    let e = import(&mut tx, Some(&files), json!({ "path": "props/missing.obj" })).unwrap_err();
+    assert_eq!(e.code, ErrorCode::NotFound);
+    let e = import(&mut tx, Some(&files), json!({ "path": "props/crate.blend" })).unwrap_err();
+    assert_eq!(e.code, ErrorCode::Unsupported);
+    let e = import(&mut tx, Some(&files), json!({ "path": "props/crate.obj", "name": "a/b" })).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/name"));
+    assert_eq!(tx.doc().object_count(), before);
 }

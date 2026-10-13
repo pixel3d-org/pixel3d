@@ -21,6 +21,12 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`scene.join`](scene.join.md) | Merges several mesh objects, or several curve objects, into one, keeping their world shapes. |
 | [`scene.separate`](scene.separate.md) | Splits a mesh object into several objects by loose part, material or face group. |
 
+## io
+
+| Op | Summary |
+|---|---|
+| [`io.import`](io.import.md) | Reads a glTF, GLB, OBJ or FBX file into the scene, in meters with +Y up, repairing its meshes. |
+
 ## prim
 
 | Op | Summary |

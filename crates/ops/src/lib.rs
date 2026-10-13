@@ -17,6 +17,7 @@ pub mod element;
 mod error;
 pub mod expect;
 pub mod generate;
+pub mod io;
 mod op;
 pub mod params;
 pub mod prim;
@@ -30,5 +31,7 @@ mod tx;
 pub use dynop::{Applied, DynOp, Typed, parse_params};
 pub use error::{ErrorCode, OpError};
 pub use op::{Artifact, Category, GroupInfo, MetricsDelta, Op, OpCall, OpCtx, OpExample, OpFlags, OpMeta, OpOutput, Warning};
+/// Folders file ops may use, re-exported for hosts that set them.
+pub use p3d_io::sandbox::{FileAccess, SandboxError};
 pub use registry::Registry;
 pub use tx::Tx;

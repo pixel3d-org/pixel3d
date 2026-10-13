@@ -25,6 +25,7 @@ Build assets as several named parts in a hierarchy (`crate`, `crate/lid`, `crate
 - `shade.*`: `smooth_by_angle` (30 degrees suits most props), `mark_sharp`, `clear_sharp`, `set_flat`, `set_smooth`, `weighted_normals` (run last on beveled hard-surface parts), `crease` (keeps edges sharp under subdivision).
 - `subd.catmull_clark`: smooth subdivision of the whole mesh; crease edges first to keep them sharp.
 - `deform.*`: `bend`, `twist`, `taper` (along an axis through the origin; give the shape segments along that axis first) and `displace` (seeded noise along normals, for rocks and terrain).
+- `io.import` (or the `import` tool): reads glTF, GLB, OBJ and FBX with hierarchy, transforms, UVs, normals (hard edges become sharp), colors and material names (object metadata `materials`); every mesh is repaired into a clean manifold mesh, and a warning with a `cleanup.auto` fix says what is left to clean.
 - `cleanup.auto`: one call makes a mesh clean (welds seams, collapses degenerate faces, removes specks and parts buried in other parts, fills holes up to 4 edges, joins flat triangle pairs into quads, turns parts outward); running it twice changes nothing. `cleanup.report` says what it would do without changing anything. Run it after imports and `scene.join`.
 - `expect.add`, `expect.remove`: model tests.
 

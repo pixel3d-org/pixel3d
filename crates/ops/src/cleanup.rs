@@ -110,6 +110,24 @@ fn fixes(r: &CleanupReport) -> Vec<String> {
     out
 }
 
+/// `cleanup.auto would weld 2 vertices, fill 1 hole`, or that it would change nothing.
+pub(crate) fn would(r: &CleanupReport) -> String {
+    let done = fixes(r);
+    if done.is_empty() {
+        return "cleanup.auto would change nothing".to_owned();
+    }
+    // "welded 2 vertices" reads "would weld 2 vertices".
+    let text = done
+        .join(", ")
+        .replace("welded", "weld")
+        .replace("collapsed", "collapse")
+        .replace("removed", "remove")
+        .replace("filled", "fill")
+        .replace("joined", "join")
+        .replace("turned", "turn");
+    format!("cleanup.auto would {text}")
+}
+
 fn warnings(r: &CleanupReport) -> Vec<Warning> {
     let mut w: Vec<Warning> = r.warnings.iter().map(|m| Warning { message: m.clone(), fix: None }).collect();
     if r.degenerate_left > 0 {
@@ -222,21 +240,7 @@ impl Op for Report {
         let t = p3d_analyze::topology(mesh);
         let mut copy = mesh.clone();
         let r = cleanup(&mut copy, &p.spec());
-        let done = fixes(&r);
-        let would = if done.is_empty() {
-            "cleanup.auto would change nothing".to_owned()
-        } else {
-            let text = done.join(", ");
-            // "welded 2 vertices" reads "would weld 2 vertices".
-            let text = text
-                .replace("welded", "weld")
-                .replace("collapsed", "collapse")
-                .replace("removed", "remove")
-                .replace("filled", "fill")
-                .replace("joined", "join")
-                .replace("turned", "turn");
-            format!("cleanup.auto would {text}")
-        };
+        let would = would(&r);
         let mut out = OpOutput::summary(format!(
             "{}: {} ({} closed), {}, {}; {would}",
             label(tx.doc(), key),

@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use p3d_ops::{ErrorCode, OpError, Registry};
+use p3d_ops::{ErrorCode, FileAccess, OpError, Registry};
 use p3d_scene::Document;
 
 use crate::run::{BatchError, OpCall, OpResult, run_batch};
@@ -75,6 +75,8 @@ pub struct Session {
     checkpoints: BTreeMap<String, Arc<Document>>,
     limits: UndoLimits,
     seed: u64,
+    /// Folders file ops (import, export) may use.
+    files: Arc<FileAccess>,
     /// Highest revision ever committed: new revisions never reuse a number,
     /// even after undo, so `rev N` always names one state.
     last_revision: u64,
@@ -109,6 +111,7 @@ impl Session {
             checkpoints: BTreeMap::new(),
             limits: UndoLimits::default(),
             seed: 0,
+            files: Arc::new(FileAccess::none()),
             last_revision: 0,
         }
     }
@@ -139,6 +142,15 @@ impl Session {
         self.seed = seed;
     }
 
+    /// Sets the folders file ops may read and write (none by default).
+    pub fn set_file_access(&mut self, files: FileAccess) {
+        self.files = Arc::new(files);
+    }
+
+    pub fn file_access(&self) -> &FileAccess {
+        &self.files
+    }
+
     pub fn set_limits(&mut self, limits: UndoLimits) {
         self.limits = limits;
         self.enforce_limits();
@@ -148,7 +160,7 @@ impl Session {
     /// nothing changes. Each committed batch is one undo step.
     pub fn execute(&mut self, calls: &[OpCall], opts: &BatchOptions) -> Result<BatchResult, BatchError> {
         let start = Instant::now();
-        let (doc, results) = run_batch(&self.registry, &self.doc, calls, self.seed, None, None)?;
+        let (doc, results) = run_batch(&self.registry, &self.doc, calls, self.seed, None, None, Some(&self.files))?;
         if opts.dry_run {
             return Ok(BatchResult { revision: self.doc.revision, results, elapsed: start.elapsed(), dry_run: true });
         }
@@ -286,7 +298,7 @@ impl Session {
         let (tx, rx) = mpsc::channel();
         let handle = JobHandle { progress: Arc::new(AtomicU32::new(0)), cancel: Arc::new(AtomicBool::new(false)) };
         let base = Arc::clone(&self.doc);
-        spawn(Arc::clone(&self.registry), Arc::clone(&base), calls.clone(), self.seed, handle.clone(), tx);
+        spawn(Arc::clone(&self.registry), Arc::clone(&base), calls.clone(), (self.seed, Arc::clone(&self.files)), handle.clone(), tx);
         Job { calls, label: label.to_owned(), base_revision: base.revision, handle, rx, retries: 0 }
     }
 
@@ -318,7 +330,14 @@ impl Session {
                     job.base_revision = self.doc.revision;
                     let (tx, rx) = mpsc::channel();
                     job.rx = rx;
-                    spawn(Arc::clone(&self.registry), Arc::clone(&self.doc), job.calls.clone(), self.seed, job.handle.clone(), tx);
+                    spawn(
+                        Arc::clone(&self.registry),
+                        Arc::clone(&self.doc),
+                        job.calls.clone(),
+                        (self.seed, Arc::clone(&self.files)),
+                        job.handle.clone(),
+                        tx,
+                    );
                     return JobStatus::Pending(0.0);
                 }
                 self.commit(doc, job.label.clone());
@@ -346,10 +365,17 @@ fn vanished() -> BatchError {
     BatchError { index: 0, op: String::new(), error: Box::new(OpError::internal("job thread vanished")) }
 }
 
-fn spawn(registry: Arc<Registry>, base: Arc<Document>, calls: Vec<OpCall>, seed: u64, handle: JobHandle, tx: mpsc::Sender<Outcome>) {
+fn spawn(
+    registry: Arc<Registry>,
+    base: Arc<Document>,
+    calls: Vec<OpCall>,
+    (seed, files): (u64, Arc<FileAccess>),
+    handle: JobHandle,
+    tx: mpsc::Sender<Outcome>,
+) {
     rayon::spawn(move || {
         let _span = tracing::info_span!("job", ops = calls.len()).entered();
-        let outcome = run_batch(&registry, &base, &calls, seed, Some(&handle.cancel), Some(&handle.progress));
+        let outcome = run_batch(&registry, &base, &calls, seed, Some(&handle.cancel), Some(&handle.progress), Some(&files));
         // The receiver may be gone (job dropped); nothing to do then.
         let _ = tx.send(outcome);
     });

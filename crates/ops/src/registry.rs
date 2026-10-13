@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{boolean, cleanup, curve, deform, edit, element, expect, generate, prim, scene, select, shade, subd};
+use crate::{boolean, cleanup, curve, deform, edit, element, expect, generate, io, prim, scene, select, shade, subd};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -48,6 +48,7 @@ impl Registry {
             Arc::new(Typed::<scene::SetMetadata>::new()),
             Arc::new(Typed::<scene::Join>::new()),
             Arc::new(Typed::<scene::Separate>::new()),
+            Arc::new(Typed::<io::Import>::new()),
             Arc::new(Typed::<prim::BoxOp>::new()),
             Arc::new(Typed::<prim::Cylinder>::new()),
             Arc::new(Typed::<prim::Cone>::new()),

@@ -75,7 +75,7 @@ A crate may depend on every crate of a lower layer, and on crates of its own lay
 - **Jobs.** Long operations (unwrap, bake, decimate, auto-weights, export) run on the rayon pool. A job receives an `Arc` snapshot of its inputs and returns a patch; the owner thread commits the patch as one transaction, or rejects it and reruns the job if its targets changed meanwhile. Jobs report progress and accept cancellation through atomics.
 - **MCP.** `pixel3d-cli mcp` hosts a headless Session. With `--connect 127.0.0.1:PORT` it forwards to a running desktop app through the control server, so the user can watch an agent work live. The tokio runtime lives only inside `mcp` (and `ai`) and talks to the Session thread over channels.
 - **Control server.** A loopback-only JSON-lines server in the desktop app. Requests are queued over a channel and drained by the UI thread.
-- **Security.** No operation executes arbitrary code. Listeners bind 127.0.0.1 only. Import and export paths are canonicalized and confined to allowed roots. Addons run in a WASM sandbox, scripts in a sandboxed JavaScript engine.
+- **Security.** No operation executes arbitrary code. Listeners bind 127.0.0.1 only. Import and export paths are canonicalized and confined to allowed roots (`p3d_io::sandbox::FileAccess` on the session; `pixel3d-cli` allows the current folder, the opened scene's folder and each `--allow-dir`; ops see it as `OpCtx::files`). Addons run in a WASM sandbox, scripts in a sandboxed JavaScript engine.
 
 ## Data model
 
