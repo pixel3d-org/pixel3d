@@ -6,8 +6,8 @@
 //! would type and click.
 //!
 //! Methods: `ui.inspect` (alias `ui.state`), `ui.elements`, `ui.click`,
-//! `ui.drag`, `ui.key`, `ui.text`, `ui.screenshot`, `ui.render` (the
-//! viewport only), `ui.command` (any command or op), `ui.commands` (the
+//! `ui.hover`, `ui.drag`, `ui.key`, `ui.text`, `ui.screenshot`, `ui.render`
+//! (the viewport only), `ui.command` (any command or op), `ui.commands` (the
 //! list) and `mcp.call` (an MCP tool on this app's scene, for
 //! `pixel3d-cli mcp --connect`).
 
@@ -202,6 +202,13 @@ impl PixelApp {
                 if params.get("double").and_then(Value::as_bool).unwrap_or(false) {
                     self.remote.input.extend([vec![press(true)], vec![press(false)]]);
                 }
+                Ok(json!({ "at": [at.x, at.y] }))
+            }
+            "ui.hover" => {
+                // Moves the pointer there and leaves it (tooltips, hover
+                // highlights, the provenance of a face).
+                let at = point(params, "target", elements)?;
+                self.remote.input.push_back(vec![Event::PointerMoved(at)]);
                 Ok(json!({ "at": [at.x, at.y] }))
             }
             "ui.drag" => {

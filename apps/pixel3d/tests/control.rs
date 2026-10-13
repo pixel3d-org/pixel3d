@@ -128,6 +128,17 @@ fn inspect(c: &mut Client) -> Value {
     c.call("ui.inspect", Value::Null).unwrap()
 }
 
+/// Waits until the camera rests (framing eases it in over a few frames).
+fn settle_camera(c: &mut Client) {
+    let mut last = Value::Null;
+    wait_for(30, || {
+        let cam = inspect(c)["camera"].clone();
+        let resting = cam == last;
+        last = cam;
+        resting.then_some(())
+    });
+}
+
 #[test]
 #[ignore = "needs a display and a GPU"]
 fn booleans_imports_and_cleanup_in_the_app() {
@@ -257,5 +268,68 @@ fn remesh_in_the_background_and_review_poles() {
     let shot = dir.join("poles.png");
     c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
     assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    let _ = c.call("ui.command", json!({ "id": "app.quit" }));
+}
+
+#[test]
+#[ignore = "needs a display and a GPU"]
+fn edit_a_model_spec_in_the_spec_tab() {
+    let dir = temp_dir("spec");
+    let (_app, mut c) = start(&["--command".to_owned(), "ui.start on=false".to_owned()]);
+    // Add > Model Spec > Lamp spec: the root is selected, the Spec tab open.
+    c.call("ui.command", json!({ "id": "spec.starter", "params": { "name": "lamp" } })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["spec"]["root"].is_string()));
+    assert_eq!(s["spec"]["parts"].as_array().map(Vec::len), Some(3));
+    // Room for the Spec tab under the Outliner.
+    c.call("ui.command", json!({ "id": "ui.dock", "params": { "operation": "close", "panel": "health" } })).unwrap();
+    c.call("ui.command", json!({ "id": "view.frame" })).unwrap();
+    settle_camera(&mut c);
+    let revision = |c: &mut Client| inspect(c)["scene"]["revision"].clone();
+    let shade_y = |c: &mut Client| inspect(c)["activeTransform"]["position"][1].as_f64().unwrap_or(f64::NAN);
+    // Click the shade in the Outliner: its part opens in the Spec tab.
+    let row = wait_for(30, || {
+        let found = c.call("ui.elements", json!({ "label": "shade" })).ok()?;
+        found["elements"].as_array().and_then(|e| e.iter().find(|w| w["role"] == json!("treeitem")).cloned())
+    });
+    c.call("ui.click", json!({ "target": { "id": row["id"] } })).unwrap();
+    wait_for(30, || Some(inspect(&mut c)).filter(|s| s["spec"]["part"] == json!("shade")));
+    let before = (revision(&mut c), shade_y(&mut c));
+    // Pick a landmark: the pole's landmarks show in the viewport; a click
+    // on its center anchors the shade there (one undo step).
+    let pick = wait_for(30, || {
+        let found = c.call("ui.elements", json!({ "label": "Pick landmark" })).ok()?;
+        found["elements"].as_array().and_then(|e| e.first().cloned())
+    });
+    c.call("ui.click", json!({ "target": { "id": pick["id"] } })).unwrap();
+    let s = wait_for(30, || {
+        Some(inspect(&mut c))
+            .filter(|s| s["spec"]["picking"] == json!(true) && s["spec"]["onScreen"]["landmarks"].as_array().is_some_and(|l| !l.is_empty()))
+    });
+    assert_eq!(s["spec"]["onScreen"]["part"], json!("pole"));
+    let center = s["spec"]["onScreen"]["landmarks"].as_array().unwrap().iter().find(|l| l["name"] == json!("center")).cloned().unwrap();
+    c.call("ui.click", json!({ "target": { "at": center["at"] } })).unwrap();
+    let s = wait_for(60, || Some(inspect(&mut c)).filter(|s| s["scene"]["revision"] != before.0 && s["spec"]["busy"] == json!(false)));
+    assert_eq!((s["spec"]["picking"].clone(), s["spec"]["part"].clone()), (json!(false), json!("shade")), "the click picked, not selected");
+    assert!(shade_y(&mut c) < before.1 - 0.1, "the shade moved down to the pole's middle");
+    // The provenance of the face under a resting pointer.
+    let s = inspect(&mut c);
+    let base = s["spec"]["onScreen"].clone();
+    assert!(base.is_null(), "the overlay is off after picking: {base}");
+    c.call("ui.command", json!({ "id": "landmarks.toggle", "params": { "on": true } })).unwrap();
+    c.call("ui.command", json!({ "id": "spec.select_part", "params": { "part": "base" } })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["spec"]["onScreen"]["landmarks"].as_array().is_some_and(|l| !l.is_empty())));
+    let front = s["spec"]["onScreen"]["landmarks"].as_array().unwrap().iter().find(|l| l["name"] == json!("front")).cloned().unwrap();
+    c.call("ui.hover", json!({ "target": { "at": front["at"] } })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["spec"]["provenance"].is_object()));
+    assert!(s["spec"]["provenance"]["path"].as_str().is_some_and(|p| p.starts_with("/parts/")), "{}", s["spec"]["provenance"]);
+    let shot = dir.join("spec.png");
+    c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
+    assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    // Undo puts the shade back on the pole's top.
+    c.call("ui.command", json!({ "id": "edit.undo" })).unwrap();
+    let raw = c.call("ui.command", json!({ "id": "spec.json", "params": { "text": "{\"parts\": {\"pole\": {\"join\": \"glue\"}}}" } }));
+    assert!(raw.is_err());
+    let s = inspect(&mut c);
+    assert_eq!(s["spec"]["jsonError"]["path"], json!("/parts/pole/join"));
     let _ = c.call("ui.command", json!({ "id": "app.quit" }));
 }

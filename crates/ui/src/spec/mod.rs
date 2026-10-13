@@ -617,13 +617,21 @@ impl PixelApp {
     }
 
     /// The spec path and op of the face under `at`, when it belongs to a
-    /// spec part object (asked again only when the pointer or the scene
-    /// changed).
+    /// spec part object (asked again only when the pointer, the view or the
+    /// scene changed).
     ///
     /// Complexity: O(parts x log F) for the ray plus O(F) for the face's
     /// provenance entry.
     pub fn spec_provenance_at(&mut self, at: Pos2) -> Option<Provenance> {
-        let key = self.scene_key();
+        use std::hash::{Hash, Hasher};
+        let rect = self.viewport.rect;
+        let vp = self.viewport.camera.view_proj(rect.width() / rect.height().max(1.0));
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.scene_key().hash(&mut h);
+        for v in vp.to_cols_array() {
+            v.to_bits().hash(&mut h);
+        }
+        let key = h.finish();
         if let Some((p, k, r)) = &self.spec.provenance
             && *p == at
             && *k == key
@@ -700,7 +708,12 @@ impl PixelApp {
         self.spec_patch_part(json!({ "anchor": anchor }), &format!("{} {part}", t("Anchor")))
     }
 
-    /// The editor's state for agents (`ui.inspect`).
+    /// The editor's state for agents (`ui.inspect`): the parts, errors at
+    /// their paths, the landmarks found so far, the ones on screen with
+    /// their positions (overlay or picking), and the face provenance shown
+    /// under the pointer.
+    ///
+    /// Complexity: O(spec size + cached landmarks).
     pub(crate) fn spec_state(&self) -> Value {
         let doc = self.doc();
         let id = |k: ObjectKey| doc.object(k).map(|o| o.public_id());
@@ -713,16 +726,25 @@ impl PixelApp {
                 })
                 .collect::<Vec<_>>()
         });
+        let cached = |part: &str| self.spec.landmarks.as_ref().and_then(|(_, m)| m.get(&(self.spec.root?, part.to_owned())));
         let landmarks = self.spec.landmarks.as_ref().map(|(_, m)| {
             m.iter()
                 .filter(|((r, _), _)| Some(*r) == self.spec.root)
                 .map(|((_, p), l)| (p.clone(), json!(l.iter().map(|x| x.name.clone()).collect::<Vec<_>>())))
                 .collect::<serde_json::Map<_, _>>()
         });
+        // The landmarks drawn in the viewport, where they are on screen.
+        let rect = self.viewport.rect;
+        let shown_part = if self.spec.picking { self.spec_anchor_on() } else { self.spec.part.clone().filter(|_| self.ui.view.landmarks) };
+        let shown = shown_part.as_deref().and_then(cached).filter(|_| rect.is_positive()).map(|l| {
+            let vp = self.viewport.camera.view_proj(rect.width() / rect.height().max(1.0));
+            l.iter().filter_map(|x| project(vp, rect, x.point).map(|at| json!({ "name": x.name, "at": [at.x, at.y] }))).collect::<Vec<_>>()
+        });
         let provenance = self
             .spec
             .provenance
             .as_ref()
+            .filter(|_| self.spec.prov_shown)
             .and_then(|(_, _, r)| r.as_ref())
             .map(|(k, part, e)| json!({ "object": id(*k), "part": part, "path": e.path, "op": e.op }));
         let issue = |i: &SpecIssue| json!({ "path": i.path, "message": i.message, "line": i.line });
@@ -737,6 +759,7 @@ impl PixelApp {
             "picking": self.spec.picking,
             "landmarksShown": self.ui.view.landmarks,
             "landmarks": landmarks,
+            "onScreen": shown_part.map(|p| json!({ "part": p, "landmarks": shown })),
             "provenance": provenance,
         })
     }

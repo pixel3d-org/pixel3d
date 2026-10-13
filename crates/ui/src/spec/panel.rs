@@ -272,7 +272,7 @@ fn part_fields(app: &mut PixelApp, ui: &mut egui::Ui, p: &PartInfo, parts: &[Par
     let root = defs(app);
     panel(ui, "spec-part", &format!("{} {}", t("Part"), p.name), true, |ui| {
         info(ui, t("Shape"), &p.kind);
-        shape_form(app, ui, p, src, out);
+        // Placement first: where the part sits is what specs are about.
         if p.key == "mirror" {
             info(ui, t("Join"), format!("{} ({})", t(p.join), t("like its source")));
             note(ui, t("A mirror is placed and joined like its source."), tk.text_faint);
@@ -280,6 +280,7 @@ fn part_fields(app: &mut PixelApp, ui: &mut egui::Ui, p: &PartInfo, parts: &[Par
             anchor_fields(app, ui, p, parts, src, &root, out);
             join_fields(ui, src, &root, out);
         }
+        shape_form(app, ui, p, src, out);
         transform_fields(ui, src, &root, out);
         tags_field(ui, p, src, out);
     });
