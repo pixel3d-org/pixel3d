@@ -12,4 +12,5 @@ pub mod generate;
 pub mod kdtree;
 pub mod prim;
 pub mod shade;
+pub mod soup;
 pub mod subd;

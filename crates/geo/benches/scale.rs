@@ -327,6 +327,35 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Soup repair of a sphere stored the way glTF stores it (a vertex per
+    // corner), with every tenth face flipped.
+    let mut g = c.benchmark_group("scale_soup_repair");
+    for &t in &sizes {
+        let m = sphere(t);
+        let mut pos = Vec::new();
+        let mut sizes_ = Vec::new();
+        let mut corners = Vec::new();
+        for (i, f) in m.faces().enumerate() {
+            let mut face: Vec<u32> = m
+                .face_verts(f)
+                .map(|v| {
+                    pos.push(m.positions[v as usize]);
+                    pos.len() as u32 - 1
+                })
+                .collect();
+            if i % 10 == 0 {
+                face.reverse();
+            }
+            sizes_.push(face.len() as u32);
+            corners.extend(face);
+        }
+        let spec = p3d_geo::soup::SoupSpec::default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &(pos, sizes_, corners), |b, (p, s, c)| {
+            b.iter(|| p3d_geo::soup::repair(black_box(p), s, c, &spec))
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)
