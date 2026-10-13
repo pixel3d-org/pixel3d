@@ -7,7 +7,8 @@ use p3d_geo::curve::{self as curves, MAX_RESOLUTION};
 use p3d_geo::edit::Axis;
 use p3d_geo::generate::{LatheSpec, MAX_PROFILE_POINTS, lathe};
 use p3d_geo::prim::{CapKind, MAX_SEGMENTS, PrimError};
-use p3d_scene::{Document, Spline};
+use p3d_mesh::Mesh;
+use p3d_scene::{Document, ObjectKey, Spline};
 use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -57,6 +58,34 @@ fn full_turn() -> Angle {
 
 fn gen_resolution() -> u32 {
     GEN_RESOLUTION
+}
+
+/// Creates a generated mesh object. Built from a curve object (`source`)
+/// with no explicit parent or position, it takes the curve's parent and
+/// transform, so it lands where the curve is drawn.
+fn create_gen(
+    tx: &mut Tx,
+    name: Option<&str>,
+    default_name: &str,
+    parent: Option<&str>,
+    position: Option<&[Length; 3]>,
+    source: Option<ObjectKey>,
+    mesh: Mesh,
+) -> Result<ObjectKey, OpError> {
+    let place = match (source, parent, position) {
+        (Some(src), None, None) => tx.doc().object(src).map(|o| (o.parent(), o.transform)),
+        _ => None,
+    };
+    let Some((parent_key, transform)) = place else {
+        return create_mesh_object(tx, name, default_name, parent, position.unwrap_or(&zero3()), mesh);
+    };
+    check_new_object(tx.doc(), name, None)?;
+    let name = name.map_or_else(|| tx.doc().unique_name(default_name, parent_key), str::to_owned);
+    let key = tx.doc_mut().create_mesh_object(&name, parent_key, mesh).map_err(|e| OpError::from_scene(e, "/name"))?;
+    if let Some(o) = tx.doc_mut().object_mut(key) {
+        o.transform = transform;
+    }
+    Ok(key)
 }
 
 // ---- profiles --------------------------------------------------------------------------
@@ -246,9 +275,10 @@ pub struct LatheParams {
     /// Segments per curved span of a smooth profile.
     #[serde(default = "gen_resolution")]
     pub resolution: u32,
-    /// Origin position in the parent's space.
-    #[serde(default = "zero3")]
-    pub position: [Length; 3],
+    /// Origin position in the parent's space. Built from a curve object, the result takes the curve's place
+    /// (parent and transform) unless `parent` or `position` is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<[Length; 3]>,
 }
 
 impl Default for LatheParams {
@@ -266,7 +296,7 @@ impl Default for LatheParams {
             cap: CapParam::QuadGrid,
             axis: AxisParam::Y,
             resolution: GEN_RESOLUTION,
-            position: zero3(),
+            position: None,
         }
     }
 }
@@ -366,7 +396,11 @@ impl Op for LatheOp {
             axis: axis(p.axis),
         };
         let mesh = lathe(&spec).map_err(gen_error)?;
-        let key = create_mesh_object(tx, p.name.as_deref(), "lathe", p.parent.as_deref(), &p.position, mesh)?;
+        let source = match &p.profile {
+            ProfileParam::Curve { curve } => Some(curve_target(tx.doc(), curve, "/profile/curve")?),
+            _ => None,
+        };
+        let key = create_gen(tx, p.name.as_deref(), "lathe", p.parent.as_deref(), p.position.as_ref(), source, mesh)?;
         Ok(created_summary(tx, key, "lathe"))
     }
 }
@@ -436,9 +470,10 @@ pub struct ExtrudeShapeParams {
     /// Segments per curved span of Bezier splines.
     #[serde(default = "gen_resolution")]
     pub resolution: u32,
-    /// Origin position in the parent's space.
-    #[serde(default = "zero3")]
-    pub position: [Length; 3],
+    /// Origin position in the parent's space. Built from a curve object, the result takes the curve's place
+    /// (parent and transform) unless `parent` or `position` is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<[Length; 3]>,
 }
 
 fn front_plane() -> crate::curve::PlaneParam {
@@ -458,7 +493,7 @@ impl Default for ExtrudeShapeParams {
             depth: tenth(),
             bevel: None,
             resolution: GEN_RESOLUTION,
-            position: zero3(),
+            position: None,
         }
     }
 }
@@ -488,30 +523,11 @@ fn plane_axis(plane: crate::curve::PlaneParam) -> Axis {
 fn curve_contours(doc: &Document, target: &str, resolution: u32) -> Result<(Vec<Vec<DVec2>>, crate::curve::PlaneParam, f64), OpError> {
     let key = curve_target(doc, target, "/curve")?;
     let c = doc.object_curve(key).ok_or_else(|| OpError::internal("curve vanished"))?;
-    let mut sampled = Vec::with_capacity(c.splines.len());
-    for (i, s) in c.splines.iter().enumerate() {
-        if !s.closed {
-            return Err(OpError::invalid("/curve", format!("spline {i} is open; a shape needs closed outlines"))
-                .with_hint("make closed curves, for example curve.polyline with closed: true or curve.rectangle"));
-        }
-        sampled.push(crate::curve::polyline(s, resolution).map_err(curve_error)?);
+    if let Some(i) = c.splines.iter().position(|s| !s.closed) {
+        return Err(OpError::invalid("/curve", format!("spline {i} is open; a shape needs closed outlines"))
+            .with_hint("make closed curves, for example curve.polyline with closed: true or curve.rectangle"));
     }
-    let pts = sampled.iter().flatten();
-    let (lo, hi) = pts.fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
-    let size = hi - lo;
-    let flat = |s: f32| s <= size.max_element() * 1e-5;
-    let plane = match (flat(size.x), flat(size.y), flat(size.z)) {
-        (false, false, true) => crate::curve::PlaneParam::Xy,
-        (false, true, false) => crate::curve::PlaneParam::Xz,
-        (true, false, false) => crate::curve::PlaneParam::Yz,
-        _ => {
-            return Err(OpError::invalid("/curve", "the curve does not lie flat in the XY, XZ or YZ plane")
-                .with_hint("draw shapes with curve.* in one plane (the plane parameter)"));
-        }
-    };
-    let height = to_plane(plane, (lo + hi) * 0.5).1;
-    let contours = sampled.iter().map(|s| s.iter().map(|p| to_plane(plane, *p).0).collect()).collect();
-    Ok((contours, plane, height))
+    curve_contours_any(&c.splines, resolution, "/curve")
 }
 
 /// `gen.extrude_shape`.
@@ -617,7 +633,569 @@ impl Op for ExtrudeShapeOp {
                 *q += shift;
             }
         }
-        let key = create_mesh_object(tx, p.name.as_deref(), "shape", p.parent.as_deref(), &p.position, mesh)?;
+        let source = p.curve.as_deref().map(|c| curve_target(tx.doc(), c, "/curve")).transpose()?;
+        let key = create_gen(tx, p.name.as_deref(), "shape", p.parent.as_deref(), p.position.as_ref(), source, mesh)?;
         Ok(created_summary(tx, key, "shape"))
+    }
+}
+
+// ---- sections and paths ----------------------------------------------------------------
+
+/// A sweep cross section: points, a curve object, a circle or a rectangle.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum SectionParam {
+    Points(Vec<[Length; 2]>),
+    Curve { curve: String },
+    Circle { circle: Length },
+    Rectangle { rectangle: [Length; 2] },
+}
+
+impl Default for SectionParam {
+    fn default() -> Self {
+        SectionParam::Rectangle { rectangle: [Length(0.05), Length(0.05)] }
+    }
+}
+
+impl<'de> Deserialize<'de> for SectionParam {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = Value::deserialize(d)?;
+        let shape =
+            "a cross section is a list of [x, y] points, {\"curve\": \"<name>\"}, {\"circle\": <radius>} or {\"rectangle\": [<width>, <height>]}";
+        match v {
+            Value::Array(_) => serde_json::from_value(v)
+                .map(SectionParam::Points)
+                .map_err(|e| D::Error::custom(format!("cross section points are [x, y] pairs: {e}"))),
+            Value::Object(m) if m.len() == 1 => {
+                let (k, val) = m.into_iter().next().ok_or_else(|| D::Error::custom(shape))?;
+                match k.as_str() {
+                    "curve" => serde_json::from_value(val).map(|curve| SectionParam::Curve { curve }).map_err(D::Error::custom),
+                    "circle" => serde_json::from_value(val).map(|circle| SectionParam::Circle { circle }).map_err(D::Error::custom),
+                    "rectangle" => serde_json::from_value(val).map(|rectangle| SectionParam::Rectangle { rectangle }).map_err(D::Error::custom),
+                    _ => Err(D::Error::custom(shape)),
+                }
+            }
+            _ => Err(D::Error::custom(shape)),
+        }
+    }
+}
+
+impl JsonSchema for SectionParam {
+    fn schema_name() -> Cow<'static, str> {
+        "Section".into()
+    }
+
+    fn json_schema(g: &mut SchemaGenerator) -> Schema {
+        let length = g.subschema_for::<Length>();
+        json_schema!({
+            "description": "A cross section seen looking along the path (x right, y up): points [x, y], {\"curve\": \"<curve object>\"} (its axis plane), {\"circle\": radius} or {\"rectangle\": [width, height]}.",
+            "anyOf": [
+                { "type": "array", "minItems": 2, "items": { "type": "array", "items": length, "minItems": 2, "maxItems": 2 } },
+                { "type": "object", "properties": { "curve": { "type": "string" } }, "required": ["curve"], "additionalProperties": false },
+                { "type": "object", "properties": { "circle": length }, "required": ["circle"], "additionalProperties": false },
+                { "type": "object", "properties": { "rectangle": { "type": "array", "items": length, "minItems": 2, "maxItems": 2 } }, "required": ["rectangle"], "additionalProperties": false }
+            ]
+        })
+    }
+}
+
+/// A path: points or a curve object.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum PathParam {
+    Points(Vec<[Length; 3]>),
+    Curve { curve: String },
+}
+
+impl Default for PathParam {
+    fn default() -> Self {
+        PathParam::Points(vec![[Length(0.0); 3], [Length(0.0), Length(1.0), Length(0.0)]])
+    }
+}
+
+impl<'de> Deserialize<'de> for PathParam {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = Value::deserialize(d)?;
+        match v {
+            Value::Array(_) => {
+                serde_json::from_value(v).map(PathParam::Points).map_err(|e| D::Error::custom(format!("path points are [x, y, z]: {e}")))
+            }
+            Value::Object(m) => match (m.len(), m.get("curve")) {
+                (1, Some(Value::String(c))) => Ok(PathParam::Curve { curve: c.clone() }),
+                _ => Err(D::Error::custom("a path object is {\"curve\": \"<curve object>\"}")),
+            },
+            _ => Err(D::Error::custom("a path is a list of [x, y, z] points or {\"curve\": \"<name>\"}")),
+        }
+    }
+}
+
+impl JsonSchema for PathParam {
+    fn schema_name() -> Cow<'static, str> {
+        "Path".into()
+    }
+
+    fn json_schema(g: &mut SchemaGenerator) -> Schema {
+        let length = g.subschema_for::<Length>();
+        json_schema!({
+            "description": "A path: points [x, y, z] in object space, or {\"curve\": \"<curve object>\"} (one spline; the result lands where the curve is).",
+            "anyOf": [
+                { "type": "array", "minItems": 2, "items": { "type": "array", "items": length, "minItems": 3, "maxItems": 3 } },
+                { "type": "object", "properties": { "curve": { "type": "string" } }, "required": ["curve"], "additionalProperties": false }
+            ]
+        })
+    }
+}
+
+/// A resolved path: points, closed, and the curve object it came from.
+struct Path3 {
+    points: Vec<glam::DVec3>,
+    closed: bool,
+    source: Option<ObjectKey>,
+}
+
+/// Resolves a path, sampling Bezier spans (and smoothing inline points
+/// when `smooth`).
+///
+/// Complexity: O(points x resolution).
+fn resolve_path(doc: &Document, path: &PathParam, smooth: bool, closed: bool, resolution: u32) -> Result<Path3, OpError> {
+    match path {
+        PathParam::Points(raw) => {
+            let pts: Vec<Vec3> = raw.iter().map(crate::params::vec3).collect();
+            let sampled =
+                if smooth { curves::sample_bezier(&pts, &curves::auto_handles(&pts, closed), closed, resolution).map_err(curve_error)? } else { pts };
+            Ok(Path3 { points: sampled.iter().map(|p| p.as_dvec3()).collect(), closed, source: None })
+        }
+        PathParam::Curve { curve } => {
+            let key = curve_target(doc, curve, "/path/curve")?;
+            let c = doc.object_curve(key).ok_or_else(|| OpError::internal("curve vanished"))?;
+            let [s]: &[Spline; 1] = c
+                .splines
+                .as_slice()
+                .try_into()
+                .map_err(|_| OpError::invalid("/path/curve", format!("the curve has {} splines; a path is one", c.splines.len())))?;
+            let pts = crate::curve::polyline(s, resolution).map_err(curve_error)?;
+            Ok(Path3 { points: pts.iter().map(|p| p.as_dvec3()).collect(), closed: s.closed, source: Some(key) })
+        }
+    }
+}
+
+// ---- gen.sweep ---------------------------------------------------------------------------
+
+fn ones() -> [f64; 2] {
+    [1.0, 1.0]
+}
+
+fn yes() -> bool {
+    true
+}
+
+/// Parameters of `gen.sweep`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SweepParams {
+    /// Object name; a free name such as `sweep_1` is picked when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Parent object (name, path or id); top level when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// The cross section.
+    pub profile: SectionParam,
+    /// Whether inline profile points close into a loop (open profiles make trims and ribbons).
+    #[serde(default = "yes")]
+    pub profile_closed: bool,
+    /// The path the cross section follows.
+    pub path: PathParam,
+    /// Joins the last inline path point back to the first.
+    #[serde(default)]
+    pub path_closed: bool,
+    /// A smooth Bezier through inline path points instead of straight segments.
+    #[serde(default)]
+    pub smooth_path: bool,
+    /// Turn of the cross section from start to end (degrees); closed paths need whole turns.
+    #[serde(default)]
+    pub twist: Angle,
+    /// Cross section scale at the start and the end (taper).
+    #[serde(default = "ones")]
+    pub scale: [f64; 2],
+    /// Fills the ends of a closed cross section on an open path.
+    #[serde(default = "yes")]
+    pub caps: bool,
+    /// Points around a circle cross section; adapts to its size when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<u32>,
+    /// Direction the cross section's y leans toward at the start.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub up: Option<[f64; 3]>,
+    /// Segments per curved span of Bezier curves.
+    #[serde(default = "gen_resolution")]
+    pub resolution: u32,
+    /// Origin position in the parent's space. Built from a path curve, the result takes the curve's place
+    /// (parent and transform) unless `parent` or `position` is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<[Length; 3]>,
+}
+
+impl Default for SweepParams {
+    fn default() -> Self {
+        SweepParams {
+            name: None,
+            parent: None,
+            profile: SectionParam::default(),
+            profile_closed: true,
+            path: PathParam::default(),
+            path_closed: false,
+            smooth_path: false,
+            twist: Angle(0.0),
+            scale: ones(),
+            caps: true,
+            segments: None,
+            up: None,
+            resolution: GEN_RESOLUTION,
+            position: None,
+        }
+    }
+}
+
+/// A resolved cross section: points, spans for groups, closed, round.
+struct Section {
+    points: Vec<DVec2>,
+    spans: Vec<u32>,
+    closed: bool,
+    round: bool,
+}
+
+/// Resolves a cross section.
+///
+/// Complexity: O(points x resolution).
+fn resolve_section(doc: &Document, p: &SectionParam, closed: bool, segments: Option<u32>, resolution: u32) -> Result<Section, OpError> {
+    match p {
+        SectionParam::Points(raw) => {
+            let points: Vec<DVec2> = raw.iter().map(|[x, y]| DVec2::new(x.0, y.0)).collect();
+            let segs = if closed { points.len() } else { points.len().saturating_sub(1) };
+            Ok(Section { points, spans: (0..segs as u32).collect(), closed, round: false })
+        }
+        SectionParam::Rectangle { rectangle: [w, h] } => {
+            let (x, y) = (w.0 / 2.0, h.0 / 2.0);
+            let points = vec![DVec2::new(-x, -y), DVec2::new(x, -y), DVec2::new(x, y), DVec2::new(-x, y)];
+            Ok(Section { points, spans: vec![0, 1, 2, 3], closed: true, round: false })
+        }
+        SectionParam::Circle { circle } => {
+            let s = segments.unwrap_or_else(|| doc.settings.round_segments(std::f64::consts::TAU * circle.0, 4).clamp(8, 32));
+            Ok(Section { points: p3d_geo::generate::round_profile(circle.0, s), spans: Vec::new(), closed: true, round: s.is_multiple_of(4) })
+        }
+        SectionParam::Curve { curve } => {
+            let key = curve_target(doc, curve, "/profile/curve")?;
+            let c = doc.object_curve(key).ok_or_else(|| OpError::internal("curve vanished"))?;
+            let [s]: &[Spline; 1] = c
+                .splines
+                .as_slice()
+                .try_into()
+                .map_err(|_| OpError::invalid("/profile/curve", format!("the curve has {} splines; a cross section is one", c.splines.len())))?;
+            let (contours, _, _) = curve_contours_any(std::slice::from_ref(s), resolution, "/profile/curve")?;
+            let pts = contours.into_iter().next().unwrap_or_default();
+            Ok(Section { points: pts, spans: Vec::new(), closed: s.closed, round: false })
+        }
+    }
+}
+
+/// Splines sampled and mapped to the axis plane they lie in.
+///
+/// Complexity: O(points x resolution).
+fn curve_contours_any(splines: &[Spline], resolution: u32, path: &str) -> Result<(Vec<Vec<DVec2>>, crate::curve::PlaneParam, f64), OpError> {
+    let mut sampled = Vec::with_capacity(splines.len());
+    for s in splines {
+        sampled.push(crate::curve::polyline(s, resolution).map_err(curve_error)?);
+    }
+    let (lo, hi) = sampled.iter().flatten().fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+    let size = hi - lo;
+    let flat = |s: f32| s <= size.max_element() * 1e-5;
+    let plane = match (flat(size.x), flat(size.y), flat(size.z)) {
+        (false, false, true) => crate::curve::PlaneParam::Xy,
+        (false, true, false) => crate::curve::PlaneParam::Xz,
+        (true, false, false) => crate::curve::PlaneParam::Yz,
+        _ => {
+            return Err(OpError::invalid(path, "the curve does not lie flat in the XY, XZ or YZ plane")
+                .with_hint("draw shapes with curve.* in one plane (the plane parameter)"));
+        }
+    };
+    let height = to_plane(plane, (lo + hi) * 0.5).1;
+    let contours = sampled.iter().map(|s| s.iter().map(|p| to_plane(plane, *p).0).collect()).collect();
+    Ok((contours, plane, height))
+}
+
+fn sweep_error(e: PrimError) -> OpError {
+    match e {
+        PrimError::InvalidParam { param: "caps", value, reason } => OpError::invalid("/caps", format!("{value} {reason}")),
+        PrimError::InvalidParam { param: "twist", value, reason } => OpError::out_of_range("/twist", format!("{value}: {reason}")),
+        e => gen_error(e),
+    }
+}
+
+fn check_path_points(path: &PathParam, closed: bool) -> Result<(), OpError> {
+    if let PathParam::Points(p) = path {
+        let min = if closed { 3 } else { 2 };
+        if p.len() < min || p.len() > p3d_geo::generate::MAX_PATH_POINTS {
+            return Err(OpError::invalid("/path", format!("{} points; a path needs at least {min}", p.len())));
+        }
+    }
+    Ok(())
+}
+
+fn check_up(up: Option<[f64; 3]>) -> Result<Option<glam::DVec3>, OpError> {
+    match up {
+        None => Ok(None),
+        Some(u) if u.iter().all(|x| x.is_finite()) && u.iter().any(|&x| x != 0.0) => Ok(Some(glam::DVec3::from(u))),
+        Some(_) => Err(OpError::invalid("/up", "up must be a nonzero vector").with_hint("for example [0, 1, 0]")),
+    }
+}
+
+/// `gen.sweep`.
+pub struct SweepOp;
+
+impl Op for SweepOp {
+    const ID: &'static str = "gen.sweep";
+    type Params = SweepParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Sweep",
+            category: Category::Gen,
+            summary: "Carries a cross section along a path into rails, trims, frames, handles and cables, with twist and taper.",
+            docs: "The cross section is seen looking along the path (x right, y up) and rides on rotation-minimizing frames, so it \
+                   never spins on its own; `twist` turns it on purpose and `scale` tapers it from start to end. Sharp path corners \
+                   are mitered so the section keeps its thickness (a frame swept along a closed rectangle). `up` sets which way the \
+                   section's y points at the start (+Y by default).\n\n\
+                   **Cross sections:** `{\"rectangle\": [w, h]}`, `{\"circle\": r}` (quad-grid caps; see also `gen.pipe`), points \
+                   `[x, y]` (`profile_closed: false` for open trims), or `{\"curve\": name}`. **Paths:** points (`smooth_path` for a \
+                   curve through them, `path_closed` for loops) or `{\"curve\": name}`; built from a path curve, the result lands \
+                   where the curve is.\n\n\
+                   **Groups:** `side`, `cap_start`, `cap_end`, and `profile_<i>` per side of a rectangle or point section. Section \
+                   corners and path joints sharper than 30 degrees get sharp edges.",
+            examples: &[
+                OpExample {
+                    args: r#"{"name": "rail", "profile": {"rectangle": ["4cm", "2cm"]}, "path": {"curve": "path"}}"#,
+                    result: "created rail (o:4) sweep 1.02 m x 20 mm x 1.02 m: 10 faces (20 tris; budget 6,000)",
+                },
+                OpExample {
+                    args: r#"{"name": "horn", "profile": {"circle": "4cm"}, "segments": 12, "path": [[0, 0, 0], [0, 0.3, 0], [0.2, 0.5, 0]], "smooth_path": true, "scale": [1, 0.1]}"#,
+                    result: "created horn (o:4) sweep 0.2464 m x 0.5049 m x 77.27 mm: 210 faces (420 tris; budget 6,000)",
+                },
+            ],
+            aliases: &["sweep", "curve bevel", "extrude along path", "loft along path", "follow me", "tube along curve"],
+            complexity: "O(path points x profile points) plus O(p log p) per cap",
+            flags: FLAGS,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &SweepParams) -> Result<(), OpError> {
+        check_new_object(doc, p.name.as_deref(), p.parent.as_deref())?;
+        check_count("/resolution", p.resolution, 1, MAX_RESOLUTION)?;
+        if let Some(s) = p.segments {
+            check_count("/segments", s, 3, 256)?;
+        }
+        check_path_points(&p.path, p.path_closed)?;
+        check_up(p.up)?;
+        if p.scale.iter().any(|s| !(s.is_finite() && (1e-3..=1e3).contains(s))) {
+            return Err(OpError::out_of_range("/scale", "scales must be between 0.001 and 1000"));
+        }
+        match &p.profile {
+            SectionParam::Points(pts) if pts.len() < 2 => return Err(OpError::invalid("/profile", "a cross section needs at least 2 points")),
+            SectionParam::Circle { circle } => check_length("/profile/circle", *circle, 1e-5, 1e3)?,
+            SectionParam::Rectangle { rectangle } => {
+                check_length("/profile/rectangle/0", rectangle[0], 1e-5, 1e3)?;
+                check_length("/profile/rectangle/1", rectangle[1], 1e-5, 1e3)?;
+            }
+            SectionParam::Curve { curve } => {
+                curve_target(doc, curve, "/profile/curve")?;
+            }
+            SectionParam::Points(_) => {}
+        }
+        if let PathParam::Curve { curve } = &p.path {
+            curve_target(doc, curve, "/path/curve")?;
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &SweepParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let section = resolve_section(tx.doc(), &p.profile, p.profile_closed, p.segments, p.resolution)?;
+        let path = resolve_path(tx.doc(), &p.path, p.smooth_path, p.path_closed, p.resolution)?;
+        let caps = match (p.caps, section.round) {
+            (false, _) => p3d_geo::generate::SweepCaps::None,
+            (true, true) => p3d_geo::generate::SweepCaps::QuadGrid,
+            (true, false) => p3d_geo::generate::SweepCaps::Fill,
+        };
+        let spec = p3d_geo::generate::SweepSpec {
+            profile: &section.points,
+            profile_closed: section.closed,
+            profile_spans: &section.spans,
+            path: &path.points,
+            path_closed: path.closed,
+            twist: p.twist.radians(),
+            scale: p.scale,
+            caps,
+            up: check_up(p.up)?.unwrap_or(glam::DVec3::Y),
+        };
+        let mesh = p3d_geo::generate::sweep(&spec).map_err(sweep_error)?;
+        let key = create_gen(tx, p.name.as_deref(), "sweep", p.parent.as_deref(), p.position.as_ref(), path.source, mesh)?;
+        Ok(created_summary(tx, key, "sweep"))
+    }
+}
+
+// ---- gen.pipe ----------------------------------------------------------------------------
+
+fn two_cm() -> Length {
+    Length(0.02)
+}
+
+fn bend_segments() -> u32 {
+    4
+}
+
+/// Parameters of `gen.pipe`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PipeParams {
+    /// Object name; a free name such as `pipe_1` is picked when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Parent object (name, path or id); top level when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<String>,
+    /// The path the pipe follows.
+    pub path: PathParam,
+    /// Joins the last inline path point back to the first (rings).
+    #[serde(default)]
+    pub path_closed: bool,
+    /// A smooth Bezier through inline path points instead of straight runs with bends.
+    #[serde(default)]
+    pub smooth_path: bool,
+    /// Pipe radius.
+    #[serde(default = "two_cm")]
+    pub radius: Length,
+    /// Points around the pipe; adapts to its size when omitted (a multiple of 4 gives quad caps).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub segments: Option<u32>,
+    /// Radius of the bends at path corners (twice the pipe radius when omitted; 0 for mitered joints).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bend_radius: Option<Length>,
+    /// Segments per bend.
+    #[serde(default = "bend_segments")]
+    pub bend_segments: u32,
+    /// Closes the ends of an open pipe.
+    #[serde(default = "yes")]
+    pub caps: bool,
+    /// Segments per curved span of Bezier curves.
+    #[serde(default = "gen_resolution")]
+    pub resolution: u32,
+    /// Origin position in the parent's space. Built from a path curve, the result takes the curve's place
+    /// (parent and transform) unless `parent` or `position` is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<[Length; 3]>,
+}
+
+impl Default for PipeParams {
+    fn default() -> Self {
+        PipeParams {
+            name: None,
+            parent: None,
+            path: PathParam::default(),
+            path_closed: false,
+            smooth_path: false,
+            radius: two_cm(),
+            segments: None,
+            bend_radius: None,
+            bend_segments: bend_segments(),
+            caps: true,
+            resolution: GEN_RESOLUTION,
+            position: None,
+        }
+    }
+}
+
+/// `gen.pipe`.
+pub struct PipeOp;
+
+impl Op for PipeOp {
+    const ID: &'static str = "gen.pipe";
+    type Params = PipeParams;
+
+    fn meta() -> OpMeta {
+        OpMeta {
+            label: "Pipe",
+            category: Category::Gen,
+            summary: "Builds a round pipe along a path with smooth bends at the corners and quad caps.",
+            docs: "Corners of the path become bends of `bend_radius` (twice the pipe radius by default, shrunk where runs are \
+                   short; 0 keeps mitered joints) with `bend_segments` segments. The cross section rides on rotation-minimizing \
+                   frames, so long pipes never twist. Caps are quad grids when `segments` is a multiple of 4.\n\n\
+                   **Paths:** points (`smooth_path` for a curve through them, `path_closed` for rings) or `{\"curve\": name}`; built \
+                   from a path curve, the pipe lands where the curve is.\n\n\
+                   **Groups:** `side`, `cap_start`, `cap_end`.\n\n\
+                   **Use for** plumbing, railings, cables, hoses, wires, chair frames, bike handlebars. For square tubes use \
+                   `gen.sweep` with a rectangle.",
+            examples: &[OpExample {
+                args: r#"{"name": "railing", "path": [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]], "radius": "2cm", "segments": 8}"#,
+                result: "created railing (o:4) pipe 1.04 m x 1.02 m x 40 mm: 112 faces (224 tris; budget 6,000)",
+            }],
+            aliases: &["pipe", "tube along path", "cable", "wire", "hose", "railing", "curve bevel round"],
+            complexity: "O(path points x segments)",
+            flags: FLAGS,
+            version: 1,
+        }
+    }
+
+    fn validate(doc: &Document, p: &PipeParams) -> Result<(), OpError> {
+        check_new_object(doc, p.name.as_deref(), p.parent.as_deref())?;
+        check_count("/resolution", p.resolution, 1, MAX_RESOLUTION)?;
+        check_length("/radius", p.radius, 1e-5, 1e3)?;
+        if let Some(s) = p.segments {
+            check_count("/segments", s, 3, 256)?;
+        }
+        if let Some(b) = p.bend_radius {
+            check_length("/bend_radius", b, 0.0, 1e4)?;
+        }
+        check_count("/bend_segments", p.bend_segments, 1, curves::MAX_FILLET_SEGMENTS)?;
+        check_path_points(&p.path, p.path_closed)?;
+        if let PathParam::Curve { curve } = &p.path {
+            curve_target(doc, curve, "/path/curve")?;
+        }
+        Ok(())
+    }
+
+    fn apply(tx: &mut Tx, p: &PipeParams, _ctx: &OpCtx) -> Result<OpOutput, OpError> {
+        let path = resolve_path(tx.doc(), &p.path, p.smooth_path, p.path_closed, p.resolution)?;
+        let bend = p.bend_radius.map_or(2.0 * p.radius.0, |b| b.0);
+        let points = if bend > 0.0 && path.points.len() > 2 {
+            let pts: Vec<Vec3> = path.points.iter().map(|q| q.as_vec3()).collect();
+            let rounded = curves::fillet(&pts, path.closed, bend as f32, p.bend_segments).map_err(|e| match e {
+                p3d_geo::edit::KernelError::OutOfRange { message, .. } => OpError::out_of_range("/bend_radius", message),
+                e => curve_error(e),
+            })?;
+            rounded.iter().map(|q| q.as_dvec3()).collect()
+        } else {
+            path.points.clone()
+        };
+        let segments = p.segments.unwrap_or_else(|| tx.doc().settings.round_segments(std::f64::consts::TAU * p.radius.0, 4).clamp(8, 32));
+        let profile = p3d_geo::generate::round_profile(p.radius.0, segments);
+        let caps = match (p.caps, segments.is_multiple_of(4)) {
+            (false, _) => p3d_geo::generate::SweepCaps::None,
+            (true, true) => p3d_geo::generate::SweepCaps::QuadGrid,
+            (true, false) => p3d_geo::generate::SweepCaps::Fill,
+        };
+        let spec = p3d_geo::generate::SweepSpec {
+            profile: &profile,
+            profile_closed: true,
+            profile_spans: &[],
+            path: &points,
+            path_closed: path.closed,
+            twist: 0.0,
+            scale: [1.0; 2],
+            caps,
+            up: glam::DVec3::Y,
+        };
+        let mesh = p3d_geo::generate::sweep(&spec).map_err(sweep_error)?;
+        let key = create_gen(tx, p.name.as_deref(), "pipe", p.parent.as_deref(), p.position.as_ref(), path.source, mesh)?;
+        Ok(created_summary(tx, key, "pipe"))
     }
 }

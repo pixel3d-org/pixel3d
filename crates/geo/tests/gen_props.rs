@@ -1,8 +1,8 @@
 //! Property tests for the generators on random profiles and shapes.
 
-use glam::DVec2;
+use glam::{DQuat, DVec2, DVec3};
 use p3d_geo::edit::Axis;
-use p3d_geo::generate::{LatheSpec, ShapeSpec, extrude_shape, lathe};
+use p3d_geo::generate::{LatheSpec, ShapeSpec, SweepCaps, SweepSpec, extrude_shape, lathe, round_profile, sweep};
 use p3d_geo::prim::{CapKind, PrimError};
 use p3d_mesh::Mesh;
 use proptest::prelude::*;
@@ -92,5 +92,55 @@ proptest! {
             Err(PrimError::InvalidParam { param: "bevel", .. }) if w > 0.0 => {}
             Err(e) => return Err(TestCaseError::fail(e.to_string())),
         }
+    }
+}
+
+/// A wandering path: steps of 0.5 to 1 m turning at most 50 degrees.
+fn wander() -> impl Strategy<Value = Vec<DVec3>> {
+    prop::collection::vec((0.5f64..1.0, -0.87f64..0.87, -0.87f64..0.87), 1..20).prop_map(|steps| {
+        let (mut p, mut d) = (DVec3::ZERO, DVec3::Y);
+        let mut out = vec![p];
+        for (len, yaw, pitch) in steps {
+            let side = d.any_orthonormal_vector();
+            d = (DQuat::from_axis_angle(side, pitch) * DQuat::from_axis_angle(d.cross(side).normalize(), yaw) * d).normalize();
+            p += d * len;
+            out.push(p);
+        }
+        out
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(128))]
+
+    #[test]
+    fn sweeps_along_wandering_paths(
+        path in wander(),
+        star in star(0.03, 0.08, 3),
+        round in any::<bool>(),
+        twist in -6.0f64..6.0,
+        taper in 0.2f64..2.0,
+        caps in any::<bool>(),
+    ) {
+        let profile = if round { round_profile(0.06, 12) } else { star };
+        let caps = match (caps, round) {
+            (false, _) => SweepCaps::None,
+            (true, true) => SweepCaps::QuadGrid,
+            (true, false) => SweepCaps::Fill,
+        };
+        let spec = SweepSpec {
+            profile: &profile,
+            profile_closed: true,
+            profile_spans: &[],
+            path: &path,
+            path_closed: false,
+            twist,
+            scale: [1.0, taper],
+            caps,
+            up: DVec3::Y,
+        };
+        let m = sweep(&spec).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        check(&m, caps != SweepCaps::None)?;
+        prop_assert_eq!(m.group("side").map(|g| g.count()), Some((path.len() - 1) * profile.len()));
     }
 }

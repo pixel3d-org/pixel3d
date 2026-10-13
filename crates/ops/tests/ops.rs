@@ -794,6 +794,59 @@ fn shapes_extrude_from_points_and_joined_curves() {
 }
 
 #[test]
+fn sweeps_and_pipes_follow_paths() {
+    let mut tx = curve_fixture();
+    // A pipe along a moved curve lands where the curve is.
+    ok(&mut tx, "scene.set_transform", json!({ "target": "path", "position": [0, 2, 0] }));
+    ok(&mut tx, "gen.pipe", json!({ "name": "hose", "path": { "curve": "path" }, "radius": "3cm", "segments": 12 }));
+    assert!(topo(&tx, "hose").is_watertight());
+    let hose = tx.doc().resolve("hose").unwrap();
+    assert_eq!(tx.doc().object(hose).unwrap().transform.translation, Vec3::new(0.0, 2.0, 0.0));
+    // An explicit position wins over the curve's place.
+    ok(&mut tx, "gen.pipe", json!({ "name": "hose2", "path": { "curve": "path" }, "position": [5, 0, 0] }));
+    let hose2 = tx.doc().resolve("hose2").unwrap();
+    assert_eq!(tx.doc().object(hose2).unwrap().transform.translation, Vec3::new(5.0, 0.0, 0.0));
+    // A ring: closed path, no caps, torus topology.
+    ok(
+        &mut tx,
+        "gen.pipe",
+        json!({ "name": "ring", "path": [[1, 0, 0], [0, 0, -1], [-1, 0, 0], [0, 0, 1]], "path_closed": true, "smooth_path": true }),
+    );
+    let t = topo(&tx, "ring");
+    assert!(t.is_watertight());
+    let ring = tx.doc().object_mesh(tx.doc().resolve("ring").unwrap()).unwrap();
+    assert_eq!(ring.vert_count() as i64 - ring.edge_count() as i64 + ring.face_count() as i64, 0);
+    // A sweep of a curve cross section (a circle drawn on the ground) along a smooth path.
+    ok(&mut tx, "curve.circle", json!({ "name": "section", "radius": "5cm", "segments": 10 }));
+    ok(
+        &mut tx,
+        "gen.sweep",
+        json!({ "name": "tusk", "profile": { "curve": "section" }, "path": [[0, 0, 0], [0, 0.5, 0.2], [0, 0.8, 0.6]], "smooth_path": true, "scale": [1, 0.2], "twist": 90 }),
+    );
+    assert!(topo(&tx, "tusk").is_watertight());
+    // An open trim profile along a closed rectangle: a picture frame molding with two profile groups.
+    let s = ok(
+        &mut tx,
+        "gen.sweep",
+        json!({ "name": "molding", "profile": [[0, 0], [0.04, 0], [0.04, 0.02]], "profile_closed": false, "path": { "curve": "outline" } }),
+    );
+    assert!(s.contains("molding"), "{s}");
+    let m = tx.doc().object_mesh(tx.doc().resolve("molding").unwrap()).unwrap();
+    assert_eq!((m.group("profile_0").unwrap().count(), m.group("profile_1").unwrap().count()), (4, 4));
+
+    let e = err(&mut tx, "gen.sweep", json!({ "profile": { "circle": 0.1 }, "path": { "curve": "outline" }, "twist": 45 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/twist")));
+    let e = err(&mut tx, "gen.sweep", json!({ "profile": { "hexagon": 1 }, "path": [[0, 0, 0], [0, 1, 0]] }));
+    assert!(e.message.contains("cross section"), "{}", e.message);
+    let e = err(&mut tx, "gen.sweep", json!({ "profile": { "circle": 0.1 }, "path": [[0, 0, 0], [0, 1, 0]], "up": [0, 0, 0] }));
+    assert_eq!(e.path.as_deref(), Some("/up"));
+    let e = err(&mut tx, "gen.pipe", json!({ "path": [[0, 0, 0], [1, 0, 0], [0, 0, 0]] }));
+    assert_eq!(e.code, ErrorCode::OutOfRange);
+    let e = err(&mut tx, "gen.pipe", json!({ "path": { "curve": "crate" } }));
+    assert!(e.message.contains("not a curve"), "{}", e.message);
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

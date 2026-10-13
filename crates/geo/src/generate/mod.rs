@@ -7,10 +7,12 @@
 mod extrude;
 mod lathe;
 mod shape;
+mod sweep;
 
 pub use extrude::{SHAPE_CORNER_DEG, ShapeSpec, extrude_shape};
 pub use lathe::{CORNER_DEG, LatheSpec, MAX_PROFILE_POINTS, lathe};
 pub use shape::MAX_CONTOURS;
+pub use sweep::{MAX_MITER, MAX_PATH_POINTS, SWEEP_CORNER_DEG, SweepCaps, SweepSpec, round_profile, sweep};
 
 use crate::prim::PrimError;
 use crate::prim::soup::Soup;

@@ -67,6 +67,8 @@ impl Registry {
             Arc::new(Typed::<curve::FilletOp>::new()),
             Arc::new(Typed::<generate::LatheOp>::new()),
             Arc::new(Typed::<generate::ExtrudeShapeOp>::new()),
+            Arc::new(Typed::<generate::SweepOp>::new()),
+            Arc::new(Typed::<generate::PipeOp>::new()),
             Arc::new(Typed::<prim::Plane>::new()),
             Arc::new(Typed::<select::Save>::new()),
             Arc::new(Typed::<select::Grow>::new()),

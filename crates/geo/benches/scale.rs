@@ -208,6 +208,29 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // A 16-sided tube along a helix with quad-grid caps.
+    let mut g = c.benchmark_group("scale_gen_sweep");
+    for &t in &sizes {
+        let n = (t / 32).max(2);
+        let path: Vec<glam::DVec3> = (0..n).map(|i| glam::DVec3::new((i as f64 * 0.05).cos(), i as f64 * 0.01, (i as f64 * 0.05).sin())).collect();
+        let profile = p3d_geo::generate::round_profile(0.02, 16);
+        g.bench_with_input(BenchmarkId::from_parameter(t), &path, |b, path| {
+            let spec = p3d_geo::generate::SweepSpec {
+                profile: &profile,
+                profile_closed: true,
+                profile_spans: &[],
+                path,
+                path_closed: false,
+                twist: 0.0,
+                scale: [1.0, 1.0],
+                caps: p3d_geo::generate::SweepCaps::QuadGrid,
+                up: glam::DVec3::Y,
+            };
+            b.iter(|| p3d_geo::generate::sweep(black_box(&spec)))
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)

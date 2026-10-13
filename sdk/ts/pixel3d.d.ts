@@ -196,6 +196,11 @@ export type OriginMode = "center" | "bottom_center" | "bbox" | "point";
 /** Where a primitive's origin sits. */
 export type OriginParam = "center" | "bottom";
 
+/** A path: points [x, y, z] in object space, or {"curve": "<curve object>"} (one spline; the result lands where the curve is). */
+export type Path = [Length, Length, Length][] | {
+  curve: string;
+};
+
 /** What rotations and scales of `edit.transform` turn around. */
 export type PivotParam = "median" | "bounds_center" | "individual" | "point";
 
@@ -228,6 +233,15 @@ export type ProportionalParams = {
 
 /** Uniform or per-axis scale. */
 export type Scale = number | [number, number, number];
+
+/** A cross section seen looking along the path (x right, y up): points [x, y], {"curve": "<curve object>"} (its axis plane), {"circle": radius} or {"rectangle": [width, height]}. */
+export type Section = [Length, Length][] | {
+  curve: string;
+} | {
+  circle: Length;
+} | {
+  rectangle: [Length, Length];
+};
 
 /** A set of mesh elements described by meaning. */
 export type Selector = {
@@ -776,8 +790,11 @@ export type GenLatheParams = {
   name?: string | null;
   /** Parent object (name, path or id); top level when omitted. */
   parent?: string | null;
-  /** Origin position in the parent's space. */
-  position?: [Length, Length, Length];
+  /**
+   * Origin position in the parent's space. Built from a curve object, the result takes the curve's place
+   * (parent and transform) unless `parent` or `position` is given.
+   */
+  position?: [Length, Length, Length] | null;
   /** The profile to revolve. */
   profile: Profile;
   /** Largest radius of a preset profile (presets only). */
@@ -808,10 +825,79 @@ export type GenExtrudeShapeParams = {
   parent?: string | null;
   /** Plane of `outline` points; the shape extrudes along its normal (+Z, +Y, +X). */
   plane?: PlaneParam;
-  /** Origin position in the parent's space. */
-  position?: [Length, Length, Length];
+  /**
+   * Origin position in the parent's space. Built from a curve object, the result takes the curve's place
+   * (parent and transform) unless `parent` or `position` is given.
+   */
+  position?: [Length, Length, Length] | null;
   /** Segments per curved span of Bezier splines. */
   resolution?: number;
+};
+
+/** `gen.sweep`: Carries a cross section along a path into rails, trims, frames, handles and cables, with twist and taper. */
+export type GenSweepParams = {
+  /** Fills the ends of a closed cross section on an open path. */
+  caps?: boolean;
+  /** Object name; a free name such as `sweep_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** The path the cross section follows. */
+  path: Path;
+  /** Joins the last inline path point back to the first. */
+  path_closed?: boolean;
+  /**
+   * Origin position in the parent's space. Built from a path curve, the result takes the curve's place
+   * (parent and transform) unless `parent` or `position` is given.
+   */
+  position?: [Length, Length, Length] | null;
+  /** The cross section. */
+  profile: Section;
+  /** Whether inline profile points close into a loop (open profiles make trims and ribbons). */
+  profile_closed?: boolean;
+  /** Segments per curved span of Bezier curves. */
+  resolution?: number;
+  /** Cross section scale at the start and the end (taper). */
+  scale?: [number, number];
+  /** Points around a circle cross section; adapts to its size when omitted. */
+  segments?: number | null;
+  /** A smooth Bezier through inline path points instead of straight segments. */
+  smooth_path?: boolean;
+  /** Turn of the cross section from start to end (degrees); closed paths need whole turns. */
+  twist?: Angle;
+  /** Direction the cross section's y leans toward at the start. */
+  up?: [number, number, number] | null;
+};
+
+/** `gen.pipe`: Builds a round pipe along a path with smooth bends at the corners and quad caps. */
+export type GenPipeParams = {
+  /** Radius of the bends at path corners (twice the pipe radius when omitted; 0 for mitered joints). */
+  bend_radius?: Length | null;
+  /** Segments per bend. */
+  bend_segments?: number;
+  /** Closes the ends of an open pipe. */
+  caps?: boolean;
+  /** Object name; a free name such as `pipe_1` is picked when omitted. */
+  name?: string | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** The path the pipe follows. */
+  path: Path;
+  /** Joins the last inline path point back to the first (rings). */
+  path_closed?: boolean;
+  /**
+   * Origin position in the parent's space. Built from a path curve, the result takes the curve's place
+   * (parent and transform) unless `parent` or `position` is given.
+   */
+  position?: [Length, Length, Length] | null;
+  /** Pipe radius. */
+  radius?: Length;
+  /** Segments per curved span of Bezier curves. */
+  resolution?: number;
+  /** Points around the pipe; adapts to its size when omitted (a multiple of 4 gives quad caps). */
+  segments?: number | null;
+  /** A smooth Bezier through inline path points instead of straight runs with bends. */
+  smooth_path?: boolean;
 };
 
 /** `prim.plane`: Creates a flat grid of quads in the XZ plane facing up (+Y). */
@@ -1347,6 +1433,8 @@ export interface OpParams {
   "curve.fillet": CurveFilletParams;
   "gen.lathe": GenLatheParams;
   "gen.extrude_shape": GenExtrudeShapeParams;
+  "gen.sweep": GenSweepParams;
+  "gen.pipe": GenPipeParams;
   "prim.plane": PrimPlaneParams;
   "select.save": SelectSaveParams;
   "select.grow": SelectGrowParams;
