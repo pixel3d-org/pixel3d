@@ -226,7 +226,7 @@ pub(crate) fn grow(spec: &TreeSpec) -> Result<Skeleton, VegError> {
                 let az = az0 + std::f32::consts::TAU * (i as f32 + (rng.unit() - 0.5) * 0.5) / limbs as f32;
                 let dir = cone_dir(lean_dir, angle.min(1.45), az);
                 // Each limb climbs until it is a little more than halfway to the hull.
-                let reach = hull.radius * 0.55 / angle.sin().max(0.35);
+                let reach = hull.radius * 0.62 / angle.sin().max(0.35);
                 let n = ((reach / step).ceil() as usize).clamp(2, 512);
                 let gnarl = spec.gnarl;
                 let s0 = seed.wrapping_add(i as u64 * 7919);
@@ -235,7 +235,10 @@ pub(crate) fn grow(spec: &TreeSpec) -> Result<Skeleton, VegError> {
                     // Limbs turn up toward the light and wander with the gnarl.
                     d + Vec3::Y * 0.035 * (1.0 + k as f32 * 0.02) + wob * gnarl * 0.18
                 })?;
-                seeds.extend(nodes);
+                // Side branches leave the outer part of the limb, so the crown
+                // forks down from the limbs instead of growing a fishbone.
+                let from = nodes.len() * 2 / 5;
+                seeds.extend(nodes.iter().skip(from).copied());
             }
         }
         Species::Birch => {
@@ -331,7 +334,7 @@ fn colonize(spec: &TreeSpec, g: &mut Grower, hull: &Hull, seeds: &[u32], rng: &m
     let (inner, open_low) = match spec.species {
         Species::Birch => (0.2, 0.5),
         Species::Stylized => (0.3, 0.4),
-        _ => (0.3, 0.15),
+        _ => (0.12, 0.15),
     };
     let mut attractors: Vec<Vec3> = Vec::with_capacity(wanted);
     let mut tries = 0usize;
@@ -348,7 +351,7 @@ fn colonize(spec: &TreeSpec, g: &mut Grower, hull: &Hull, seeds: &[u32], rng: &m
             attractors.push(p);
         }
     }
-    let di = step * 9.0;
+    let di = step * 6.0;
     let dk = step * 1.5;
     let tropism = match spec.species {
         Species::Birch => Vec3::Y * 0.12,

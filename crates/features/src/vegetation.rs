@@ -81,6 +81,7 @@ pub const TREE_PARAMS: &[ParamInfo] = &[
     p("crown_width", "Crown diameter (broadleaf: about the height).", ParamKind::Length, 12.0, 0.05, 100.0),
     p("crown_base", "Height share of the crown's lowest point; 0 derives it from the fork.", ParamKind::Ratio, 0.0, 0.0, 0.95),
     p("crown_lumps", "Lumps of the crown's outline as a share of its radius (0 smooth).", ParamKind::Ratio, 0.16, 0.0, 0.5),
+    p("clumping", "Foliage gathered into clumps with gaps between them (0 even, 1 distinct clumps).", ParamKind::Ratio, 0.5, 0.0, 1.0),
     p("foliage", "What the leaves become: cards, clumps, shell or none.", ParamKind::Choice(FOLIAGE), 0.0, 0.0, 3.0),
     p("card_size", "Cluster card (or clump) size (broadleaf 0.4 to 0.8 m).", ParamKind::Length, 0.6, 0.005, 5.0),
     p("coverage", "Silhouette coverage target of the crown; cards are added until it is reached.", ParamKind::Ratio, 0.9, 0.05, 1.0),
@@ -155,6 +156,7 @@ pub fn tree_spec(p: &Params) -> TreeSpec {
     f("crown_width", &mut s.crown_width);
     f("crown_base", &mut s.crown_base);
     f("crown_lumps", &mut s.crown_lumps);
+    f("clumping", &mut s.clumping);
     f("card_size", &mut s.card_size);
     f("coverage", &mut s.coverage);
     f("leaf_cards", &mut s.leaf_cards);

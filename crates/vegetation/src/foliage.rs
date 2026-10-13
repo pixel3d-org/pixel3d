@@ -101,12 +101,31 @@ fn twigs(spec: &TreeSpec, sk: &Skeleton, hull: &Hull, rng: &mut Rng, max_weight:
             continue;
         }
         let share = hull.share(p).min(1.3);
-        let prio = 0.2 + share * share;
+        // Clumps: a low-frequency density field over the crown leaves gaps
+        // between masses of leaves (hard gaps where it is lowest).
+        let dense = clump_density(spec, hull, p);
+        if dense < spec.clumping * 0.4 {
+            continue;
+        }
+        let prio = (0.2 + share * share) * (1.0 - spec.clumping + spec.clumping * dense);
         let u = rng.unit().max(1e-6);
         out.push(Twig { node: n as u32, share, tip: (1.0 / w).clamp(0.0, 1.0), key: u.powf(1.0 / prio) });
     }
     out.sort_by(|a, b| b.key.total_cmp(&a.key).then(a.node.cmp(&b.node)));
     out
+}
+
+/// Foliage density of the clump field at `p` (0 in a gap to 1 in a clump):
+/// two octaves of seeded noise at about a third of the crown's radius.
+///
+/// Complexity: O(1).
+fn clump_density(spec: &TreeSpec, hull: &Hull, p: Vec3) -> f32 {
+    if spec.clumping <= 0.0 {
+        return 1.0;
+    }
+    let scale = (hull.radius * 0.32).max(1e-3);
+    let n = fbm(p / scale, spec.seed ^ 0xC1A5_0005, 2);
+    smoothstep(-0.3, 0.3, n)
 }
 
 /// A card ready to emit.

@@ -223,7 +223,8 @@ fn rings_of(spec: &TreeSpec, sk: &Skeleton, c: usize) -> Vec<Ring> {
         // A rounded top hidden among the limbs of a decurrent fork.
         if let (Some(&last), true) = (out.last(), sk.top == sk.fork && sk.chains.len() > 1) {
             let dir = if out.len() >= 2 { (last.center - out[out.len() - 2].center).normalize_or(Vec3::Y) } else { Vec3::Y };
-            for (up, k) in [(0.3f32, 0.92f32), (0.55, 0.7)] {
+            // An ogive, not a step: the trunk eases into the crotch between the limbs.
+            for (up, k) in [(0.3f32, 0.97f32), (0.6, 0.9), (0.9, 0.76), (1.15, 0.55)] {
                 out.push(Ring { center: last.center + dir * last.radius * up, radius: last.radius * k, ..last });
             }
         }
@@ -245,12 +246,12 @@ fn rings_of(spec: &TreeSpec, sk: &Skeleton, c: usize) -> Vec<Ring> {
     // deep in its top as wide as most of it.
     let split = a == sk.fork && lvl == 1 && matches!(spec.species, Species::Broadleaf | Species::Stylized);
     let target = sk.pos[n1 as usize];
-    let mut start = sk.pos[a as usize] - parent_dir * pr * if split { 1.1 } else { 0.35 };
+    let mut start = sk.pos[a as usize] - parent_dir * pr * if split { 1.6 } else { 0.35 };
     if split {
         // Off the axis toward the limb, so the limbs together fill the trunk.
         let out_dir = target - sk.pos[a as usize];
         let side = (out_dir - parent_dir * out_dir.dot(parent_dir)).normalize_or_zero();
-        start += side * pr * 0.3;
+        start += side * pr * 0.15;
     }
     let reach = start.distance(target);
     let ctrl = start + parent_dir * reach * 0.5;
@@ -258,7 +259,9 @@ fn rings_of(spec: &TreeSpec, sk: &Skeleton, c: usize) -> Vec<Ring> {
     let emerge: &[(f32, f32)] = if lvl <= 1 { &[(0.0, 1.3), (0.34, 1.18), (0.67, 1.07)] } else { &[(0.0, 1.18), (0.5, 1.08)] };
     for &(u, collar) in emerge {
         let p = start * (1.0 - u) * (1.0 - u) + ctrl * 2.0 * u * (1.0 - u) + target * u * u;
-        let radius = if split { (pr * 0.8 * (1.0 - u) + r1 * collar * u).max(r1 * collar).min(pr * 0.95) } else { (r1 * collar).min(pr * 0.95) };
+        // Split limbs stay inside the trunk where they start (with their side
+        // offset), so no collar shows around the fork.
+        let radius = if split { (pr * 0.78 * (1.0 - u) + r1 * collar * u).min(pr * (0.82 + 0.13 * u)) } else { (r1 * collar).min(pr * 0.95) };
         out.push(Ring { center: p, radius, lobes: 0.0, swell: 0.0, turn: 0.0 });
     }
     let own = &nodes[1..];

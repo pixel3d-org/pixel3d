@@ -22,6 +22,7 @@ Trees are described, not drawn. Pick a `species` (its preset sets everything) an
 | `budget` | `number \| null` | - | Triangle budget at LOD0; the wood takes about a third. |
 | `card_size` | `Length \| null` | - | Cluster card (or clump) size. |
 | `clump_shading` | `ClumpShading \| null` | - | Clumps `faceted` (low poly) or `smooth`. |
+| `clumping` | `number \| null` | - | Foliage gathered into clumps with gaps between them (0 even to 1 distinct clumps). |
 | `coverage` | `number \| null` | - | Silhouette coverage target of the crown (0.05 to 1); cards are added until it is reached. |
 | `crown` | `TreeCrown \| null` | - | Crown hull: `dome`, `sphere`, `ellipsoid`, `cone`, `umbrella`, `column`, or an outline `[[radius share, height share], ...]` from the crown base up. |
 | `crown_base` | `number \| null` | - | Height share of the crown's lowest point; derived from the fork when omitted. |
@@ -64,4 +65,4 @@ Trees are described, not drawn. Pick a `species` (its preset sets everything) an
 {"height":"12m","species":"broadleaf"}
 ```
 
-Result: `created tree (o:4) tree 12.5214 x 12.6158 x 13.3685 m: 4,560 faces (9,052 tris; budget 6,000); broadleaf 12.5 m: crown 12.5 x 13.4 m, 9.4 m tall from 3.1 m; fork at 4.44 m (36%), 4 limbs; 1,576 cards, coverage 90% (target 90%), overdraw 2.1; wood 3,000 tris, foliage 6,052 tris`
+Result: `created tree (o:4) tree 12.6097 x 12.4058 x 13.0091 m: 4,538 faces (9,020 tris; budget 6,000); broadleaf 12.3 m: crown 12.6 x 13.0 m, 9.1 m tall from 3.2 m; fork at 4.44 m (36%), 4 limbs; 1,560 cards, coverage 90% (target 90%), overdraw 2.1; wood 2,998 tris, foliage 6,022 tris`

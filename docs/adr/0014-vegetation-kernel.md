@@ -19,6 +19,7 @@ ADR 0009 decides what vegetation is (a `tree` feature and `gen.tree` op, foliage
 **Crown hull.** A surface of revolution around a vertical axis through the fork:
 - Profiles: `sphere`, `ellipsoid`, `dome` (widest at 36% of the crown height, flatter underneath: the broadleaf default), `cone`, `umbrella`, `column`, or an outline of points.
 - Lumps: seeded noise on the radius (`crown_lumps`) make the silhouette irregular.
+- Clumping: a low-frequency density field (two noise octaves at a third of the crown radius) ranks the twigs and leaves hard gaps where it is lowest (`clumping`), so leaves gather in masses with sky between them instead of an even ball.
 - Normals for the normal transfer come from the smooth profile, so they stay soft.
 
 **Skeleton.**
