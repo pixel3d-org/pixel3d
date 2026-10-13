@@ -216,6 +216,13 @@ expression: tools
               "additionalProperties": false,
               "description": "The genes as written (a spec's or brief's `dna` block).",
               "properties": {
+                "archetype": {
+                  "description": "The archetype whose proportion ranges and gesture apply (`dwarf`,\n`sword`, ...); archetype instances in a spec set it.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "culture": {
                   "description": "`dwarven`, `elven`, `orcish` or `human_medieval`.",
                   "type": [
@@ -232,6 +239,17 @@ expression: tools
                       "type": "null"
                     }
                   ]
+                },
+                "gesture": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/GestureGene"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Centerline bend of elongated parts."
                 },
                 "hierarchy": {
                   "description": "Primary, secondary and tertiary volume shares, for example `[0.6, 0.3, 0.1]`.",
@@ -266,8 +284,21 @@ expression: tools
                     "minItems": 2,
                     "type": "array"
                   },
-                  "description": "Height ratios between parts: `{\"blade_to_haft\": [0.3, 0.45]}`.",
+                  "description": "Ratios: `{\"blade_to_haft\": [0.3, 0.45]}` (part heights), or the\nhumanoid measures `heads`, `shoulders` (head heights) and `legs`\n(crotch height over height).",
                   "type": "object"
+                },
+                "rest": {
+                  "description": "Share of the model's length free of small detail (rest areas).",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
                 },
                 "rhythm": {
                   "description": "`varied` (repeated parts must vary) or `regular`.",
@@ -339,6 +370,33 @@ expression: tools
                 }
               ],
               "description": "The `edges` gene."
+            },
+            "GestureGene": {
+              "additionalProperties": false,
+              "description": "The `gesture` gene: how much elongated parts' centerlines bend.",
+              "properties": {
+                "bend": {
+                  "description": "The bend: the centerline's largest distance from its chord over the\npart's length (0.02 a hint of a curve, 0.1 a sabre).",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "parts": {
+                  "description": "Parts that should bend; every elongated part when empty.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "required": [
+                "bend"
+              ],
+              "type": "object"
             },
             "Length": {
               "anyOf": [
@@ -1506,11 +1564,18 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": false
         },
-        "description": "Feature templates (head bases, hands, ears, eyes, noses, horns, cables, bolts, rivets, vents, panels, moldings) built from semantic parameters: list, search or describe one with its parameters and landmarks.",
+        "description": "Feature templates (head bases, hands, ears, eyes, noses, horns, cables, wings, bolts, rivets, vents, panels, moldings) built from semantic parameters, and archetypes (humanoid races, weapons, wings) that expand into a skeleton and parts: list, search or describe one with its parameters, landmarks or joints.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
           "properties": {
+            "archetype": {
+              "description": "Describe this archetype in full: parameters, joints and the parts it makes (`dwarf`, `axe`, `feathered_wings`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "feature": {
               "description": "Describe this feature in full (id or alias, for example `ear` or `ram horn`).",
               "type": [
@@ -1519,7 +1584,7 @@ expression: tools
               ]
             },
             "search": {
-              "description": "Words to find in feature ids, labels, aliases and summaries.",
+              "description": "Words to find in feature and archetype ids, labels, aliases and summaries.",
               "type": [
                 "string",
                 "null"

@@ -16,6 +16,19 @@ export type AxisName = "x" | "y" | "z";
 /** An axis of object space. */
 export type AxisParam = "x" | "y" | "z";
 
+/** An axis. */
+export type BandAxis = "x" | "y" | "z";
+
+/** A ring around an axis. */
+export type BandParam = {
+  /** The ring's center. */
+  at?: [Length, Length, Length];
+  /** The axis the ring goes around. */
+  axis?: BandAxis;
+  /** Ring radius: the surface's radius there (a haft, a helmet rim). */
+  radius: Length;
+};
+
 /** Advanced settings of `edit.bevel`. */
 export type BevelAdvanced = {
   /** Shrink the width where it would overlap neighbouring edges instead of failing. */
@@ -273,6 +286,9 @@ export type MirrorAxis = "x" | "y" | "z";
 /** Axes to mirror across: `"x"` or a list such as `["x", "z"]`. */
 export type MirrorParam = AxisName | AxisName[];
 
+/** What repeats along the path. */
+export type MotifParam = "stud" | "pyramid" | "bead" | "rune" | "rope" | "scroll";
+
 /** Seeded bumps on the surface. */
 export type NoiseParam = {
   /** Largest bump height. */
@@ -357,9 +373,15 @@ export type ProportionalParams = {
   radius: Length;
 };
 
+/** One radius, or semi-axes along x, y and z. */
+export type RadiusParam = Length | [Length, Length, Length];
+
 /** Where strands grow. */
 export type RegionParam = AllWord | {
   groups: string[];
+} | {
+  around: PointParam;
+  radius: RadiusParam;
 } | PointParam[];
 
 /** Uniform or per-axis scale. */
@@ -487,6 +509,9 @@ export type SubdAdvanced = {
   /** Treat edges marked sharp like fully creased edges. */
   sharp_as_crease?: boolean;
 };
+
+/** How a braid ends. */
+export type TieParam = "none" | "band" | "bead";
 
 /** One object or several. */
 export type ToolsParam = string | string[];
@@ -1301,11 +1326,11 @@ export type GenShellParams = {
   twist?: Angle;
 };
 
-/** `gen.feature`: Builds a feature template (head base, hand, ear, eye, nose, horn, cable, bolt, rivet, vent grille, panel inset, molding) from semantic parameters. */
+/** `gen.feature`: Builds a feature template (head base, hand, ear, eye, nose, horn, cable, wing, bolt, rivet, vent grille, panel inset, molding) from semantic parameters. */
 export type GenFeatureParams = {
   /** Voxel size for SDF features (`nose`); a 48th of the size when omitted. */
   detail?: Length | null;
-  /** The template: `head_base`, `hand`, `ear`, `eye`, `nose`, `horn`, `cable`, `bolt`, `rivet`, `vent_grille`, `panel_inset` or `molding` (the `features` tool describes them). */
+  /** The template: `head_base`, `hand`, `ear`, `eye`, `nose`, `horn`, `cable`, `wing`, `bolt`, `rivet`, `vent_grille`, `panel_inset` or `molding` (the `features` tool describes them). */
   feature: string;
   /** Object name; the feature's id is used when omitted. */
   name?: string | null;
@@ -1321,14 +1346,34 @@ export type GenFeatureParams = {
 export type GenStrandsParams = {
   /** Where a `ponytail` gathers (a landmark or coordinates). */
   anchor?: PointParam | null;
+  /** Bead diameter; 1.25 times the braid width when omitted. */
+  bead_size?: Length | null;
+  /** Beads threaded on each braid (0 to 32). */
+  beads?: number | null;
+  /** Points braids start near (landmarks or coordinates); spread over the lowest roots when omitted. */
+  braid_at?: PointParam[];
+  /** Braid length; 1.6 times `length` when omitted. */
+  braid_length?: Length | null;
+  /** Braid width across the plies; 1.2 times the clump width when omitted. */
+  braid_width?: Length | null;
+  /** Braids among the strands: three plies interleaved along a hanging guide (0 to 256). */
+  braids?: number | null;
+  /** Where along a strand it is widest (0 at the root to 0.9); leaf-shaped beard clumps bulge near 0.35. */
+  bulge?: number | null;
   /** A scalp cap under the cards. */
   cap?: boolean | null;
+  /** Clump layers, inner to outer (1 to 3); outer layers fill the gaps. */
+  clump_layers?: number | null;
   /** Guides: one card or clump each per layer (1 to 4096). */
   clumps?: number | null;
+  /** Objects (spec parts in a spec) the strands stay outside of and drape over, such as the chest under a beard. */
+  collide?: string[];
   /** Waviness (0 straight to 1 tight curls). */
   curl?: number | null;
   /** Curl turns along the length (0 to 20). */
   curl_turns?: number | null;
+  /** Clump section thickness over width (0.1 flat ribbon to 1 round; 0.45 by default). */
+  flatness?: number | null;
   /** Direction for `combed` (the flow) and `wind_blown` (the wind). */
   flow?: [number, number, number] | null;
   /** Thin flyaway cards as a share of the guides (0 to 1). */
@@ -1361,6 +1406,8 @@ export type GenStrandsParams = {
   part?: Length | null;
   /** `"all"`, `{"groups": [...]}` face groups, or a loop of points around the patch such as `["hairline_front", "temple_l", "nape", "temple_r"]` (vertex groups, `lm.<name>` landmarks by name, or coordinates in the object's space). */
   region?: RegionParam;
+  /** Clump width at the root as a share of the widest (0.1 to 1). */
+  root_width?: number | null;
   /** Steps along each strand (2 to 64). */
   segments?: number | null;
   /** Offset copies for `shells` (1 to 32). */
@@ -1369,12 +1416,50 @@ export type GenStrandsParams = {
   sides?: number | null;
   /** Which way strands run: `swept_back`, `parted`, `spiky`, `straight`, `combed`, `upright`, `wind_blown` or `ponytail`. */
   style?: StyleParam | null;
+  /** How a braid ends: `band` (default), `bead` or `none`; a short tuft follows a tie. */
+  tie?: TieParam | null;
   /** Tip width as a share of the root width (0 to 1). */
   tip_width?: number | null;
+  /** Turns of each clump's section along its length (-20 to 20). */
+  twist?: number | null;
   /** Extra distance off the surface toward the tips (hair volume). */
   volume?: Length | null;
   /** Root width of a card or clump; sized from the spacing when omitted. */
   width?: Length | null;
+};
+
+/** `gen.ornament`: Repeats a motif (studs, pyramids, beads, runes, rope, scroll filigree) along a path or around a band, raised off the surface as geometry. */
+export type GenOrnamentParams = {
+  /** A ring around an axis instead of a path: `{"radius": "2cm", "axis": "y", "at": [0, 0.3, 0]}`. */
+  band?: BandParam | null;
+  /** Join the path's last point back to the first. */
+  closed?: boolean;
+  /** Motifs along the path; fills it at `spacing` when omitted. */
+  count?: number | null;
+  /** What repeats: `stud`, `pyramid`, `bead`, `rune`, `rope` or `scroll`. */
+  motif?: MotifParam;
+  /** Object name; `ornament` when omitted. */
+  name?: string | null;
+  /** Out of the surface along a path (made perpendicular to it); +Y when omitted, and away from the middle for a closed path. Bands face away from their axis. */
+  normal?: [number, number, number] | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** The curve to follow, as points; a 5 cm band around Y when neither `path` nor `band` is given. */
+  path?: [Length, Length, Length][] | null;
+  /** Rope plies (2 to 5); 3 when omitted. */
+  plies?: number | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Height above the surface; 0.4 sizes when omitted. */
+  relief?: Length | null;
+  /** Depth sunk into the surface; 0.15 sizes when omitted. */
+  sink?: Length | null;
+  /** Motif width (rope and scroll: the band width). */
+  size?: Length;
+  /** Distance between motif centers (scroll: the wave length); 1.5 sizes when omitted. */
+  spacing?: Length | null;
+  /** Random change of spacing, size and turn: 0 even (regular rhythm) to 1 loose. */
+  variation?: number;
 };
 
 /** `gen.tree`: Grows a tree from a species preset (broadleaf, conifer, palm, birch, stylized) toward a crown hull, with buttress roots, swept wood and leaf cards, clumps or a crown shell. */
@@ -2154,6 +2239,7 @@ export interface OpParams {
   "gen.shell": GenShellParams;
   "gen.feature": GenFeatureParams;
   "gen.strands": GenStrandsParams;
+  "gen.ornament": GenOrnamentParams;
   "gen.tree": GenTreeParams;
   "remesh.quad": RemeshQuadParams;
   "remesh.isotropic": RemeshIsotropicParams;

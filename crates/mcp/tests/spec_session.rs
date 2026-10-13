@@ -159,9 +159,15 @@ fn bisect_finds_the_patch_that_broke_the_brief() {
 fn features_are_listed_described_and_used_in_specs() {
     let mut a = Agent::new(Session::new());
     let t = call(&mut a, "features", json!({}));
-    assert!(t.starts_with("15 features") && t.contains("nose (sdf):"), "{t}");
+    assert!(t.starts_with("16 features") && t.contains("nose (sdf):") && t.contains("wing:"), "{t}");
+    assert!(t.contains("archetypes") && t.contains("dwarf:") && t.contains("feathered_wings:"), "{t}");
     let t = call(&mut a, "features", json!({ "search": "horn" }));
     assert!(t.contains("horn:"), "{t}");
+    let t = call(&mut a, "features", json!({ "archetype": "dwarf" }));
+    assert!(t.contains("heads:") && t.contains("grip_l") && t.contains("hold:"), "{t}");
+    assert!(t.contains("torso:"), "{t}");
+    let out = a.call("features", json!({ "archetype": "dwarff" }));
+    assert!(out.is_error && out.text.contains("dwarf"), "{}", out.text);
     let t = call(&mut a, "features", json!({ "feature": "ear" }));
     assert!(t.contains("variant: human | elf") && t.contains("landmarks:") && t.contains("tip:"), "{t}");
     let out = a.call("features", json!({ "feature": "eer" }));
@@ -175,4 +181,16 @@ fn features_are_listed_described_and_used_in_specs() {
         } } }),
     );
     assert!(t.contains("horn_l") && t.contains("feature horn"), "{t}");
+}
+
+#[test]
+fn spec_get_lists_skeleton_joints() {
+    let mut a = Agent::new(Session::new());
+    call(
+        &mut a,
+        "spec",
+        json!({ "action": "set", "target": "d", "spec": { "archetypes": { "dwarf": { "kind": "dwarf", "params": { "beard": "none", "hair": "none" } } } } }),
+    );
+    let t = call(&mut a, "spec", json!({ "action": "get", "target": "d" }));
+    assert!(t.contains("skeleton dwarf (landmarks") && t.contains("  head_top (0, 1350, "), "{t}");
 }

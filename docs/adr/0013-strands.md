@@ -30,6 +30,8 @@ Phase 3c adds strands (project spec 17.6): hair, fur, eyebrows, beards and grass
 - `clumps`: each guide becomes a closed tapered tube with a lens (flattened) section and a pointed tip. Stylized hair, beards and horns.
 - `shells`: the region copied N times, offset along vertex normals up to the length. Short fur; the noise alpha follows in Phase 6.
 
+**Grooming genes (ADR 0011, added in Phase 3c).** A region can be the faces around a point (inside an ellipsoid of given radii). Clumps have a width profile (root width, the bulge where they are widest, tip width), a flatness and a twist, and up to three layers. Braids are guides grown long and hanging from chosen roots (the lowest and most forward ones, or the roots nearest given points), output as three plies on a figure-eight path, with beads (barrels threaded on the braid) and a band or bead tie followed by a short tuft; all of it is closed geometry. Obstacle meshes in the parent's space (`collide`) join the BVH strands are pushed out of and drape over, so a beard rests on the chest.
+
 **Presets.** `hair`, `fur`, `eyebrows`, `beard` and `grass` set the defaults (style, output, length, clumps, gravity, lift). Every parameter can be overridden.
 
 **Report.** Each result reports guides, faces and triangles, plus:

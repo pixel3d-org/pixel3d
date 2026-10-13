@@ -7,6 +7,7 @@
 //!
 //! Layer L2 (algorithms). See `docs/architecture.md`.
 
+mod braid;
 mod grow;
 mod output;
 mod region;
@@ -22,6 +23,8 @@ pub use region::{MAX_LOOP_POINTS, region_faces};
 pub const MAX_GUIDES: u32 = 4096;
 /// Most faces one call outputs.
 pub const MAX_FACES: usize = 2_000_000;
+/// Most braids one call makes.
+pub const MAX_BRAIDS: u32 = 256;
 
 /// Where strands grow on the parent.
 #[derive(Debug, Clone, PartialEq)]
@@ -33,6 +36,41 @@ pub enum Region {
     /// The patch a closed loop of surface points cuts off: the side holding
     /// `inside`, or the smaller side.
     Loop { points: Vec<Vec3>, inside: Option<Vec3> },
+    /// The faces whose centers lie within an ellipsoid around a point
+    /// (semi-axes along x, y and z): an eyebrow, a sideburn, a tuft.
+    Around { center: Vec3, radii: Vec3 },
+}
+
+/// How a braid ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tie {
+    /// The plies just end.
+    None,
+    /// A wrapped band, then a short tuft.
+    #[default]
+    Band,
+    /// A large metal bead, then a short tuft.
+    Bead,
+}
+
+/// Braids among the strands: three plies interleaved along a hanging guide,
+/// with beads threaded on them and a tie at the end.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Braids {
+    /// How many (0 for none).
+    pub count: u32,
+    /// Length along the braid; 0 uses 1.6 times the strand length.
+    pub length: f32,
+    /// Width across the plies; 0 uses 1.2 times the clump width.
+    pub width: f32,
+    pub tie: Tie,
+    /// Beads threaded on each braid.
+    pub beads: u32,
+    /// Bead diameter; 0 uses 1.25 times the braid width.
+    pub bead_size: f32,
+    /// Points near which braids start (the nearest roots); empty spreads
+    /// them over the lowest roots.
+    pub at: Vec<Vec3>,
 }
 
 /// Which way strands run.
@@ -136,6 +174,18 @@ pub struct StrandSpec {
     pub shells: u32,
     /// Points around a clump (3 to 16).
     pub sides: u32,
+    /// Clump section thickness over width (0.1 flat ribbon to 1 round).
+    pub flatness: f32,
+    /// Turns of a clump's section along its length.
+    pub twist: f32,
+    /// Width at the root as a share of the widest (0.1 to 1).
+    pub root_width: f32,
+    /// Where along the strand it is widest (0 at the root to 0.9): a leaf
+    /// shaped beard clump bulges near 0.35.
+    pub bulge: f32,
+    /// Clump layers, inner to outer (1 to 3); outer ones fill the gaps.
+    pub clump_layers: u32,
+    pub braids: Braids,
     pub seed: u64,
 }
 
@@ -163,6 +213,12 @@ impl StrandSpec {
             cap: true,
             shells: 8,
             sides: 6,
+            flatness: 0.45,
+            twist: 0.0,
+            root_width: 1.0,
+            bulge: 0.0,
+            clump_layers: 1,
+            braids: Braids::default(),
             seed: 0,
         };
         match kind {
@@ -268,6 +324,8 @@ pub struct Report {
     /// Guide points inside the parent (0 unless the parent is open or
     /// self-intersecting).
     pub penetrating: usize,
+    pub braids: usize,
+    pub beads: usize,
 }
 
 /// Grown strands: the output mesh (in the parent's space), the guide
@@ -304,6 +362,24 @@ fn validate(s: &StrandSpec) -> Result<(), StrandsError> {
     check("flyaways", s.flyaways, 0.0, 1.0)?;
     check_count("shells", s.shells, 1, 32)?;
     check_count("sides", s.sides, 3, 16)?;
+    check("flatness", s.flatness, 0.1, 1.0)?;
+    check("twist", s.twist, -20.0, 20.0)?;
+    check("root_width", s.root_width, 0.1, 1.0)?;
+    check("bulge", s.bulge, 0.0, 0.9)?;
+    check_count("clump_layers", s.clump_layers, 1, 3)?;
+    check_count("braids", s.braids.count, 0, MAX_BRAIDS)?;
+    check("braid_length", s.braids.length, 0.0, 10.0)?;
+    check("braid_width", s.braids.width, 0.0, 1.0)?;
+    check_count("beads", s.braids.beads, 0, 32)?;
+    check("bead_size", s.braids.bead_size, 0.0, 1.0)?;
+    if s.braids.at.iter().any(|p| !p.is_finite()) {
+        return Err(StrandsError::new("braid_at", "the braid points must be finite"));
+    }
+    if let Region::Around { center, radii } = s.region
+        && (!center.is_finite() || !radii.is_finite() || radii.min_element() <= 0.0)
+    {
+        return Err(StrandsError::new("region", "an around region needs a finite point and positive radii"));
+    }
     let vectors = match s.style {
         Style::Combed { flow, .. } => Some(flow),
         Style::WindBlown(w) => Some(w),
@@ -322,6 +398,16 @@ fn validate(s: &StrandSpec) -> Result<(), StrandsError> {
 /// O(guides x layers x segments x log F) for growing (BVH queries) and
 /// O(F + guide points) for the coverage check.
 pub fn generate(parent: &Mesh, spec: &StrandSpec) -> Result<Strands, StrandsError> {
+    generate_around(parent, None, spec)
+}
+
+/// [`generate`], with strands also kept outside `obstacles` (other meshes
+/// in the parent's space, such as the chest a beard hangs over), and
+/// draping styles resting on them.
+///
+/// Complexity: as [`generate`], with F counting the obstacles' faces for
+/// the queries, plus O(braids x points x sides) for braids.
+pub fn generate_around(parent: &Mesh, obstacles: Option<&Mesh>, spec: &StrandSpec) -> Result<Strands, StrandsError> {
     validate(spec)?;
     let faces = region_faces(parent, &spec.region)?;
     let area = p3d_geo::generate::surface_area(parent, &faces);
@@ -341,16 +427,31 @@ pub fn generate(parent: &Mesh, spec: &StrandSpec) -> Result<Strands, StrandsErro
             format!("about {estimate} faces would exceed {MAX_FACES}; use fewer clumps, segments, layers or shells"),
         ));
     }
-    let bvh = TriBvh::from_mesh(parent, Affine3A::IDENTITY);
+    let surface = TriBvh::from_mesh(parent, Affine3A::IDENTITY);
+    let both = obstacles.filter(|o| o.face_count() > 0).map(|o| {
+        let mut all = parent.clone();
+        all.append(o);
+        TriBvh::from_mesh(&all, Affine3A::IDENTITY)
+    });
+    let bvh = both.as_ref().unwrap_or(&surface);
     let guides = match spec.output {
         Output::Shells => Vec::new(),
-        _ => grow::grow(parent, &faces, &bvh, spec, spacing)?,
+        _ => grow::grow(parent, &faces, &surface, bvh, spec, spacing)?,
     };
-    let mesh = match spec.output {
+    let mut mesh = match spec.output {
         Output::Cards => output::cards(parent, &faces, &guides, width, spec)?,
         Output::Clumps => output::clumps(&guides, width, spec)?,
         Output::Shells => output::shells(parent, &faces, spec)?,
     };
+    let (lo, hi) = parent.bounds().unwrap_or((Vec3::ZERO, Vec3::ZERO));
+    let (braided, braid_guides, beads) = if spec.braids.count > 0 || !spec.braids.at.is_empty() {
+        braid::braids(bvh, (lo + hi) * 0.5, &guides, width, spec)?
+    } else {
+        (Mesh::default(), Vec::new(), 0)
+    };
+    if braided.face_count() > 0 {
+        mesh.append(&braided);
+    }
     let (coverage, bald_spot) = match spec.output {
         Output::Shells => (None, None),
         _ => {
@@ -359,7 +460,7 @@ pub fn generate(parent: &Mesh, spec: &StrandSpec) -> Result<Strands, StrandsErro
         }
     };
     let overdraw = (spec.output == Output::Cards).then(|| output::card_area(&guides, width, spec) / area);
-    let penetrating = grow::penetrating(&bvh, &guides);
+    let penetrating = grow::penetrating(bvh, &guides) + grow::penetrating(bvh, &braid_guides);
     let report = Report {
         guides: guides.len(),
         faces: mesh.face_count(),
@@ -370,6 +471,10 @@ pub fn generate(parent: &Mesh, spec: &StrandSpec) -> Result<Strands, StrandsErro
         bald_spot,
         overdraw,
         penetrating,
+        braids: braid_guides.len(),
+        beads,
     };
+    let mut guides = guides;
+    guides.extend(braid_guides);
     Ok(Strands { mesh, guides, report })
 }

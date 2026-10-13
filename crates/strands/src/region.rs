@@ -40,7 +40,19 @@ pub fn region_faces(mesh: &Mesh, region: &Region) -> Result<Vec<u32>, StrandsErr
         Region::All => Ok(mesh.faces().collect()),
         Region::Groups(names) => groups(mesh, names),
         Region::Loop { points, inside } => cut_off(mesh, points, *inside),
+        Region::Around { center, radii } => around(mesh, *center, *radii),
     }
+}
+
+/// Faces whose centers lie inside the ellipsoid.
+///
+/// Complexity: O(F).
+fn around(mesh: &Mesh, center: Vec3, radii: Vec3) -> Result<Vec<u32>, StrandsError> {
+    let out: Vec<u32> = mesh.faces().filter(|&f| ((mesh.face_centroid(f) - center) / radii).length_squared() <= 1.0).collect();
+    if out.is_empty() {
+        return Err(StrandsError::new("region", "no faces lie within the radius of the point; raise the radius or move the point onto the surface"));
+    }
+    Ok(out)
 }
 
 fn groups(mesh: &Mesh, names: &[String]) -> Result<Vec<u32>, StrandsError> {

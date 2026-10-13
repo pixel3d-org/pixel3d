@@ -97,9 +97,12 @@ pub struct FeaturesArgs {
     /// Describe this feature in full (id or alias, for example `ear` or `ram horn`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub feature: Option<String>,
-    /// Words to find in feature ids, labels, aliases and summaries.
+    /// Words to find in feature and archetype ids, labels, aliases and summaries.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub search: Option<String>,
+    /// Describe this archetype in full: parameters, joints and the parts it makes (`dwarf`, `axe`, `feathered_wings`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub archetype: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]

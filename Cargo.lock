@@ -3160,6 +3160,7 @@ dependencies = [
 name = "p3d-features"
 version = "0.1.0"
 dependencies = [
+ "criterion 0.8.2",
  "glam",
  "p3d-geo",
  "p3d-math",
@@ -3167,6 +3168,7 @@ dependencies = [
  "p3d-scene",
  "p3d-sdf",
  "p3d-strands",
+ "p3d-testdata",
  "p3d-vegetation",
  "proptest",
  "serde_json",

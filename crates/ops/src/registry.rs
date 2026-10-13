@@ -10,8 +10,8 @@ use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
 use crate::{
-    boolean, cleanup, curve, deform, edit, element, expect, feature, generate, io, outline, prim, remesh, scene, sdf, select, shade, strands, subd,
-    vegetation,
+    boolean, cleanup, curve, deform, edit, element, expect, feature, generate, io, ornament, outline, prim, remesh, scene, sdf, select, shade,
+    strands, subd, vegetation,
 };
 
 /// All available ops, built-in first, then addon and script ops in
@@ -83,6 +83,7 @@ impl Registry {
             Arc::new(Typed::<outline::GenShell>::new()),
             Arc::new(Typed::<feature::GenFeature>::new()),
             Arc::new(Typed::<strands::GenStrands>::new()),
+            Arc::new(Typed::<ornament::GenOrnament>::new()),
             Arc::new(Typed::<vegetation::GenTree>::new()),
             Arc::new(Typed::<remesh::QuadRemesh>::new()),
             Arc::new(Typed::<remesh::IsotropicRemesh>::new()),

@@ -359,6 +359,18 @@ impl<'a> Compiler<'a> {
         if on == name {
             return Err(err(&format!("{apath}/on"), "a part cannot sit on itself"));
         }
+        if self.spec.skeletons.contains_key(on) {
+            // A joint: its point, and with `orient: "normal"` its frame.
+            let l =
+                a.landmark.as_deref().ok_or_else(|| err(&apath, format!("`{on}` is a skeleton: anchor on one of its joints with \"landmark\"")))?;
+            let (point, joint_frame) = self.joint(on, l, &format!("{apath}/landmark"))?.unwrap_or((Vec3::ZERO, Quat::IDENTITY));
+            let frame = match a.orient.unwrap_or_default() {
+                Orient::Parent => Quat::IDENTITY,
+                Orient::Normal => joint_frame,
+            };
+            let offset = a.offset.as_ref().map_or(Vec3::ZERO, v3);
+            return Ok(Trs { translation: point + frame * offset, rotation: frame * rot, scale });
+        }
         self.part(on, &format!("{apath}/on"))?;
         let hit = self.resolve(on, a, &apath, 0)?;
         let parent = self.placement(on)?;
@@ -380,6 +392,9 @@ impl<'a> Compiler<'a> {
         let miss = |what: &str| err(path, format!("{what} does not reach the surface of `{on}`"));
         if let Some(l) = &a.landmark {
             return self.landmark(on, l, &format!("{path}/landmark"), depth);
+        }
+        if self.spec.skeletons.contains_key(on) {
+            return Err(err(path, format!("`{on}` is a skeleton with joints only: give \"landmark\": a joint name")));
         }
         let surface = self.surface(on)?;
         if let Some([u, v]) = a.param {
@@ -419,6 +434,9 @@ impl<'a> Compiler<'a> {
     /// A landmark of part `on`: its own named ones, `center`, the category's,
     /// the generic extremes, then its named SDF shapes.
     fn landmark(&mut self, on: &str, name: &str, path: &str, depth: u32) -> Result<Hit, OpError> {
+        if let Some((point, frame)) = self.joint(on, name, path)? {
+            return Ok(Hit { point, normal: frame * Vec3::Y });
+        }
         let part = self.part(on, path)?;
         if let Some(Landmarks::Named(map)) = &part.landmarks
             && let Some(a) = map.get(name)
@@ -469,6 +487,20 @@ impl<'a> Compiler<'a> {
             e.hint = Some(format!("`{name}` is a category landmark: give the part \"landmarks\": \"{}\"", landmarks::CATEGORIES[0]));
         }
         Err(e)
+    }
+
+    /// A skeleton joint's point and frame in the root's space, or none when
+    /// `on` is not a skeleton.
+    ///
+    /// Complexity: O(log joints).
+    fn joint(&self, on: &str, name: &str, path: &str) -> Result<Option<(Vec3, Quat)>, OpError> {
+        let Some(sk) = self.spec.skeletons.get(on) else { return Ok(None) };
+        let j = sk.joints.get(name).ok_or_else(|| {
+            let mut e = err(path, format!("skeleton `{on}` has no joint `{name}`"));
+            e.suggestions = p3d_scene::name::suggest(name, sk.joints.keys().map(String::as_str), 3);
+            e
+        })?;
+        Ok(Some(j.frame()))
     }
 
     fn category_of(&self, part: &Part) -> Option<String> {
@@ -827,11 +859,27 @@ impl<'a> Compiler<'a> {
         h.json(&part.edits);
         h.json(&part.deform);
         h.u64(seed);
+        // Parts the strands stay outside of, in `on`'s space.
+        let mut obstacles: Option<Mesh> = None;
+        for (i, c) in p.collide.iter().enumerate() {
+            let cpath = format!("{ppath}/collide/{i}");
+            if c == name || *c == p.on {
+                return Err(err(&cpath, "collide names other parts: strands already stay outside the part they grow on"));
+            }
+            self.part(c, &cpath)?;
+            let b = self.mesh(c)?;
+            let rel = to_part * self.placement(c)?.to_affine();
+            h.u64(b.hash);
+            h.floats(&rel.to_cols_array());
+            let mut m = (*b.mesh).clone();
+            m.transform(rel);
+            obstacles.get_or_insert_with(Mesh::default).append(&m);
+        }
         let hash = h.0;
         if let Some(c) = self.cached(name, hash) {
             return Ok(c);
         }
-        let grown = p3d_strands::generate(&parent.mesh, &spec).map_err(|e| {
+        let grown = p3d_strands::generate_around(&parent.mesh, obstacles.as_ref(), &spec).map_err(|e| {
             let mut o = p3d_ops::strands::strands_error(e);
             o.path = Some(format!("/spec{ppath}{}", o.path.as_deref().unwrap_or("")));
             o
@@ -1144,7 +1192,9 @@ impl Compiler<'_> {
     /// A `part.landmark` reference.
     fn landmark_ref(&mut self, r: &str, path: &str) -> Result<(String, Hit), OpError> {
         let (part, mark) = crate::constraints::split_landmark(r).ok_or_else(|| err(path, format!("`{r}` is not part.landmark")))?;
-        self.part(part, path)?;
+        if !self.spec.skeletons.contains_key(part) {
+            self.part(part, path)?;
+        }
         let hit = self.landmark(part, mark, path, 0)?;
         Ok((part.to_owned(), hit))
     }
@@ -1542,23 +1592,35 @@ fn blend_targets(spec: &ModelSpec) -> Result<(Children, Children), OpError> {
         for _ in 0..spec.parts.len() {
             let Some(src) = &source.mirror else { break };
             source = spec.parts.get(src).ok_or_else(|| err(&format!("{path}/mirror"), format!("there is no part `{src}`")))?;
-            target_of_mirror = source.anchor.as_ref().and_then(|a| a.on.clone());
+            target_of_mirror = source.merge_target().map(str::to_owned);
         }
+        // The part a blend or weld merges into: `into`, else the anchor's.
+        let merge_into = |what: &str| -> Result<String, OpError> {
+            let on = match &part.mirror {
+                Some(_) => target_of_mirror.clone(),
+                None => part.merge_target().map(str::to_owned),
+            }
+            .ok_or_else(|| err(&format!("{path}/join"), format!("a {what} merges into a part: give an anchor on it, or \"into\"")))?;
+            if !spec.parts.contains_key(&on) {
+                let at = if part.into.is_some() { "into" } else { "anchor/on" };
+                let message = if spec.skeletons.contains_key(&on) {
+                    format!("a {what} merges into a part, and `{on}` is a skeleton; give \"into\": the part to merge into")
+                } else {
+                    format!("there is no part `{on}`")
+                };
+                let mut e = err(&format!("{path}/{at}"), message);
+                e.suggestions = p3d_scene::name::suggest(&on, spec.parts.keys().map(String::as_str), 3);
+                return Err(e);
+            }
+            Ok(on)
+        };
         match source.join() {
             Join::Weld => {
-                let on = match &part.mirror {
-                    Some(_) => target_of_mirror,
-                    None => part.anchor.as_ref().and_then(|a| a.on.clone()),
-                }
-                .ok_or_else(|| err(&format!("{path}/join"), "a weld joins the part it is anchored on: give an anchor"))?;
+                let on = merge_into("weld")?;
                 welds.entry(on).or_default().push(name.clone());
             }
             Join::Blend => {
-                let on = match &part.mirror {
-                    Some(_) => target_of_mirror,
-                    None => part.anchor.as_ref().and_then(|a| a.on.clone()),
-                }
-                .ok_or_else(|| err(&format!("{path}/join"), "a blend joins the part it is anchored on: give an anchor"))?;
+                let on = merge_into("blend")?;
                 // The parent must be an SDF part too (or a mirror of one).
                 let mut target = spec.parts.get(&on);
                 for _ in 0..spec.parts.len() {
@@ -1910,6 +1972,41 @@ pub fn part_landmarks(doc: &Document, root: ObjectKey, part: &str) -> Result<Vec
                 name,
                 point: world.transform_point3(h.point),
                 normal: world.transform_vector3(h.normal).normalize_or(h.normal),
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// A skeleton joint in world space.
+#[derive(Debug, Clone, PartialEq)]
+pub struct JointPoint {
+    pub skeleton: String,
+    pub name: String,
+    pub point: Vec3,
+    /// The joint's +Y.
+    pub axis: Vec3,
+    pub parent: Option<String>,
+}
+
+/// Every joint of the skeletons of the spec on `root` (written or from
+/// archetypes), in world space, by skeleton and joint name.
+///
+/// Complexity: O(size of the spec + joints).
+pub fn skeleton_joints(doc: &Document, root: ObjectKey) -> Result<Vec<JointPoint>, OpError> {
+    let record = doc.spec(root).ok_or_else(|| OpError::new(ErrorCode::InvalidParam, "the object has no spec").at("/target"))?;
+    let spec = parse(&record.source).map_err(spec_err)?;
+    let world = doc.world_affine(root).unwrap_or(Affine3A::IDENTITY);
+    let mut out = Vec::new();
+    for (sk, s) in &spec.skeletons {
+        for (name, j) in &s.joints {
+            let (p, q) = j.frame();
+            out.push(JointPoint {
+                skeleton: sk.clone(),
+                name: name.clone(),
+                point: world.transform_point3(p),
+                axis: world.transform_vector3(q * Vec3::Y).normalize_or(Vec3::Y),
+                parent: j.parent.clone(),
             });
         }
     }

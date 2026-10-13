@@ -1,6 +1,7 @@
 //! The example sessions in `docs/agents/examples/` (a fantasy sword, a
 //! dwarven battle axe as a Model Spec, an elf head from feature templates,
-//! a stylized tree, a broadleaf tree) still build: every call succeeds and `diagnose` finds no
+//! a stylized tree, a broadleaf tree, a dwarf warrior and feathered wings
+//! from archetypes) still build: every call succeeds and `diagnose` finds no
 //! errors. Warnings are allowed (a blade's edge is thinner than 1 mm by
 //! design, gems sit in their bezels).
 
@@ -85,4 +86,45 @@ fn broadleaf_tree() {
     assert!(veg.contains("trunk: fork at") && veg.contains("coverage front") && veg.contains("wind data: level"), "{veg}");
     assert!(outs[2].contains("tests 2/2 pass"), "{}", outs[2]);
     assert!(outs[3].contains("crown width / height") && !outs[3].contains("LOW") && !outs[3].contains("HIGH"), "{}", outs[3]);
+}
+
+/// Replays a session and returns every answer.
+fn answers(source: &str) -> Vec<String> {
+    let session: Value = serde_json::from_str(source).unwrap();
+    let mut agent = Agent::new(Session::new());
+    let mut out = Vec::new();
+    for (i, call) in session["calls"].as_array().unwrap().iter().enumerate() {
+        let tool = call["tool"].as_str().unwrap();
+        let o = agent.call(tool, call["args"].clone());
+        assert!(!o.is_error, "call {i} ({tool}) failed:\n{}", o.text);
+        out.push(o.text);
+    }
+    let d = agent.call("diagnose", json!({}));
+    assert!(d.text.contains(" 0 errors"), "{}", d.text);
+    out
+}
+
+/// A dwarf warrior from archetypes in five calls: the dwarf body with a
+/// braided beard, an axe in its right fist through the weapon's grip
+/// joint, gear on joints, rune and stud ornament; the brief passes, the
+/// dwarf is measured against dwarf ranges, and the critique's fix applies.
+#[test]
+fn dwarf_warrior() {
+    let a = answers(include_str!("../../../docs/agents/examples/dwarf_warrior.json"));
+    assert!(a.len() <= 6 && a[0].contains("dwarf (Dwarf)"), "{}", a[0]);
+    let spec = &a[2];
+    assert!(spec.contains("archetype dwarf (dwarf)") && spec.contains("archetype axe (axe)") && spec.contains("brief dwarf 3/3"), "{spec}");
+    let dna = &a[3];
+    assert!(dna.contains("heads 4.") && dna.contains("shoulders") && dna.contains("tangent bracer_l"), "{dna}");
+    let fixed = &a[4];
+    assert!(fixed.contains("0 built") && !fixed.contains("critique:"), "{fixed}");
+}
+
+/// Feathered wings on an elf's back joint with an elven sword in hand.
+#[test]
+fn feathered_wings() {
+    let a = answers(include_str!("../../../docs/agents/examples/feathered_wings.json"));
+    assert!(a[0].contains("feathered_wings") && a[0].contains("tilt"), "{}", a[0]);
+    assert!(a[1].contains("archetype wings (feathered_wings)") && a[1].contains("wing_l, wing_r"), "{}", a[1]);
+    assert!(a[2].contains("dna (elf, elven)") && a[2].contains("critique: none"), "{}", a[2]);
 }

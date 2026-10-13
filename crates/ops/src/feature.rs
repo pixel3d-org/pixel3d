@@ -1,5 +1,5 @@
 //! `gen.feature`: a feature template (head base, hand, ear, eye, nose,
-//! horn, cable, bolt, rivet, vent grille, panel inset, molding) as a new object
+//! horn, cable, wing, bolt, rivet, vent grille, panel inset, molding) as a new object
 //! (ADR 0012).
 
 use p3d_scene::Document;
@@ -24,7 +24,7 @@ pub struct FeatureParams {
     /// Parent object (name, path or id); top level when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<String>,
-    /// The template: `head_base`, `hand`, `ear`, `eye`, `nose`, `horn`, `cable`, `bolt`, `rivet`, `vent_grille`, `panel_inset` or `molding` (the `features` tool describes them).
+    /// The template: `head_base`, `hand`, `ear`, `eye`, `nose`, `horn`, `cable`, `wing`, `bolt`, `rivet`, `vent_grille`, `panel_inset` or `molding` (the `features` tool describes them).
     pub feature: String,
     /// The template's parameters, for example `{"variant": "elf", "length": "9cm"}`; defaults for the rest.
     #[serde(default, skip_serializing_if = "Value::is_null")]
@@ -74,7 +74,7 @@ impl Op for GenFeature {
         OpMeta {
             label: "Feature",
             category: Category::Gen,
-            summary: "Builds a feature template (head base, hand, ear, eye, nose, horn, cable, bolt, rivet, vent grille, panel inset, molding) from semantic parameters.",
+            summary: "Builds a feature template (head base, hand, ear, eye, nose, horn, cable, wing, bolt, rivet, vent grille, panel inset, molding) from semantic parameters.",
             docs: "Feature templates are details agents describe instead of drawing: an elf ear is `{\"variant\": \"elf\", \
                    \"pointiness\": 0.9}`, a ram horn `{\"curl\": 300, \"spiral\": 0.4}`. Each has documented parameters with \
                    ranges (the `features` tool describes them), clean topology for every value in range, and landmarks kept as \

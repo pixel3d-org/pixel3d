@@ -112,10 +112,25 @@ fn tangent(g: &Guide, i: usize) -> Vec3 {
     (g.points[(i + 1).min(m - 1)] - g.points[i.saturating_sub(1)]).normalize_or(Vec3::Y)
 }
 
-/// Width of a guide at point `i`.
+/// Width of a guide at point `i`: from `root_width` up to full width at
+/// `bulge` along the strand, then down to `tip_width`.
 fn width_at(g: &Guide, i: usize, width: f32, spec: &StrandSpec) -> f32 {
     let t = i as f32 / (g.points.len() - 1).max(1) as f32;
-    width * g.width * (1.0 + (spec.tip_width - 1.0) * t)
+    width * g.width * profile(spec, t)
+}
+
+/// The width profile along a strand (1 at its widest).
+fn profile(spec: &StrandSpec, t: f32) -> f32 {
+    let b = spec.bulge;
+    if b <= 0.0 {
+        return if t <= 0.0 { spec.root_width } else { 1.0 + (spec.tip_width - 1.0) * t };
+    }
+    if t <= b {
+        let u = t / b;
+        spec.root_width + (1.0 - spec.root_width) * u * u * (3.0 - 2.0 * u)
+    } else {
+        1.0 + (spec.tip_width - 1.0) * (t - b) / (1.0 - b)
+    }
 }
 
 /// Cards: an optional scalp cap, then a tapered strip per guide, inner
@@ -166,12 +181,14 @@ pub(crate) fn clumps(guides: &[Guide], width: f32, spec: &StrandSpec) -> Result<
         let base = b.pos.len() as u32;
         for (i, &si) in s.iter().enumerate().take(rings as usize) {
             let t = tangent(g, i);
-            let bi = t.cross(si);
+            // The section turns with `twist` along the strand.
+            let turn = TAU * spec.twist * i as f32 / (m - 1).max(1) as f32;
+            let (si, bi) = (si * turn.cos() + t.cross(si) * turn.sin(), t.cross(si) * turn.cos() - si * turn.sin());
             let r = width_at(g, i, width, spec) * 0.5;
             let center = if i == 0 { g.points[0] - g.outward[0] * r * 0.5 } else { g.points[i] };
             for k in 0..n {
                 let a = k as f32 / n as f32 * TAU;
-                b.pos.push(center + si * (a.cos() * r) + bi * (a.sin() * r * 0.45));
+                b.pos.push(center + si * (a.cos() * r) + bi * (a.sin() * r * spec.flatness));
             }
         }
         let apex = b.pos.len() as u32;

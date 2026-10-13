@@ -31,7 +31,9 @@ fn check(info: &FeatureInfo, params: &Value) -> bool {
             match &b.shape {
                 Shape::Mesh(m) => {
                     assert_eq!(m.validate(), Ok(()), "{} {params}", info.id);
-                    assert!(closed_but_cards(m), "{} is open for {params}", info.id);
+                    // Feather cards are open by design, like hair and foliage cards.
+                    let cards = params.get("feathers").and_then(Value::as_str) == Some("cards");
+                    assert!(closed_but_cards(m) || cards, "{} is open for {params}", info.id);
                     let baked = p3d_features::baked_landmarks(m);
                     for (name, _) in info.landmarks {
                         assert!(baked.contains_key(*name), "{} lost landmark {name} for {params}", info.id);

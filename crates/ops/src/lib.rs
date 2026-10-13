@@ -20,6 +20,7 @@ pub mod feature;
 pub mod generate;
 pub mod io;
 mod op;
+pub mod ornament;
 pub mod outline;
 pub mod params;
 pub mod prim;

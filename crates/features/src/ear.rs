@@ -1,9 +1,10 @@
 //! `ear`: an ear as a cupped shell (project spec 17.5). The outline comes
 //! from the variant (human, elf, cat, dog, horse, bat), sharpened by
 //! `pointiness` and widened at the lobe by `lobe`; the shell is cupped and
-//! bent, thickened, and turned to face outward (+X, a left ear; mirror for
-//! the right), tilted back and flared away from the head. The root sits at
-//! the origin, so anchoring on `ear_root_l` attaches it.
+//! bent, thickened, and turned to face outward (+X, a left ear; `side:
+//! right` builds the mirror image), tilted back and flared away from the
+//! head. The root sits at the origin, so anchoring on `ear_root_l`
+//! attaches it.
 
 use std::collections::BTreeMap;
 
@@ -41,6 +42,14 @@ const PARAMS: &[ParamInfo] = &[
     ParamInfo { name: "flare", doc: "Angle away from the head (degrees).", kind: ParamKind::Angle, default: 25.0, min: -30.0, max: 90.0 },
     ParamInfo { name: "thickness", doc: "Total thickness.", kind: ParamKind::Length, default: 0.003, min: 0.0002, max: 0.1 },
     ParamInfo { name: "detail", doc: "Edge length; a 14th of the length when 0.", kind: ParamKind::Length, default: 0.0, min: 0.0, max: 0.5 },
+    ParamInfo {
+        name: "side",
+        doc: "left (faces +X) or right (the mirror image, faces -X).",
+        kind: ParamKind::Choice(&["left", "right"]),
+        default: 0.0,
+        min: 0.0,
+        max: 1.0,
+    },
 ];
 
 /// Normalized outline points (x across from front -0.5 to back 0.5, y from
@@ -109,7 +118,7 @@ impl Feature for Ear {
         FeatureInfo {
             id: "ear",
             label: "Ear",
-            summary: "An ear (human, elf, cat, dog, horse or bat) as a cupped, bent shell with a lobe, tilted and flared; faces +X (a left ear).",
+            summary: "An ear (human, elf, cat, dog, horse or bat) as a cupped, bent shell with a lobe, tilted and flared; faces +X (a left ear; side right mirrors it).",
             params: PARAMS,
             landmarks: &[
                 ("root", "where it joins the head (the origin)"),
@@ -164,6 +173,13 @@ impl Feature for Ear {
         landmarks.insert("lobe".to_owned(), at(hi * wid * 0.9, 0.08 * len));
         landmarks.insert("rim_back".to_owned(), at(hi * wid, 0.5 * len));
         crate::bake_landmarks(&mut mesh, &landmarks);
+        if p.choice("side") == "right" {
+            // Reflection flips the winding back to outward faces.
+            mesh.transform(glam::Affine3A::from_scale(Vec3::new(-1.0, 1.0, 1.0)));
+            for v in landmarks.values_mut() {
+                v.x = -v.x;
+            }
+        }
         Ok(Built { shape: Shape::Mesh(mesh), landmarks })
     }
 }
