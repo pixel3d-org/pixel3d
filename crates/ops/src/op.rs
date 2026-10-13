@@ -41,6 +41,7 @@ pub enum Category {
     Shade,
     Subd,
     Deform,
+    Cleanup,
     Expect,
 }
 
@@ -56,6 +57,7 @@ impl Category {
             Category::Shade => "shade",
             Category::Subd => "subd",
             Category::Deform => "deform",
+            Category::Cleanup => "cleanup",
             Category::Expect => "expect",
         }
     }

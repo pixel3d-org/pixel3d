@@ -295,6 +295,24 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Cleanup of a triangulated grid and a touching copy: a seam to weld,
+    // every triangle pair to join, two open parts to orient.
+    let mut g = c.benchmark_group("scale_cleanup_auto");
+    for &t in &sizes {
+        let n = ((t as f64 / 4.0).sqrt().round()) as u32;
+        let mut m = plane(&PlaneSpec { size_x: 1.0, size_z: 1.0, segments_x: n, segments_z: n }).unwrap_or_default();
+        let faces: Vec<u32> = m.faces().collect();
+        let _ = p3d_geo::edit::triangulate(&mut m, &faces);
+        let mut other = m.clone();
+        other.transform(Affine3A::from_translation(Vec3::X));
+        m.append(&other);
+        let spec = p3d_geo::cleanup::CleanupSpec::default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &m, |b, m| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::cleanup::cleanup(&mut x, &spec), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)

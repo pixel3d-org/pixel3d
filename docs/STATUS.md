@@ -82,7 +82,7 @@ Acceptance:
 - [x] Shading and normals (`shade.smooth_by_angle`, `mark_sharp`, `clear_sharp`, `set_flat`, `set_smooth`, `weighted_normals` (area, angle or both; custom split normals that respect sharp edges), `crease`; kernels in `crates/geo/src/shade.rs`, slopes 1.00 and 1.01)
 - [x] Subdivision (`subd.catmull_clark`: semi-sharp creases (DeRose et al. 1998; crease x 10 = sharpness, one level less per level), borders as creases with fixed corners, UVs and colors interpolated, groups, flags and creases carried; `crates/geo/src/subd.rs`, slope 1.04)
 - [x] Deformers (`deform.bend`, `twist`, `taper`, `displace` (seeded fractal gradient noise along area-weighted normals); `crates/geo/src/deform.rs`, slopes 0.90 and 0.97; `lattice` is a later phase)
-- [ ] `cleanup.auto`
+- [x] `cleanup.auto` and `cleanup.report` (weld until settled, degenerate collapse, specks, small holes except flat sheets, flat triangle pairs to quads, buried parts by BVH ray parity with cavities kept, outward by volume or area-weighted ray votes; idempotent by property test; slope 0.99; ADR 0007: soup repair such as non-manifold splits belongs to import)
 - [ ] Booleans (benchmark manifold-rust against boolmesh, choose, ADR)
 - [ ] glTF, OBJ and FBX import
 

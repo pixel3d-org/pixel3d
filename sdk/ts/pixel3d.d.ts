@@ -1483,6 +1483,46 @@ export type DeformDisplaceParams = {
   target: string;
 };
 
+/** `cleanup.auto`: Makes a mesh clean in one call: welds seams, collapses degenerate faces, removes specks and hidden parts, fills small holes, joins flat triangles into quads and turns parts outward. */
+export type CleanupAutoParams = {
+  /** Collapse faces with no area (their tiny edge folds away). */
+  degenerate?: boolean;
+  /** Join coplanar triangle pairs into quads. */
+  join_flat?: boolean;
+  /** Fill holes of at most this many edges on parts that are not flat sheets (0 fills none). */
+  max_hole_edges?: number;
+  /** Remove loose parts smaller than this across (0 keeps all). */
+  min_part_size?: Length;
+  /** Turn inside-out parts outward. */
+  orient?: boolean;
+  /** Remove closed parts buried inside other closed parts (never seen). */
+  remove_hidden?: boolean;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Weld vertices closer than this (0 skips welding). */
+  weld?: Length;
+};
+
+/** `cleanup.report`: Reports a mesh's topology problems and what cleanup.auto would fix, without changing anything. */
+export type CleanupReportParams = {
+  /** Collapse faces with no area (their tiny edge folds away). */
+  degenerate?: boolean;
+  /** Join coplanar triangle pairs into quads. */
+  join_flat?: boolean;
+  /** Fill holes of at most this many edges on parts that are not flat sheets (0 fills none). */
+  max_hole_edges?: number;
+  /** Remove loose parts smaller than this across (0 keeps all). */
+  min_part_size?: Length;
+  /** Turn inside-out parts outward. */
+  orient?: boolean;
+  /** Remove closed parts buried inside other closed parts (never seen). */
+  remove_hidden?: boolean;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Weld vertices closer than this (0 skips welding). */
+  weld?: Length;
+};
+
 /** `expect.add`: Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. */
 export type ExpectAddParams = {
   /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight. */
@@ -1579,6 +1619,8 @@ export interface OpParams {
   "deform.twist": DeformTwistParams;
   "deform.taper": DeformTaperParams;
   "deform.displace": DeformDisplaceParams;
+  "cleanup.auto": CleanupAutoParams;
+  "cleanup.report": CleanupReportParams;
   "expect.add": ExpectAddParams;
   "expect.remove": ExpectRemoveParams;
 }

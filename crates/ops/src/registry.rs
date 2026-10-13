@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{curve, deform, edit, element, expect, generate, prim, scene, select, shade, subd};
+use crate::{cleanup, curve, deform, edit, element, expect, generate, prim, scene, select, shade, subd};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -115,6 +115,8 @@ impl Registry {
             Arc::new(Typed::<deform::Twist>::new()),
             Arc::new(Typed::<deform::Taper>::new()),
             Arc::new(Typed::<deform::Displace>::new()),
+            Arc::new(Typed::<cleanup::Auto>::new()),
+            Arc::new(Typed::<cleanup::Report>::new()),
             Arc::new(Typed::<expect::Add>::new()),
             Arc::new(Typed::<expect::Remove>::new()),
         ];

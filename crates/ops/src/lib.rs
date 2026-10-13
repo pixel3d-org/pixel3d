@@ -6,6 +6,7 @@
 //! server, scripts, addons and the node graph all call the same code.
 
 pub mod catalog;
+pub mod cleanup;
 mod common;
 pub mod curve;
 pub mod deform;

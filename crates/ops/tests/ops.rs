@@ -91,7 +91,7 @@ fn every_example_produces_its_documented_result() {
             let args: Value = serde_json::from_str(ex.args).unwrap();
             let mut tx = match op.meta().category {
                 Category::Prim => Tx::new(Document::new()),
-                Category::Edit | Category::Shade | Category::Subd | Category::Deform => edit_fixture(),
+                Category::Edit | Category::Shade | Category::Subd | Category::Deform | Category::Cleanup => edit_fixture(),
                 Category::Expect => expect_fixture(),
                 Category::Curve => curve_fixture(),
                 Category::Gen => curve_fixture(),
@@ -935,6 +935,28 @@ fn scatter_places_seeded_instances_on_surfaces() {
     assert_eq!(e.path.as_deref(), Some("/scale"));
     let e = err(&mut tx, "gen.scatter", json!({ "target": "crate", "source": "crate", "select": { "faces": { "group": "nope" } } }));
     assert!(e.path.as_deref().is_some_and(|p| p.starts_with("/select")), "{e}");
+}
+
+#[test]
+fn cleanup_reports_then_fixes_once() {
+    let mut tx = edit_fixture();
+    let before = tx.doc().object_mesh(tx.doc().resolve("panels").unwrap()).unwrap().clone();
+    let s = ok(&mut tx, "cleanup.report", json!({ "target": "panels" }));
+    assert!(s.contains("would weld 2 vertices"), "{s}");
+    assert_eq!(tx.doc().object_mesh(tx.doc().resolve("panels").unwrap()).unwrap(), &before, "the report changes nothing");
+    let s = ok(&mut tx, "cleanup.auto", json!({ "target": "panels" }));
+    assert!(s.contains("welded 2 vertices"), "{s}");
+    assert_eq!(topo(&tx, "panels").parts, 1);
+    let s = ok(&mut tx, "cleanup.auto", json!({ "target": "panels" }));
+    assert!(s.contains("already clean"), "{s}");
+    // The duct is two open tubes stacked with a gap: their 8-edge borders stay open.
+    let s = ok(&mut tx, "cleanup.auto", json!({ "target": "duct" }));
+    assert!(s.contains("already clean"), "{s}");
+    // Nothing is filled when holes are switched off.
+    let s = ok(&mut tx, "cleanup.auto", json!({ "target": "bin", "max_hole_edges": 0 }));
+    assert!(s.contains("already clean"), "{s}");
+    let e = err(&mut tx, "cleanup.auto", json!({ "target": "bin", "weld": "1m" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/weld")));
 }
 
 #[test]

@@ -86,7 +86,8 @@ pub enum MergeMode {
 /// What a merge did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MergeResult {
-    /// Vertices removed by merging.
+    /// Vertices removed by merging (copies split off again where faces only
+    /// touched at a merged vertex are not counted).
     pub merged: usize,
     /// Faces that collapsed to nothing (fewer than 3 distinct corners).
     pub faces_removed: usize,
@@ -161,8 +162,9 @@ pub fn merge(mesh: &mut Mesh, verts: &[u32], mode: MergeMode) -> Result<MergeRes
         return Ok(MergeResult::default());
     }
     let faces_removed = remap_faces(mesh, &mut p, &rep);
-    mesh.apply_patch(&p)?;
-    Ok(MergeResult { merged: rep.len() - clusters, faces_removed, clusters })
+    let res = mesh.apply_patch(&p)?;
+    // Vertices pinched apart again (faces that only touched at the merged vertex) do not count.
+    Ok(MergeResult { merged: (rep.len() - clusters).saturating_sub(res.split_verts), faces_removed, clusters })
 }
 
 /// Welds vertices closer than `distance`: in vertex id order, each vertex not
@@ -252,14 +254,15 @@ pub fn merge_by_distance(mesh: &mut Mesh, only: Option<&[u32]>, distance: f32) -
     }
     let mut p = patch(mesh);
     let faces_removed = remap_faces(mesh, &mut p, &rep);
-    mesh.apply_patch(&p)?;
+    let res = mesh.apply_patch(&p)?;
     // The representatives survive (or were split into copies at the same place).
     for (v, c) in centers {
         if mesh.is_vert_alive(v) {
             mesh.positions[v as usize] = c;
         }
     }
-    Ok(MergeResult { merged: rep.len(), faces_removed, clusters: groups.len() })
+    // Vertices pinched apart again (faces that only touched at the merged vertex) do not count.
+    Ok(MergeResult { merged: rep.len().saturating_sub(res.split_verts), faces_removed, clusters: groups.len() })
 }
 
 #[cfg(test)]

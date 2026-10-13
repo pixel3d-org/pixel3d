@@ -128,6 +128,13 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`deform.taper`](deform.taper.md) | Scales a shape toward its axis progressively, from full size at its low end to `factor` at its high end. |
 | [`deform.displace`](deform.displace.md) | Moves vertices along their normals by seeded fractal noise (bumps, rocks, terrain, organic variation). |
 
+## cleanup
+
+| Op | Summary |
+|---|---|
+| [`cleanup.auto`](cleanup.auto.md) | Makes a mesh clean in one call: welds seams, collapses degenerate faces, removes specks and hidden parts, fills small holes, joins flat triangles into quads and turns parts outward. |
+| [`cleanup.report`](cleanup.report.md) | Reports a mesh's topology problems and what cleanup.auto would fix, without changing anything. |
+
 ## expect
 
 | Op | Summary |
