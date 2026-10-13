@@ -766,6 +766,15 @@ impl PixelApp {
                 }
                 Ok(r)
             }
+            "edit.join" => {
+                // Into the active object, as Blender's Ctrl+J.
+                let targets = self.selected_targets();
+                if targets.len() < 2 {
+                    return Err(t("select two or more meshes, or two or more curves, to join").to_owned());
+                }
+                let into = self.active_object().and_then(|k| self.doc().object(k)).map(|o| o.public_id());
+                self.execute(&[OpCall::new("scene.join", json!({ "targets": targets, "into": into }))])
+            }
             "edit.new_collection" => {
                 let members = self.selected_targets();
                 outliner::new_collection(self, &members)

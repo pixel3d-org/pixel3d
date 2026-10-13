@@ -915,6 +915,7 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(cmd, Key::O), "file.open", || Value::Null),
         (KeyboardShortcut::new(cmd, Key::N), "file.new", || Value::Null),
         (KeyboardShortcut::new(cmd, Key::D), "edit.duplicate", || Value::Null),
+        (KeyboardShortcut::new(cmd, Key::J), "edit.join", || Value::Null),
         (KeyboardShortcut::new(cmd, Key::A), "edit.select_all", || Value::Null),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Escape), "edit.select_none", || Value::Null),
         (KeyboardShortcut::new(Modifiers::NONE, Key::Delete), "edit.delete", || Value::Null),
