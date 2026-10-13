@@ -197,3 +197,40 @@ fn pole_overlay() {
     let mut h = harness(app(ThemePref::Light, &[("view.poles", json!({ "on": true })), ("view.frame", Value::Null)]));
     snapshot(&mut h, "poles_light");
 }
+
+/// A spec starter from Add > Model Spec, framed, with `part` open in the
+/// Spec tab.
+fn spec_app(theme: ThemePref, starter: &str, part: &str) -> Harness<'static, PixelApp> {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = theme;
+    a.run("spec.starter", json!({ "name": starter })).unwrap();
+    // Room for the Spec tab: no Health panel, no History and Console.
+    a.run("ui.dock", json!({ "operation": "close", "panel": "health" })).unwrap();
+    a.run("ui.bottom", json!({ "on": false })).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("view.frame", Value::Null).unwrap();
+    h.state_mut().run("spec.select_part", json!({ "part": part })).unwrap();
+    h.run_steps(20);
+    h
+}
+
+#[test]
+fn spec_tab_with_an_anchored_part() {
+    let mut h = spec_app(ThemePref::Dark, "elf_head", "eye_l");
+    snapshot(&mut h, "spec_tab_dark");
+}
+
+#[test]
+fn spec_tab_with_an_sdf_part() {
+    let mut h = spec_app(ThemePref::Light, "elf_head", "head");
+    snapshot(&mut h, "spec_sdf_light");
+}
+
+#[test]
+fn landmark_overlay_while_picking() {
+    let mut h = spec_app(ThemePref::Light, "lamp", "shade");
+    h.state_mut().run("spec.pick_landmark", json!({ "on": true })).unwrap();
+    h.run_steps(10);
+    snapshot(&mut h, "spec_landmarks_light");
+}
