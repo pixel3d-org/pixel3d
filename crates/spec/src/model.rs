@@ -325,7 +325,7 @@ pub fn parse(source: &Value) -> Result<ModelSpec, SpecError> {
 }
 
 /// `parts.head.sdf[2].radius` (serde_path_to_error) as `/parts/head/sdf/2/radius`.
-fn pointer(dotted: &str) -> String {
+pub(crate) fn pointer(dotted: &str) -> String {
     if dotted == "." || dotted.is_empty() {
         return String::new();
     }

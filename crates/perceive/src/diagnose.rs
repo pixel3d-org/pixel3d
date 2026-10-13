@@ -386,8 +386,13 @@ fn relation_findings(view: &View, rel: &Relations, out: &mut Vec<Draft>) {
                 let other = if s == r.a { r.b } else { r.a };
                 let sinker = &view.parts[s];
                 // Embedding up to a quarter of the sinking part's thinnest size
-                // reads as attached; deeper looks like a modelling slip.
-                let allowed = (0.25 * sinker.size().min_element()).max(tol);
+                // reads as attached; deeper looks like a modelling slip, unless
+                // the part says how deep it sits on purpose (`max_penetration`
+                // metadata, meters; the spec compiler sets it for anchored parts).
+                let intended =
+                    view.doc.object(sinker.key).and_then(|o| o.metadata.get("max_penetration")).and_then(serde_json::Value::as_f64).unwrap_or(0.0)
+                        as f32;
+                let allowed = (0.25 * sinker.size().min_element()).max(tol).max(intended);
                 if r.dist <= allowed {
                     continue;
                 }

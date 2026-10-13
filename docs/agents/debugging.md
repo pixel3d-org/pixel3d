@@ -38,7 +38,7 @@ F1 warn FLOATING_PART lid -> crate: touches nothing: 12 mm from crate
 | `LOOSE_PIECES` | several separate pieces in one part (info) | `scene.separate` |
 | `THIN_WALL` | walls under 1 mm | none yet |
 | `FLOATING_PART` | a part touches nothing and is off the ground | move it onto its nearest part |
-| `PENETRATION` | a part sinks deeper than a quarter of its thickness | pull it out |
+| `PENETRATION` | a part sinks deeper than a quarter of its thickness (or than its `max_penetration` metadata in meters, which spec anchors set for parts sunk on purpose) | pull it out |
 | `Z_FIGHTING` | faces lying on same-facing faces of another part | move it 0.5 mm off |
 
 Finding ids belong to one revision: run `diagnose` again after an edit.

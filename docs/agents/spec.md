@@ -42,6 +42,12 @@ Optional keys:
 
 Landmarks of every part: `top`, `bottom`, `front`, `back`, `left` (+X, the character's left), `right`, `center`, and the names of its SDF shapes. Category `humanoid_head` adds `crown`, `chin`, `forehead`, `nose_root`, `nose_base`, `mouth`, `eye_l/r`, `brow_l/r`, `cheek_l/r`, `jaw_l/r`, `ear_root_l/r`, `temple_l/r`, `hairline_front`, `nape` and `back_of_head`. Anchors re-resolve when the parent changes: lengthen the lamp's pole and the shade moves up without a rebuild.
 
+## Briefs
+
+`brief.set {"name": "elf", "brief": {...}}` (or the `brief` tool) records the request: `title`, `category`, `style` (`realistic`, `stylized`), `size` (`{"height": "0.26m"}` means within 10%, or `[min, max]`), `budget` (`{"tris": [8000, 14000]}`), `must_have` (`{"feature": "ear", "count": 2, "traits": {"length_ratio_to_head": [0.35, 0.6]}}`; features are parts named after them or tagged with them), `must_not` (`"hair_penetrating_head"`). It expands into checks, with the category's defaults (a `humanoid_head` is symmetric and closed, its width, depth and eye line within the style's range) and "parts attached to what they sit on". A spec answers the brief with `"brief": "elf"`; until then every item is pending. Traits that need later phases (pointiness, UV seams) stay pending instead of failing.
+
+Anchored parts sunk into their parent on purpose (eyes in sockets) get `max_penetration` metadata, so diagnostics do not flag them.
+
 ## Provenance
 
 Every face records the spec node that made it: a blended ear's faces in the head mesh trace to `/parts/ear_l/sdf/0`, an inset's faces to `/parts/body/edits/0`. Face groups name them too: `cranium`, `jaw`, `ear_l.lobe`, `nose.shape_0`, `panel.inner`.

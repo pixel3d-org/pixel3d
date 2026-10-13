@@ -231,6 +231,8 @@ struct Compiler<'a> {
     items: BTreeMap<String, Arc<Vec<Item>>>,
     surfaces: BTreeMap<String, Arc<Surface>>,
     built: BTreeMap<String, Arc<Built>>,
+    /// Where anchored parts sit: the surface point and normal.
+    anchors: BTreeMap<String, Hit>,
     /// Nodes being resolved, for loop detection.
     active: Vec<String>,
     warnings: Vec<String>,
@@ -333,6 +335,7 @@ impl<'a> Compiler<'a> {
             Orient::Normal => Quat::from_rotation_arc(Vec3::Y, hit.normal),
         };
         let offset = a.offset.as_ref().map_or(Vec3::ZERO, v3);
+        self.anchors.insert(name.to_owned(), hit);
         Ok(Trs { translation: hit.point + frame * offset, rotation: frame * rot, scale })
     }
 
@@ -892,6 +895,7 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
             items: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             built: BTreeMap::new(),
+            anchors: BTreeMap::new(),
             active: Vec::new(),
             warnings: Vec::new(),
         };
@@ -921,6 +925,7 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
         Plan {
             trs: c.trs,
             built: c.built,
+            anchors: c.anchors,
             into: spec.parts.keys().filter(|n| into.contains_key(*n)).map(|n| (n.clone(), owner(n.clone()))).collect(),
             warnings: c.warnings,
         }
@@ -931,6 +936,7 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
 /// What the compiler decided, before it touches the document.
 struct Plan {
     trs: BTreeMap<String, Trs>,
+    anchors: BTreeMap<String, Hit>,
     built: BTreeMap<String, Arc<Built>>,
     into: BTreeMap<String, String>,
     warnings: Vec<String>,
@@ -1021,7 +1027,22 @@ fn apply(tx: &mut Tx, root: ObjectKey, spec: &ModelSpec, record: &SpecRecord, pl
             }
         }
         let decal = part.join() == Join::Decal;
+        // A part anchored into its parent's surface (eyes in sockets) sinks
+        // in on purpose: diagnostics allow that depth.
+        let anchor_of = match part.kind("") {
+            Ok(Kind::Mirror(src)) => plan.anchors.get(src).map(|h| (h, plan.trs.get(src).copied().unwrap_or(Trs::IDENTITY))),
+            _ => plan.anchors.get(name).map(|h| (h, trs)),
+        };
+        let sink = anchor_of.map_or(0.0, |(hit, t)| {
+            let a = t.to_affine();
+            built.mesh.verts().map(|v| -(a.transform_point3(built.mesh.positions[v as usize]) - hit.point).dot(hit.normal)).fold(0.0f32, f32::max)
+        });
         let o = tx.doc_mut().object_mut(key).ok_or_else(|| OpError::internal("part object vanished"))?;
+        if sink > 1e-4 {
+            o.metadata.insert("max_penetration".into(), Value::from((f64::from(sink) * 1e4).round() / 1e4 + 0.001));
+        } else {
+            o.metadata.remove("max_penetration");
+        }
         if o.transform != trs && !report.changed.contains(&key) && !report.created.contains(&key) {
             report.changed.push(key);
         }
@@ -1089,6 +1110,7 @@ fn query<'a>(doc: &'a Document, root: ObjectKey, spec: &'a ModelSpec, record: &'
         items: BTreeMap::new(),
         surfaces: BTreeMap::new(),
         built: BTreeMap::new(),
+        anchors: BTreeMap::new(),
         active: Vec::new(),
         warnings: Vec::new(),
     })

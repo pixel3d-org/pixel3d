@@ -22,6 +22,18 @@ fn label(doc: &Document, key: ObjectKey) -> String {
     doc.object(key).map_or_else(|| "?".into(), |o| format!("{} ({})", o.name(), o.public_id()))
 }
 
+fn thousands(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 fn mm(x: f32) -> String {
     format!("{}", (f64::from(x) * 1000.0).round() as i64)
 }
@@ -55,7 +67,7 @@ fn summarize(doc: &Document, root: ObjectKey, r: &CompileReport) -> OpOutput {
                     mm(c.x),
                     mm(c.y),
                     mm(c.z),
-                    p.faces
+                    thousands(p.faces)
                 );
             }
         }

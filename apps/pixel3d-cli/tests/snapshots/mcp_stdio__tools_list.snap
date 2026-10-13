@@ -841,6 +841,155 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": false
         },
+        "description": "Capture what the user asked for (category, style, size, budget, must-haves) as checks, and see how well the model answers it.",
+        "inputSchema": {
+          "$defs": {
+            "BriefAction": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "set",
+                    "get"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "coverage",
+                  "description": "How well the model answers the brief (default).",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/BriefAction",
+              "default": "coverage",
+              "description": "`coverage` (default), `set` or `get`."
+            },
+            "brief": {
+              "description": "`set`: the brief: title, category, style, size, budget, must_have, must_not (see the spec guide)."
+            },
+            "name": {
+              "description": "The brief's name; a spec answers it with `\"brief\": \"<name>\"`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "BriefArgs",
+          "type": "object"
+        },
+        "name": "brief"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Author the model as a Model Spec (named parts, shapes, anchors at landmarks, joins): set, patch or compile; returns parts, brief coverage, problems and tests.",
+        "inputSchema": {
+          "$defs": {
+            "PatchOp": {
+              "additionalProperties": false,
+              "description": "One JSON Patch operation.",
+              "properties": {
+                "from": {
+                  "description": "Source pointer of `move` and `copy`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "op": {
+                  "description": "`add`, `remove`, `replace`, `move`, `copy` or `test`.",
+                  "type": "string"
+                },
+                "path": {
+                  "description": "JSON pointer into the spec, for example `/parts/ear_l/blend`.",
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "op",
+                "path"
+              ],
+              "type": "object"
+            },
+            "SpecAction": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "set",
+                    "patch",
+                    "compile"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "get",
+                  "description": "The spec source and its parts (default).",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/SpecAction",
+              "default": "get",
+              "description": "`get` (default), `set`, `patch` or `compile`."
+            },
+            "dry_run": {
+              "default": false,
+              "description": "Preview the result without changing anything.",
+              "type": "boolean"
+            },
+            "force": {
+              "default": false,
+              "description": "`compile`: rebuild every part.",
+              "type": "boolean"
+            },
+            "merge": {
+              "description": "`patch`: a JSON Merge Patch (`null` removes)."
+            },
+            "ops": {
+              "description": "`patch`: JSON Patch operations instead of a merge patch.",
+              "items": {
+                "$ref": "#/$defs/PatchOp"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "spec": {
+              "description": "`set`: the Model Spec `{\"parts\": {...}}`."
+            },
+            "target": {
+              "description": "The spec's root object (`set` creates it).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "title": "SpecArgs",
+          "type": "object"
+        },
+        "name": "spec"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
         "description": "Count and locate mesh elements picked by a selector (groups, normals, boundaries, boxes); optionally save them as a group.",
         "inputSchema": {
           "$defs": {

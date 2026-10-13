@@ -12,6 +12,8 @@ pixel3d makes 3D game assets. You build and check models with typed operations a
 
 ## The loop
 
+For characters, creatures and organic props, model spec-first: `brief set` turns the request into checks, `spec set` writes the blockout as named parts anchored at landmarks, and `spec patch` refines it; every answer ends with the brief coverage line (`brief elf 9/10; failing: ear length ...`). The `spec` guide has the format. For op-level work:
+
 1. `scene_overview`: what exists.
 2. `expect add`: write the tests first (size, symmetry, parts attached, budget, watertight).
 3. `run`: create and edit with ops in one batch.
@@ -42,13 +44,15 @@ pixel3d makes 3D game assets. You build and check models with typed operations a
 | `run` | apply ops (`list_ops`, `describe_op` show them) |
 | `perceive` | look without images: `structure`, `shape`, `silhouette`, `section`, `relations`, `probe`, `diff` |
 | `diagnose` | find problems with causes and fixes; `explain` or `fix` one |
+| `brief` | record what was asked (category, style, size, budget, must-haves) as checks; `coverage` shows how the model answers it |
+| `spec` | author the model as a Model Spec: `set`, `patch` (merge patch or JSON Patch), `compile`, `get` |
 | `expect` | add, remove, list and check model tests |
 | `query` | count and locate elements a selector picks; `save_as` a group |
 | `analyze` | topology metrics (the numbers quality is judged by) |
 | `history` | undo, redo, checkpoints, revert, diff between states |
 | `import` | bring in a glTF, GLB, OBJ or FBX file (meters, +Y up), meshes repaired; paths inside the allowed folders (the folder the server starts in, plus `--allow-dir`) |
 | `render` | optional pictures to confirm: views tiled into one PNG with part names; never needed to find problems |
-| `docs` | these guides: `quickstart`, `modeling`, `debugging`, `ops` |
+| `docs` | these guides: `quickstart`, `modeling`, `spec`, `debugging`, `ops` |
 
 ## Errors
 

@@ -213,6 +213,65 @@ pub struct DiagnoseArgs {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+pub enum BriefAction {
+    /// How well the model answers the brief (default).
+    #[default]
+    Coverage,
+    Set,
+    Get,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BriefArgs {
+    /// `coverage` (default), `set` or `get`.
+    #[serde(default)]
+    pub action: BriefAction,
+    /// The brief's name; a spec answers it with `"brief": "<name>"`.
+    pub name: String,
+    /// `set`: the brief: title, category, style, size, budget, must_have, must_not (see the spec guide).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brief: Option<Value>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SpecAction {
+    /// The spec source and its parts (default).
+    #[default]
+    Get,
+    Set,
+    Patch,
+    Compile,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SpecArgs {
+    /// `get` (default), `set`, `patch` or `compile`.
+    #[serde(default)]
+    pub action: SpecAction,
+    /// The spec's root object (`set` creates it).
+    pub target: String,
+    /// `set`: the Model Spec `{"parts": {...}}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spec: Option<Value>,
+    /// `patch`: a JSON Merge Patch (`null` removes).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merge: Option<Value>,
+    /// `patch`: JSON Patch operations instead of a merge patch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ops: Option<Vec<p3d_spec::patch::PatchOp>>,
+    /// `compile`: rebuild every part.
+    #[serde(default)]
+    pub force: bool,
+    /// Preview the result without changing anything.
+    #[serde(default)]
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub enum ExpectAction {
     /// Run every expectation.
     #[default]

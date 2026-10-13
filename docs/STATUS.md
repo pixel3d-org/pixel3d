@@ -96,7 +96,7 @@ Acceptance:
 
 ## Phase 3b: Brief, Model Spec and SDF
 
-- [ ] `spec`: Brief, Model Spec, parts, anchors, landmarks, surface coordinates (Model Spec done in `crates/spec`, ADR 0010: typed parts with errors at spec paths, shape kinds `sdf`, `primitive`, generators, `mirror`, `instance`; anchors by landmark, `param`, `ray` or `nearest`, resolved by sphere tracing on SDF parents and BVH rays on meshes; generic, SDF-shape and `humanoid_head` landmarks; ops `spec.set`, `spec.patch` (merge patch or JSON Patch) and `spec.compile`; guide `docs/agents/spec.md`. Brief open)
+- [x] `spec`: Brief, Model Spec, parts, anchors, landmarks, surface coordinates (Model Spec done in `crates/spec`, ADR 0010: typed parts with errors at spec paths, shape kinds `sdf`, `primitive`, generators, `mirror`, `instance`; anchors by landmark, `param`, `ray` or `nearest`, resolved by sphere tracing on SDF parents and BVH rays on meshes; generic, SDF-shape and `humanoid_head` landmarks; ops `spec.set`, `spec.patch` (merge patch or JSON Patch) and `spec.compile`; guide `docs/agents/spec.md`). Brief done: `brief.set`, typed briefs expanded into checks (size, budget, category symmetry, closure and style proportions, anchored parts attached, must-have features and `length_ratio_to_<part>` traits, `<a>_penetrating_<b>` must-nots, later-phase items pending), coverage of the spec that names the brief; `crates/spec/src/brief.rs`)
 - [ ] `spec`: constraints and solver
 - [ ] `spec`: joins `separate`, `blend`, `weld`, `decal`; mirror and instance; edit layers (all but `weld`: blended SDF children join their parent tree with a smooth union, mirrors of blended parts reflect their SDF items, instances share meshes, edits run on the part)
 - [x] `spec`: incremental compile to the op graph, provenance (parts build through registered ops in scratch documents, cached by content hash and mesh fingerprint, so a moved parent only moves its children; per-face provenance entries (spec path, op) run-length encoded in the spec record)
@@ -104,9 +104,9 @@ Acceptance:
 - [ ] `remesh`: isotropic, then field-aligned quads with category topology rules (field-aligned quads done in `crates/remesh`: multi-resolution 4-RoSy orientation and position fields solved by graph-colored parallel Gauss-Seidel, extraction by error-sorted cluster merge at twice the edge then one Catmull-Clark step so every face is a quad, holes closed, flat pieces dropped, tangential relax onto the source; before subdividing, a pole cleanup (`crates/remesh/src/poles.rs`) lowers the energy sum (n - 4)^2 over face sizes and valences with greedy disjoint local edits: face merges, edge turns, chords, valence-2 dissolves, vertex splits and quad pokes of faces above six corners (torus poles 106 to 48, none above valence 5; 800 random solids with no pole of valence 2 or above 6); anisotropic inputs are first resampled through a mesh distance field; slope 0.76, 16k target in 323 ms. Ops `remesh.quad` and `sdf.from_mesh` (voxel remesh). Open: isotropic triangles and category topology rules)
 - [ ] Shape kinds `silhouettes` and `shell`; deform handles
 - [ ] Perception `proportions`, `visibility`, `brief`
-- [ ] Expectations from briefs and categories
+- [x] Expectations from briefs and categories (brief items checked through the expectation engine; every MCP answer carries `brief <name> x/y` lines)
 - [ ] `history bisect`
-- [ ] MCP tools `brief`, `spec`, `perceive`, `expect`, `deform`
+- [ ] MCP tools `brief`, `spec`, `perceive`, `expect`, `deform` (`brief` set, get and coverage, `spec` get, set, patch and compile with timing; the elf session runs through them in `crates/mcp/tests/spec_session.rs`. `deform` open)
 - [ ] Visual DNA v0 (ADR 0011): `dna` block in the spec schema, style and culture presets (`dwarven`, `elven`, `stylized_painterly`, ...) as defaults, `perceive dna` for proportions, silhouette, curve share, taper, form hierarchy and bevel uniformity, first art-direction codes (`tangent`, `twinning`, `uniform_bevel`, `weak_silhouette`)
 
 Acceptance:

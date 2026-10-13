@@ -114,6 +114,16 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<ExpectToolArgs>(),
         },
         ToolInfo {
+            name: "brief",
+            description: "Capture what the user asked for (category, style, size, budget, must-haves) as checks, and see how well the model answers it.",
+            schema: schema::<BriefArgs>(),
+        },
+        ToolInfo {
+            name: "spec",
+            description: "Author the model as a Model Spec (named parts, shapes, anchors at landmarks, joins): set, patch or compile; returns parts, brief coverage, problems and tests.",
+            schema: schema::<SpecArgs>(),
+        },
+        ToolInfo {
             name: "query",
             description: "Count and locate mesh elements picked by a selector (groups, normals, boundaries, boxes); optionally save them as a group.",
             schema: schema::<QueryArgs>(),
@@ -202,6 +212,8 @@ impl Agent {
             "perceive" => parse_params(&args).and_then(|a| self.perceive(&a)),
             "diagnose" => parse_params(&args).and_then(|a| self.diagnose(&a)),
             "expect" => parse_params(&args).and_then(|a| self.expect(&a)),
+            "brief" => parse_params(&args).and_then(|a| self.brief(&a)),
+            "spec" => parse_params(&args).and_then(|a| self.spec(&a)),
             "query" => parse_params(&args).and_then(|a| self.query(&a)),
             "analyze" => parse_params(&args).and_then(|a| self.analyze(&a)),
             "list_ops" => parse_params(&args).and_then(|a| self.list_ops(&a)),
@@ -267,6 +279,14 @@ impl Agent {
         if !p.is_empty() {
             text.push_str(&p);
             text.push('\n');
+        }
+        // Every report carries the coverage of each brief (project spec 17.2).
+        let doc = self.doc();
+        for (name, _) in doc.briefs().take(2) {
+            if let Ok(c) = p3d_spec::coverage(&doc, name) {
+                text.push_str(&c.line());
+                text.push('\n');
+            }
         }
         let t = checks::tests_line(&checks::check_all(self.session.doc()));
         if !t.is_empty() {
@@ -483,6 +503,95 @@ impl Agent {
     }
 
     /// Runs one op as a transaction; errors point into the tool's arguments.
+    fn brief(&mut self, a: &BriefArgs) -> Result<ToolOutput, OpError> {
+        match a.action {
+            BriefAction::Set => {
+                let brief = a.brief.clone().ok_or_else(|| {
+                    OpError::invalid("/brief", "set needs `brief`").with_hint("{\"category\": \"humanoid_head\", \"size\": {\"height\": \"0.26m\"}}")
+                })?;
+                self.one_op("brief.set", json!({ "name": a.name, "brief": brief }))
+            }
+            BriefAction::Get => {
+                let doc = self.doc();
+                let source =
+                    doc.brief(&a.name).cloned().ok_or_else(|| OpError::new(ErrorCode::NotFound, format!("no brief `{}`", a.name)).at("/name"))?;
+                let brief = p3d_spec::parse_brief(&source).map_err(|e| OpError::invalid(&e.path, e.message))?;
+                let mut t = format!("brief {}: {}\n", a.name, serde_json::to_string(&source).unwrap_or_default());
+                for i in p3d_spec::brief::expand(&brief) {
+                    t.push_str(&format!("  {}\n", i.label));
+                }
+                Ok(ToolOutput::ok(t, json!({ "brief": source })))
+            }
+            BriefAction::Coverage => {
+                let doc = self.doc();
+                let c = p3d_spec::coverage(&doc, &a.name)?;
+                let mut t = format!("{}\n", c.line());
+                for i in &c.items {
+                    let mark = match i.status {
+                        p3d_spec::brief::Status::Pass => "ok",
+                        p3d_spec::brief::Status::Fail => "FAIL",
+                        p3d_spec::brief::Status::Pending => "pending",
+                    };
+                    t.push_str(&format!("  {mark} {}: {}\n", i.label, i.detail));
+                }
+                Ok(ToolOutput::ok(t, serde_json::to_value(&c).unwrap_or(Value::Null)))
+            }
+        }
+    }
+
+    fn spec(&mut self, a: &SpecArgs) -> Result<ToolOutput, OpError> {
+        let (op, args) = match a.action {
+            SpecAction::Get => {
+                let doc = self.doc();
+                let key = doc.resolve(&a.target).map_err(|e| OpError::from_scene(e, "/target"))?;
+                let record = doc
+                    .spec(key)
+                    .ok_or_else(|| OpError::invalid("/target", format!("`{}` has no spec", a.target)).with_hint("spec set creates one"))?;
+                let mut t = format!("spec {}: {}\n", a.target, serde_json::to_string(&record.source).unwrap_or_default());
+                for (name, p) in &record.parts {
+                    match p.object {
+                        Some(id) => t.push_str(&format!(
+                            "  {name}: o:{id}, {} faces, {} provenance nodes\n",
+                            thousands(p.provenance.face_count()),
+                            p.provenance.entries.len()
+                        )),
+                        None => t.push_str(&format!("  {name}: blended into its parent\n")),
+                    }
+                }
+                return Ok(ToolOutput::ok(t, json!({ "spec": record.source })));
+            }
+            SpecAction::Set => {
+                let spec =
+                    a.spec.clone().ok_or_else(|| OpError::invalid("/spec", "set needs `spec`").with_hint("docs topic spec shows the format"))?;
+                ("spec.set", json!({ "name": a.target, "spec": spec }))
+            }
+            SpecAction::Patch => {
+                let mut args = json!({ "target": a.target });
+                if let Some(m) = &a.merge {
+                    args["merge"] = m.clone();
+                }
+                if let Some(o) = &a.ops {
+                    args["ops"] = serde_json::to_value(o).unwrap_or(Value::Null);
+                }
+                ("spec.patch", args)
+            }
+            SpecAction::Compile => ("spec.compile", json!({ "target": a.target, "force": a.force })),
+        };
+        let opts = BatchOptions { dry_run: a.dry_run, ..BatchOptions::default() };
+        let r = self.execute(&[OpCall::new(op, args)], &opts).map_err(|mut e| {
+            e.path = e.path.map(|p| p.trim_start_matches("/ops/0/args").to_owned()).filter(|p| !p.is_empty());
+            e
+        })?;
+        let out = r.results.first().map(|x| x.output.clone()).unwrap_or_default();
+        let ms = r.elapsed.as_secs_f64() * 1000.0;
+        let head = if r.dry_run { format!("dry run, nothing changed ({ms:.0} ms)") } else { format!("ok rev {} ({ms:.0} ms)", r.revision) };
+        let mut t = format!("{head}: {}\n", out.summary);
+        for w in &out.warnings {
+            t.push_str(&format!("  warning: {}\n", w.message));
+        }
+        Ok(ToolOutput::ok(self.finish(t), json!({ "revision": r.revision, "summary": out.summary })))
+    }
+
     fn one_op(&mut self, op: &str, args: Value) -> Result<ToolOutput, OpError> {
         let r = self.execute(&[OpCall::new(op, args)], &BatchOptions::default()).map_err(|mut e| {
             e.path = e.path.map(|p| p.trim_start_matches("/ops/0/args").to_owned()).filter(|p| !p.is_empty());
