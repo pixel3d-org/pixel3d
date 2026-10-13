@@ -299,3 +299,6 @@ pub const LEAF: &[&str] = &["M5 20c0 -8 4 -14 14 -15c1 10 -5 14 -14 15z", "M5 20
 
 /// A front outline beside a side outline: a blueprint.
 pub const BLUEPRINT: &[&str] = &["M3 12c0 -4 3 -7 7 -7v14c-4 0 -7 -3 -7 -7z", "M14 5h4v14h-4z", "M20 5v14"];
+
+/// A surface pulled up at a point: a deform handle.
+pub const HANDLES: &[&str] = &["M3 18c4 0 5 -8 9 -8s5 8 9 8", "M12 10v-6", "M10 6l2 -2l2 2", "M12 10m-1.5 0a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0"];

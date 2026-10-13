@@ -232,6 +232,7 @@ fn part_row(ui: &mut egui::Ui, p: &PartInfo, icon: Icon, selected: bool, depth: 
     crate::control::record_widget(ui, &resp, &p.name, "treeitem", Some(selected));
     let tip = match (p.join, p.on.as_deref()) {
         ("blend", Some(on)) => format!("{}, {} {on}", p.kind, t("blended into")),
+        ("weld", Some(on)) => format!("{}, {} {on}", p.kind, t("welded into")),
         (_, Some(on)) => format!("{}, {} {on}", p.kind, t("on")),
         _ => p.kind.clone(),
     };
@@ -287,6 +288,87 @@ fn part_fields(app: &mut PixelApp, ui: &mut egui::Ui, p: &PartInfo, parts: &[Par
         shape_form(app, ui, p, src, out);
         transform_fields(ui, src, &root, out);
         tags_field(ui, p, src, out);
+    });
+    deform_fields(ui, p, src, &root, out);
+}
+
+/// The part's handles and pins (its `deform` block): each handle's point
+/// and offset, the pins, and the radius. Pulling handles in the viewport
+/// (the Handles tool, H) adds to them.
+fn deform_fields(ui: &mut egui::Ui, p: &PartInfo, src: &Value, root: &Value, out: &mut Out) {
+    let tk = Tokens::get();
+    let deform = src.get("deform").cloned().unwrap_or(Value::Null);
+    let handles = deform.get("handles").and_then(Value::as_array).cloned().unwrap_or_default();
+    let pins = deform.get("pins").and_then(Value::as_array).cloned().unwrap_or_default();
+    // The block with one change; without handles it goes (pins alone do nothing).
+    let with = |key: &str, v: Value| -> Value {
+        let mut d = deform.as_object().cloned().unwrap_or_default();
+        d.insert(key.to_owned(), v);
+        if d.get("handles").and_then(Value::as_array).is_none_or(Vec::is_empty) { Value::Null } else { Value::Object(d) }
+    };
+    let point = |v: &Value| match v {
+        Value::String(n) => n.clone(),
+        v => v.as_array().map(|a| a.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(", ")).unwrap_or_default(),
+    };
+    panel(ui, "spec-deform", &format!("{} ({})", t("Deform"), handles.len()), !handles.is_empty(), |ui| {
+        if handles.is_empty() {
+            note(
+                ui,
+                t("No handles yet. Take the Handles tool (H) and drag the part's surface: each pull is kept here, in part space."),
+                tk.text_faint,
+            );
+            return;
+        }
+        let schema = json!({ "type": "object", "properties": { "by": { "type": "array", "items": { "$ref": "#/$defs/Length" }, "minItems": 3, "maxItems": 3,
+            "description": t("How far the point moves, in part space") } } });
+        for (i, h) in handles.iter().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new(format!("{} {}: {}", t("Handle"), i + 1, point(h.get("move").unwrap_or(&Value::Null))))
+                        .font(theme::small())
+                        .color(tk.text_dim),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let r = ui.small_button(t("Remove"));
+                    crate::control::record_widget(ui, &r, &format!("{} {}", t("Remove handle"), i + 1), "button", None);
+                    if r.clicked() {
+                        let mut list = handles.clone();
+                        list.remove(i);
+                        out.patch = Some((json!({ "deform": with("handles", Value::Array(list)) }), t("Delete handle").to_owned(), false));
+                    }
+                });
+            });
+            let before = form_value(&schema, root, h);
+            let mut v = before.clone();
+            let o = schema_form::form(ui, egui::Id::new(("spec-handle", &p.name, i)), &schema, root, &mut v, &[]);
+            out.dragging |= o.dragging;
+            if o.changed {
+                let mut list = handles.clone();
+                list[i]["by"] = v["by"].clone();
+                out.patch = Some((json!({ "deform": with("handles", Value::Array(list)) }), t("Handle offset").to_owned(), o.dragging));
+            }
+        }
+        for (i, q) in pins.iter().enumerate() {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new(format!("{} {}: {}", t("Pin"), i + 1, point(q))).font(theme::small()).color(tk.text_dim));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.small_button(t("Remove")).clicked() {
+                        let mut list = pins.clone();
+                        list.remove(i);
+                        out.patch = Some((json!({ "deform": with("pins", Value::Array(list)) }), t("Delete pin").to_owned(), false));
+                    }
+                });
+            });
+        }
+        let rs = json!({ "type": "object", "properties": { "radius": { "anyOf": [{ "$ref": "#/$defs/Length" }, { "type": "null" }],
+            "description": t("How far along the surface each handle reaches; 40% of the part's diagonal when off") } } });
+        let before = form_value(&rs, root, &deform);
+        let mut v = before.clone();
+        let o = schema_form::form(ui, egui::Id::new(("spec-deform-radius", &p.name)), &rs, root, &mut v, &[]);
+        out.dragging |= o.dragging;
+        if o.changed {
+            out.patch = Some((json!({ "deform": with("radius", v["radius"].clone()) }), t("Handle radius").to_owned(), o.dragging));
+        }
     });
 }
 
@@ -398,6 +480,7 @@ fn join_fields(ui: &mut egui::Ui, src: &Value, root: &Value, out: &mut Out) {
         "join": { "oneOf": [
             { "const": "separate", "description": t("Its own mesh object") },
             { "const": "blend", "description": t("Merged into the parent's surface with a fillet (SDF parts)") },
+            { "const": "weld", "description": t("Unioned into the parent's mesh with a crisp seam (no object of its own)") },
             { "const": "decal", "description": t("Texture-only detail baked onto the parent later") }],
             "description": t("How the part joins the part it sits on") },
     });
@@ -417,7 +500,7 @@ fn join_fields(ui: &mut egui::Ui, src: &Value, root: &Value, out: &mut Out) {
                 fields["join"] = Value::Null;
                 fields["blend"] = Value::Null;
             }
-            Some("decal") => fields["blend"] = Value::Null,
+            Some("decal" | "weld") => fields["blend"] = Value::Null,
             _ => {}
         }
         out.patch = Some((fields, t("Join").to_owned(), o.dragging));

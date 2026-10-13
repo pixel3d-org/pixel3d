@@ -236,3 +236,28 @@ fn the_inspect_state_lists_parts_for_agents() {
     assert_eq!(s["parts"].as_array().map(Vec::len), Some(3));
     assert_eq!(s["parts"][1]["on"], "base");
 }
+
+#[test]
+fn welded_parts_show_like_blended_ones() {
+    let mut a = PixelApp::new(p3d_engine::Session::new(), Services::default());
+    a.run(
+        "spec.set",
+        json!({ "name": "beast", "spec": { "parts": {
+            "body": { "primitive": { "box": { "width": 0.4, "height": 0.3, "depth": 0.3, "origin": "center" } } },
+            "horn": { "primitive": { "cone": { "radius_bottom": 0.05, "radius_top": 0.005, "height": 0.2 } },
+                "anchor": { "on": "body", "landmark": "top", "offset": [0, -0.03, 0] }, "join": "weld" }
+        } } }),
+    )
+    .unwrap();
+    let doc = Arc::clone(a.session.doc());
+    let root = doc.resolve("beast").unwrap();
+    let body = doc.resolve("beast/body").unwrap();
+    let parts = parts_of(&doc, root);
+    let horn = parts.iter().find(|p| p.name == "horn").unwrap();
+    assert_eq!((horn.join, horn.object, horn.blend_into), ("weld", None, Some(body)));
+    // Hovering its row lights the faces welded into the body.
+    a.viewport.scene(&doc, a.scene_key(), &std::collections::BTreeSet::new());
+    a.spec.hover_next = Some((root, "horn".to_owned()));
+    a.spec_tick(&egui::Context::default());
+    assert!(a.spec_highlight().is_some_and(|(o, _)| !o.faces.is_empty()));
+}

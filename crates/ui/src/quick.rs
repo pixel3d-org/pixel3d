@@ -23,6 +23,7 @@ const SKIP: &[&str] = &[
     "sdf.mesh",
     "gen.shell",
     "sdf.silhouettes",
+    "deform.handles",
     "spec.set",
     "spec.patch",
     "spec.compile",

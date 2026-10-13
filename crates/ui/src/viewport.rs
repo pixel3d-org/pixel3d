@@ -118,6 +118,12 @@ pub struct ViewportState {
     pub knife: bool,
     /// A modal transform has the pointer: no picks or boxes.
     pub suppress: bool,
+    /// What the primary button did on the viewport this frame, for tools
+    /// that take clicks and drags themselves (with `suppress` set).
+    pub tool_input: ToolInput,
+    /// Mouse wheel steps go to a tool (`scrolled`) instead of zooming.
+    pub take_scroll: bool,
+    pub scrolled: f32,
     /// The box being dragged (start and current corner, points).
     marquee: Option<(egui::Pos2, egui::Pos2)>,
     /// Ray-cast structures of the meshes hit-tested so far, by mesh.
@@ -161,6 +167,9 @@ impl Default for ViewportState {
             pick_elements: false,
             knife: false,
             suppress: false,
+            tool_input: ToolInput::default(),
+            take_scroll: false,
+            scrolled: 0.0,
             marquee: None,
             bvhs: BTreeMap::new(),
             size_px: [0, 0],
@@ -171,6 +180,23 @@ impl Default for ViewportState {
             anim: None,
         }
     }
+}
+
+/// The primary button on the viewport this frame (Alt drags orbit and are
+/// left out).
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct ToolInput {
+    /// The pointer over the viewport, and over or dragging on it.
+    pub hover: Option<Pos2>,
+    pub pointer: Option<Pos2>,
+    /// A drag started this frame, where it was pressed.
+    pub started: Option<Pos2>,
+    pub dragging: bool,
+    /// A drag ended this frame.
+    pub stopped: bool,
+    /// A click (no drag), where.
+    pub clicked: Option<Pos2>,
+    pub shift: bool,
 }
 
 /// What the viewport asks the app to do after a frame.
@@ -560,6 +586,16 @@ impl ViewportState {
         let mut events = Vec::new();
         // A primary drag without Alt draws a selection box.
         let mods = ui.input(|i| i.modifiers);
+        let primary = egui::PointerButton::Primary;
+        self.tool_input = ToolInput {
+            hover: resp.hover_pos(),
+            pointer: resp.interact_pointer_pos().or(resp.hover_pos()),
+            started: (resp.drag_started_by(primary) && !mods.alt).then(|| ui.input(|i| i.pointer.press_origin())).flatten(),
+            dragging: resp.dragged_by(primary) && !mods.alt,
+            stopped: resp.drag_stopped_by(primary),
+            clicked: resp.clicked_by(primary).then(|| resp.interact_pointer_pos()).flatten(),
+            shift: mods.shift,
+        };
         if resp.drag_started_by(egui::PointerButton::Primary) && !mods.alt && !self.suppress {
             self.marquee = resp.interact_pointer_pos().map(|p| (p, p));
         }
@@ -738,6 +774,10 @@ impl ViewportState {
                 .collect();
             (wheels, i.zoom_delta())
         });
+        if self.take_scroll {
+            self.scrolled += scroll_events.iter().map(|(_, d, _)| d.y.clamp(-10.0, 10.0)).sum::<f32>();
+            return;
+        }
         if !scroll_events.is_empty() {
             self.anim = None;
         }

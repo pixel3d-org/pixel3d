@@ -263,3 +263,47 @@ fn outline_tab_and_blueprint_for_silhouettes() {
     let mut h = outline_app(ThemePref::Light, "axe_head", 2);
     snapshot(&mut h, "outline_silhouettes_light");
 }
+
+#[test]
+fn handles_tool_on_a_spec_part() {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = ThemePref::Dark;
+    a.run("spec.starter", json!({ "name": "lamp" })).unwrap();
+    a.run("edit.select", json!({ "target": "lamp/shade" })).unwrap();
+    a.run("ui.dock", json!({ "operation": "close", "panel": "health" })).unwrap();
+    a.run("ui.bottom", json!({ "on": false })).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("view.frame", Value::Null).unwrap();
+    h.state_mut().run("ui.tool", json!({ "tool": "handles" })).unwrap();
+    // A pulled handle kept on the part, and a placed one ready to pull.
+    h.state_mut().run("handles.add", json!({ "at": [0.05, 0.57, 0.0], "by": [0, 0.03, 0] })).unwrap();
+    for _ in 0..200 {
+        h.run_steps(2);
+        if !h.state().handles.busy() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    h.state_mut().run("handles.add", json!({ "at": [-0.05, 0.57, 0.0] })).unwrap();
+    let c = h.state().viewport.rect.center();
+    h.input_mut().events.push(egui::Event::PointerMoved(c));
+    h.run_steps(10);
+    snapshot(&mut h, "handles_dark");
+}
+
+#[test]
+fn history_bisect_card() {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = ThemePref::Light;
+    a.run("spec.starter", json!({ "name": "lamp" })).unwrap();
+    a.run("expect.add", json!({ "name": "E1", "expect": { "dims": { "target": "lamp", "height": { "max": 0.7 } } } })).unwrap();
+    a.run("spec.patch", json!({ "target": "lamp", "merge": { "parts": { "pole": { "primitive": { "cylinder": { "height": 0.9 } } } } } })).unwrap();
+    a.run("prim.box", json!({ "name": "crate", "position": [1, 0, 0] })).unwrap();
+    a.run("history.bisect_card", json!({ "on": true })).unwrap();
+    a.run("history.bisect", json!({ "test": { "expect": "E1" } })).unwrap();
+    let mut h = harness(a);
+    h.run_steps(10);
+    snapshot(&mut h, "bisect_light");
+}

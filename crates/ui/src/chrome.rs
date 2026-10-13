@@ -122,6 +122,16 @@ fn sidebar_groups(edit: bool) -> Vec<Vec<Item>> {
     if edit {
         return vec![tools, edit_tools(), edit_extras()];
     }
+    let mut tools = tools;
+    tools.push(item!(
+        Handles,
+        "ui.tool",
+        "Handles",
+        "H",
+        "Pull points of the surface by numbers; it follows within a radius (Shift+click pins)",
+        || json!({ "tool": "handles" }),
+        |a| a.ui.tool == Tool::Handles
+    ));
     vec![
         tools,
         vec![
@@ -454,6 +464,7 @@ pub fn tool_settings(app: &mut PixelApp, ui: &mut egui::Ui) {
             Tool::Rotate => (t("Rotate"), t("Drag the gizmo rings to rotate the selection.")),
             Tool::Scale => (t("Scale"), t("Drag the gizmo handles to scale the selection.")),
             Tool::Knife => (t("Knife"), t("Drag a line across faces to cut them; with x-ray the cut goes through to the back.")),
+            Tool::Handles => (t("Handles"), t("Drag the surface to pull it; Shift+click pins a point; [ and ] set the radius.")),
         };
         let g = ui.painter().layout_no_wrap(name.to_owned(), egui::FontId::proportional(13.0), tk.text);
         let w = g.size().x;
@@ -1038,6 +1049,7 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(Modifiers::NONE, Key::W), "ui.tool", || json!({ "tool": "move" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::E), "ui.tool", || json!({ "tool": "rotate" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::T), "ui.tool", || json!({ "tool": "scale" })),
+        (KeyboardShortcut::new(Modifiers::NONE, Key::H), "ui.tool", || json!({ "tool": "handles" })),
         // Blender's modal transforms.
         (KeyboardShortcut::new(Modifiers::NONE, Key::G), "view.modal", || json!({ "kind": "move" })),
         (KeyboardShortcut::new(Modifiers::NONE, Key::R), "view.modal", || json!({ "kind": "rotate" })),
@@ -1064,6 +1076,20 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         for key in [Key::Delete, Key::Backspace] {
             if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key)) {
                 let _ = app.run("shapes.delete", Value::Null);
+            }
+        }
+    }
+    // With the Handles tool over the viewport, Delete deletes the selected marker.
+    if app.ui.tool == Tool::Handles
+        && !app.ui.mode.is_edit()
+        && app.viewport.tool_input.hover.is_some()
+        && let Some(m) = app.handles.selected
+    {
+        for key in [Key::Delete, Key::Backspace] {
+            if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key))
+                && let Err(e) = app.handles_delete(m)
+            {
+                app.set_status(e);
             }
         }
     }

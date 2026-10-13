@@ -369,3 +369,37 @@ fn drag_an_outline_point_and_rebuild() {
     wait_for(30, || Some(inspect(&mut c)).filter(|s| s["outline"]["layers"][0]["value"] == path));
     let _ = c.call("ui.command", json!({ "id": "app.quit" }));
 }
+
+#[test]
+#[ignore = "needs a display and a GPU"]
+fn pull_a_surface_with_the_handles_tool() {
+    let dir = temp_dir("handles");
+    let (_app, mut c) = start(&["--command".to_owned(), "ui.start on=false".to_owned()]);
+    c.call("ui.command", json!({ "id": "prim.quad_sphere", "params": { "name": "ball", "radius": 0.2, "origin": "center" } })).unwrap();
+    c.call("ui.command", json!({ "id": "view.frame" })).unwrap();
+    settle_camera(&mut c);
+    // H: the Handles tool; the ring follows the pointer over the ball.
+    c.call("ui.key", json!({ "key": "H" })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["handles"]["active"] == json!(true)));
+    let v = &s["viewport"];
+    let (x, y) = (v[0].as_f64().unwrap() + v[2].as_f64().unwrap() / 2.0, v[1].as_f64().unwrap() + v[3].as_f64().unwrap() / 2.0);
+    c.call("ui.hover", json!({ "target": { "at": [x, y] } })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["handles"]["hover"].is_array()));
+    let (before, revision) = (s["handles"]["mesh"]["bounds"].clone(), s["scene"]["revision"].clone());
+    // Pull the front of the ball up: previewed while dragging, one step on release.
+    c.call("ui.drag", json!({ "from": [x, y], "to": [x, y - 60.0], "steps": 12 })).unwrap();
+    let s = wait_for(60, || {
+        Some(inspect(&mut c))
+            .filter(|s| s["scene"]["revision"] != revision && s["handles"]["busy"] == json!(false) && s["handles"]["dragging"] == json!(false))
+    });
+    let after = s["handles"]["mesh"]["bounds"].clone();
+    assert_ne!(after, before, "the surface moved");
+    assert_eq!(s["handles"]["placed"].as_array().map(Vec::len), Some(1), "the handle stays to pull again");
+    let shot = dir.join("handles.png");
+    c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
+    assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    // One undo step puts it back.
+    c.call("ui.command", json!({ "id": "edit.undo" })).unwrap();
+    wait_for(30, || Some(inspect(&mut c)).filter(|s| s["handles"]["mesh"]["bounds"] == before));
+    let _ = c.call("ui.command", json!({ "id": "app.quit" }));
+}

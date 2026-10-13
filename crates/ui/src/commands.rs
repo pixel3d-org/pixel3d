@@ -104,6 +104,22 @@ fn extra_commands() -> Vec<Command> {
         mk("ui.tool", || json!({ "tool": "move" }), "Move tool", "Move the selection with the gizmo", &["w", "translate"], Icon::Move),
         mk("ui.tool", || json!({ "tool": "rotate" }), "Rotate tool", "Rotate the selection with the gizmo", &["e", "rotation"], Icon::Rotate),
         mk("ui.tool", || json!({ "tool": "scale" }), "Scale tool", "Scale the selection with the gizmo", &["t", "resize"], Icon::Scale),
+        mk(
+            "ui.tool",
+            || json!({ "tool": "handles" }),
+            "Handles tool",
+            "Pull points of the surface; it follows within a radius (Shift+click pins)",
+            &["h", "pull", "push", "soft selection", "proportional editing", "sculpt by numbers", "deform handles", "warp"],
+            Icon::Handles,
+        ),
+        mk(
+            "history.bisect_card",
+            || json!({ "on": true }),
+            "Bisect history",
+            "Find the change that made an expectation, a finding or a brief item fail",
+            &["bisect", "regression", "what broke", "git bisect", "find the change"],
+            Icon::History,
+        ),
         mk("ui.mode", || json!({ "mode": "object" }), "Object mode", "Work on whole objects", &["tab", "object"], Icon::ModeObject),
         mk(
             "ui.mode",
