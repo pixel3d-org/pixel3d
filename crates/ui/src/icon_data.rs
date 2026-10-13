@@ -302,3 +302,8 @@ pub const BLUEPRINT: &[&str] = &["M3 12c0 -4 3 -7 7 -7v14c-4 0 -7 -3 -7 -7z", "M
 
 /// A surface pulled up at a point: a deform handle.
 pub const HANDLES: &[&str] = &["M3 18c4 0 5 -8 9 -8s5 8 9 8", "M12 10v-6", "M10 6l2 -2l2 2", "M12 10m-1.5 0a1.5 1.5 0 1 0 3 0a1.5 1.5 0 1 0 -3 0"];
+
+/// A puzzle piece: a feature template fitted onto a model.
+pub const PUZZLE: &[&str] = &[
+    "M4 7h3a1 1 0 0 0 1 -1v-1a2 2 0 0 1 4 0v1a1 1 0 0 0 1 1h3a1 1 0 0 1 1 1v3a1 1 0 0 0 1 1h1a2 2 0 0 1 0 4h-1a1 1 0 0 0 -1 1v3a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-1a2 2 0 0 0 -4 0v1a1 1 0 0 1 -1 1h-3a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1h1a2 2 0 0 0 0 -4h-1a1 1 0 0 1 -1 -1v-3a1 1 0 0 1 1 -1",
+];

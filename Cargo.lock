@@ -3456,6 +3456,7 @@ dependencies = [
  "glam",
  "p3d-control",
  "p3d-engine",
+ "p3d-features",
  "p3d-geo",
  "p3d-io",
  "p3d-math",

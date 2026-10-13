@@ -25,6 +25,8 @@ pub enum Panel {
     Timeline,
     Bake,
     Export,
+    /// The feature template library (ears, bolts, vents...).
+    Features,
 }
 
 impl Panel {
@@ -39,6 +41,7 @@ impl Panel {
         Panel::Timeline,
         Panel::Bake,
         Panel::Export,
+        Panel::Features,
     ];
 
     pub fn id(self) -> &'static str {
@@ -53,6 +56,7 @@ impl Panel {
             Panel::Timeline => "timeline",
             Panel::Bake => "bake",
             Panel::Export => "export",
+            Panel::Features => "features",
         }
     }
 
@@ -68,6 +72,7 @@ impl Panel {
             Panel::Timeline => t("Timeline"),
             Panel::Bake => t("Bake"),
             Panel::Export => t("Export"),
+            Panel::Features => t("Features"),
         }
     }
 
@@ -163,7 +168,16 @@ impl Default for Workspace {
             ],
         };
         let root = split(SplitAxis::Horizontal, SplitSize::FixedSecond(320.0), center, right);
-        Workspace { layout: Layout { root: Some(root), floating: Vec::new() }, hidden: Vec::new() }
+        // The Features panel opens in the right column, below the Outliner.
+        let features = Location {
+            floating: None,
+            anchor: Some(Panel::Outliner),
+            placement: Placement::Split(Zone::Center),
+            size: None,
+            stack: Some((true, Some(420.0))),
+            sibling: Vec::new(),
+        };
+        Workspace { layout: Layout { root: Some(root), floating: Vec::new() }, hidden: vec![(Panel::Features, features)] }
     }
 }
 
@@ -274,7 +288,7 @@ fn limits(panel: &Panel) -> PanelLimits {
         Panel::Viewport => (egui::vec2(240.0, 160.0), 1_000_000.0),
         Panel::History | Panel::Console | Panel::Timeline => (egui::vec2(200.0, 80.0), 1_000_000.0),
         Panel::UvEditor => (egui::vec2(240.0, 160.0), 1_000_000.0),
-        Panel::Outliner | Panel::Properties | Panel::Health | Panel::Bake | Panel::Export => (egui::vec2(220.0, 90.0), 720.0),
+        Panel::Outliner | Panel::Properties | Panel::Health | Panel::Bake | Panel::Export | Panel::Features => (egui::vec2(220.0, 90.0), 720.0),
     };
     PanelLimits { min, max: egui::vec2(max_width, 1_000_000.0) }
 }
@@ -316,9 +330,16 @@ mod tests {
     fn default_layout_is_valid_and_viewport_is_protected() {
         let mut w = Workspace::default();
         w.validate().unwrap();
-        // The Model layout: every panel but the other workspaces' editors.
-        let editors = [Panel::UvEditor, Panel::Timeline, Panel::Bake, Panel::Export];
+        // The Model layout: every panel but the other workspaces' editors
+        // and the Features panel, which opens on demand.
+        let editors = [Panel::UvEditor, Panel::Timeline, Panel::Bake, Panel::Export, Panel::Features];
         assert!(Panel::ALL.iter().all(|p| w.is_visible(*p) != editors.contains(p)));
+        // It opens in the right column, below the Outliner.
+        let mut f = Workspace::default();
+        f.set_visible(Panel::Features, true).unwrap();
+        f.validate().unwrap();
+        let at = f.layout.location(&Panel::Features).unwrap();
+        assert_eq!(at.anchor, Some(Panel::Outliner), "{at:?}");
         assert!(w.apply(Action::Close { panel: Panel::Viewport }).is_err());
         assert!(w.set_visible(Panel::Viewport, false).is_err());
         w.validate().unwrap();
