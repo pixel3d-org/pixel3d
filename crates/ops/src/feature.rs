@@ -83,7 +83,7 @@ impl Op for GenFeature {
                    **Use for** head blockouts, hands, ears, eyes, noses, horns, hanging cables and ropes, and hard-surface details (bolts, rivets, vents, panels, moldings).",
             examples: &[OpExample {
                 args: r#"{"feature": "ear", "params": {"variant": "elf", "length": "9cm"}}"#,
-                result: "created ear (o:4) ear feature 46.3 x 74.64 x 50.38 mm: 265 faces (440 tris; budget 6,000); landmarks lobe, rim_back, root, tip",
+                result: "created ear (o:4) ear feature 46.53 x 76.18 x 52.22 mm: 524 faces (954 tris; budget 6,000); landmarks lobe, rim_back, root, tip",
             }],
             aliases: &["feature", "template", "kitbash", "detail", "elf ear", "horn", "bolt", "rivet", "vent", "molding"],
             complexity: "the template's build, about O(output faces)",

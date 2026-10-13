@@ -37,5 +37,5 @@ Phase 3c completes `diagnose` (project spec 17.10): intent, edge flow and deform
 
 - Diagnose on the 101k-triangle elf head example takes about 0.3 s (0.6 s before, hair relations dominated); predictions add 0.2 to 0.3 s each. The 100k-triangle perception bench stays at about 106 ms. Every new pass is linear (`scale_diagnose_*` in `crates/perceive/benches/scale.rs`).
 - Benchmark reference sessions declare an asset class; replays must set it, since detail scale depends on the view distance.
-- The `ear` feature template is flagged (folded rim, walls near 0 mm): the template, not the checks, should change.
+- The `ear` feature template was flagged (folded rim, walls near 0 mm). Fixed in the template: thick shells now have a half-round rim (4 quads, folds of 45 degrees at most) and the ear rounds its sharp tip into a nub about the thickness across.
 - `remesh.quad` at its default edge does not make loops strong enough for `FACE_LOOPS`; the fix asks for a finer edge.
