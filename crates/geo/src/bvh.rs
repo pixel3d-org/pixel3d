@@ -462,18 +462,19 @@ impl TriBvh {
     ///
     /// Complexity: O(log n + hits) typical.
     pub fn crossings(&self, origin: Vec3, dir: Vec3) -> u32 {
-        self.crossings_checked(origin, dir).0
+        self.crossings_checked(origin, dir, |_| true).0
     }
 
-    /// Crossings plus whether any hit grazed an edge or corner (then a
-    /// shared edge may have been counted twice).
-    fn crossings_checked(&self, origin: Vec3, dir: Vec3) -> (u32, bool) {
+    /// Crossings of triangles whose faces pass `keep`, plus whether any hit
+    /// grazed an edge or corner (then a shared edge may have been counted twice).
+    fn crossings_checked(&self, origin: Vec3, dir: Vec3, keep: impl Fn(u32) -> bool) -> (u32, bool) {
         let (o, inv) = (a(origin), inverse(dir));
         let (mut n, mut grazed) = (0, false);
         self.visit(
             |b| ray_box(b, o, inv, f32::INFINITY).is_some(),
             |tri| {
-                if let Some((t, margin)) = ray_triangle_margin(origin, dir, self.tris[tri as usize])
+                if keep(self.faces[tri as usize])
+                    && let Some((t, margin)) = ray_triangle_margin(origin, dir, self.tris[tri as usize])
                     && t > 0.0
                 {
                     n += 1;
@@ -491,12 +492,21 @@ impl TriBvh {
     ///
     /// Complexity: O(log n + hits) typical.
     pub fn contains(&self, p: Vec3) -> bool {
+        self.contains_where(p, |_| true)
+    }
+
+    /// Like [`TriBvh::contains`] for the closed surface made of the
+    /// triangles whose faces pass `keep` (for example the other parts of a
+    /// mesh).
+    ///
+    /// Complexity: O(log n + hits) typical.
+    pub fn contains_where(&self, p: Vec3, keep: impl Fn(u32) -> bool) -> bool {
         if self.tris.is_empty() || !(p.cmpge(self.lo).all() && p.cmple(self.hi).all()) {
             return false;
         }
         let (mut inside, mut outside, mut fallback) = (0usize, 0usize, 0usize);
         for d in VOTE_DIRS {
-            let (n, grazed) = self.crossings_checked(p, d);
+            let (n, grazed) = self.crossings_checked(p, d, &keep);
             if grazed {
                 fallback += (n % 2) as usize;
                 continue;

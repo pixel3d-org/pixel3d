@@ -21,6 +21,12 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`scene.join`](scene.join.md) | Merges several mesh objects, or several curve objects, into one, keeping their world shapes. |
 | [`scene.separate`](scene.separate.md) | Splits a mesh object into several objects by loose part, material or face group. |
 
+## io
+
+| Op | Summary |
+|---|---|
+| [`io.import`](io.import.md) | Reads a glTF, GLB, OBJ or FBX file into the scene, in meters with +Y up, repairing its meshes. |
+
 ## prim
 
 | Op | Summary |
@@ -91,6 +97,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`edit.dissolve`](edit.dissolve.md) | Removes vertices, edges or faces while keeping the surface closed, merging the faces around them into polygons. |
 | [`edit.plane_cut`](edit.plane_cut.md) | Cuts the mesh along a plane, optionally removing one side and capping the opening. |
 | [`edit.symmetrize`](edit.symmetrize.md) | Makes a mesh mirror-symmetric: keeps one half and replaces the other with its mirror image, welded at the seam. |
+| [`edit.boolean`](edit.boolean.md) | Cuts other mesh objects out of a mesh, adds them to it, or keeps only the overlap, with clean polygons. |
 | [`edit.thicken`](edit.thicken.md) | Gives surfaces a wall thickness: an offset back side joined to the front along open borders. |
 | [`edit.smooth`](edit.smooth.md) | Smooths vertex positions without shrinking the shape (Taubin smoothing). |
 | [`edit.bevel`](edit.bevel.md) | Rounds or chamfers edges: each edge becomes a strip of faces `width` wide, with caps where strips meet or end. |
@@ -127,6 +134,13 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`deform.twist`](deform.twist.md) | Twists a shape around an axis, from no turn at its low end to `angle` at its high end. |
 | [`deform.taper`](deform.taper.md) | Scales a shape toward its axis progressively, from full size at its low end to `factor` at its high end. |
 | [`deform.displace`](deform.displace.md) | Moves vertices along their normals by seeded fractal noise (bumps, rocks, terrain, organic variation). |
+
+## cleanup
+
+| Op | Summary |
+|---|---|
+| [`cleanup.auto`](cleanup.auto.md) | Makes a mesh clean in one call: welds seams, collapses degenerate faces, removes specks and hidden parts, fills small holes, joins flat triangles into quads and turns parts outward. |
+| [`cleanup.report`](cleanup.report.md) | Reports a mesh's topology problems and what cleanup.auto would fix, without changing anything. |
 
 ## expect
 

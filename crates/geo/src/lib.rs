@@ -2,7 +2,9 @@
 //!
 //! Layer L2 (algorithms). See `docs/architecture.md`.
 
+pub mod boolean;
 pub mod bvh;
+pub mod cleanup;
 pub mod curve;
 pub mod deform;
 pub mod edit;
@@ -10,4 +12,5 @@ pub mod generate;
 pub mod kdtree;
 pub mod prim;
 pub mod shade;
+pub mod soup;
 pub mod subd;

@@ -52,13 +52,13 @@ fn apply(mesh: &mut Mesh, p: &Patch, made: &[usize], out: &mut DissolveResult) -
 
 /// A region of faces: its members (sorted) and its border loops as
 /// half-edge lists in winding order.
-type Region = (Vec<u32>, Vec<Vec<u32>>);
+pub(crate) type Region = (Vec<u32>, Vec<Vec<u32>>);
 
 /// Connected regions of the given faces, joined across edges where `join`
 /// holds, each with its border loops.
 ///
 /// Complexity: O(c) expected for the c corners of the faces.
-fn regions(mesh: &Mesh, faces: &[u32], join: impl Fn(u32) -> bool) -> Vec<Region> {
+pub(crate) fn regions(mesh: &Mesh, faces: &[u32], join: impl Fn(u32) -> bool) -> Vec<Region> {
     let sel = face_bits(mesh, faces);
     let mut label: FxHashMap<u32, usize> = FxHashMap::default();
     let mut out: Vec<Region> = Vec::new();

@@ -41,7 +41,9 @@ pub enum Category {
     Shade,
     Subd,
     Deform,
+    Cleanup,
     Expect,
+    Io,
 }
 
 impl Category {
@@ -56,7 +58,9 @@ impl Category {
             Category::Shade => "shade",
             Category::Subd => "subd",
             Category::Deform => "deform",
+            Category::Cleanup => "cleanup",
             Category::Expect => "expect",
+            Category::Io => "io",
         }
     }
 }
@@ -134,6 +138,8 @@ pub struct OpCtx<'a> {
     pub cancel: Option<&'a AtomicBool>,
     /// Progress in millionths (0 to 1,000,000).
     pub progress: Option<&'a AtomicU32>,
+    /// Folders file ops may read and write; none means no file access.
+    pub files: Option<&'a p3d_io::sandbox::FileAccess>,
 }
 
 impl OpCtx<'_> {

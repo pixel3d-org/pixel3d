@@ -216,9 +216,9 @@ mod tests {
 
     #[test]
     fn addresses_fill_in_host_and_port() {
-        assert_eq!(parse_addr("7000").unwrap(), "127.0.0.1:7000".parse().unwrap());
-        assert_eq!(parse_addr("127.0.0.1:7001").unwrap(), "127.0.0.1:7001".parse().unwrap());
-        assert_eq!(parse_addr("127.0.0.1").unwrap(), format!("127.0.0.1:{DEFAULT_PORT}").parse().unwrap());
+        assert_eq!(parse_addr("7000").unwrap(), "127.0.0.1:7000".parse::<std::net::SocketAddr>().unwrap());
+        assert_eq!(parse_addr("127.0.0.1:7001").unwrap(), "127.0.0.1:7001".parse::<std::net::SocketAddr>().unwrap());
+        assert_eq!(parse_addr("127.0.0.1").unwrap(), format!("127.0.0.1:{DEFAULT_PORT}").parse::<std::net::SocketAddr>().unwrap());
         assert!(parse_addr("not an address:x").is_err());
     }
 

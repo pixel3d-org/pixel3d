@@ -43,7 +43,7 @@ fn predict(registry: &Registry, doc: &Document, target: Option<&str>, seed: u64,
     let fix = &f.fixes[k];
     let call = OpCall { op: fix.op.clone(), args: fix.args.clone(), label: Some(format!("fix_{}", f.id.to_lowercase())) };
     let start = Instant::now();
-    let after = match run_batch(registry, doc, &[call], seed, None, None) {
+    let after = match run_batch(registry, doc, &[call], seed, None, None, None) {
         Ok((d, _)) => d,
         Err(e) => return format!("fails: {} {}", e.error.code.as_str(), e.error.message),
     };

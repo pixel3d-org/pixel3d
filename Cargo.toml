@@ -74,7 +74,6 @@ robust = "1.2.0"
 spade = "2.15.1"
 parry3d = "0.31.1"
 manifold-rust = "0.16.0"
-boolmesh = "0.2.1"
 meshopt = "0.6.2"
 rayon = "1.12.0"
 smallvec = "1.16.3"
@@ -92,7 +91,7 @@ intel_tex_2 = "0.5.0"
 ktx2 = "0.5.0"
 
 # File formats
-gltf = "1.4.1"
+gltf = { version = "1.4.1", default-features = false, features = ["utils", "names"] }
 gltf-json = "1.4.1"
 ufbx = "0.11.5"
 fbxcel = "0.9.0"

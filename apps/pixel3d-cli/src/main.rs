@@ -6,19 +6,21 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, bail};
 use p3d_engine::Session;
 use p3d_mcp::Agent;
-use p3d_ops::Registry;
 use p3d_ops::catalog::catalog_json;
+use p3d_ops::{FileAccess, Registry};
 use serde_json::{Value, json};
 
 const USAGE: &str = "\
 usage: pixel3d-cli <command> [options]
 
 commands:
-  mcp [--open <scene.p3d>] [--connect <[host:]port>]
-      serve the agent tools over MCP on stdin and stdout; --connect drives
-      a running desktop app instead (started with --control <port>, or File >
-      Allow agents to connect, port 7879) so you watch the agent work
-  run <script.json> [--open <in.p3d>] [--save <out.p3d>] [--timings]
+  mcp [--open <scene.p3d>] [--allow-dir <folder>]... | --connect <[host:]port>
+      serve the agent tools over MCP on stdin and stdout; file tools (import)
+      may use the current folder, the scene's folder and each --allow-dir.
+      --connect drives a running desktop app instead (started with --control
+      <port>, or File > Allow agents to connect, port 7879) so you watch the
+      agent work; file tools then use the folders the app allows
+  run <script.json> [--open <in.p3d>] [--save <out.p3d>] [--timings] [--allow-dir <folder>]...
       run a list of ops as one transaction and print the result; the script
       is {\"ops\": [{\"op\": \"prim.box\", \"args\": {...}}, ...]} or just the list
   convert <scene.p3d> --to json [--out <file.json>]
@@ -63,6 +65,11 @@ impl Flags {
         self.options.iter().find(|(n, _)| n == name).and_then(|(_, v)| v.as_deref())
     }
 
+    /// Every value of an option that may repeat.
+    fn values(&self, name: &str) -> Vec<&str> {
+        self.options.iter().filter(|(n, _)| n == name).filter_map(|(_, v)| v.as_deref()).collect()
+    }
+
     fn has(&self, name: &str) -> bool {
         self.options.iter().any(|(n, _)| n == name)
     }
@@ -82,19 +89,24 @@ fn init_logging() {
     let _ = tracing_subscriber::fmt().with_writer(std::io::stderr).with_max_level(level).with_target(false).try_init();
 }
 
-/// A session, optionally with a document loaded from a file.
-fn session(open: Option<&str>) -> Result<Session> {
+/// A session, optionally with a document loaded from a file. File ops may
+/// use the current folder, the opened scene's folder and `--allow-dir` folders.
+fn session(f: &Flags) -> Result<Session> {
     let mut s = Session::new();
-    if let Some(path) = open {
+    let mut roots = vec![std::env::current_dir().context("cannot read the current folder")?];
+    if let Some(path) = f.value("open") {
         let doc = p3d_io::p3d::load(Path::new(path)).with_context(|| format!("cannot open {path}"))?;
         s.load(doc);
+        roots.extend(Path::new(path).parent().filter(|p| !p.as_os_str().is_empty()).map(Path::to_path_buf));
     }
+    roots.extend(f.values("allow-dir").into_iter().map(PathBuf::from));
+    s.set_file_access(FileAccess::new(roots).context("an --allow-dir folder does not exist")?);
     Ok(s)
 }
 
 fn mcp(args: &[String]) -> Result<ExitCode> {
     let f = Flags::parse(args, &[])?;
-    f.only(&["open", "connect"])?;
+    f.only(&["open", "connect", "allow-dir"])?;
     if let Some(p) = &f.positional {
         bail!("mcp takes no positional argument (got `{p}`); use --open <scene.p3d>");
     }
@@ -102,22 +114,25 @@ fn mcp(args: &[String]) -> Result<ExitCode> {
         if f.has("open") {
             bail!("--open and --connect do not go together: the app has its scene open (open files there)");
         }
+        if f.has("allow-dir") {
+            bail!("--allow-dir and --connect do not go together: the app decides which folders agents may use");
+        }
         let addr = p3d_mcp::connect::parse_addr(to).map_err(anyhow::Error::msg)?;
         p3d_mcp::serve_connected_stdio(addr)?;
     } else {
-        p3d_mcp::serve_stdio(session(f.value("open"))?)?;
+        p3d_mcp::serve_stdio(session(&f)?)?;
     }
     Ok(ExitCode::SUCCESS)
 }
 
 fn run(args: &[String]) -> Result<ExitCode> {
     let f = Flags::parse(args, &["timings"])?;
-    f.only(&["open", "save", "timings"])?;
+    f.only(&["open", "save", "timings", "allow-dir"])?;
     let script = f.positional.as_deref().context("run needs a script file")?;
     let text = std::fs::read_to_string(script).with_context(|| format!("cannot read {script}"))?;
     let value: Value = serde_json::from_str(&text).with_context(|| format!("{script} is not JSON"))?;
     let call = if value.is_array() { json!({ "ops": value }) } else { value };
-    let mut agent = Agent::new(session(f.value("open"))?);
+    let mut agent = Agent::new(session(&f)?);
     let out = agent.call("run", call);
     print!("{}", out.text);
     if out.is_error {

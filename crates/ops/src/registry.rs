@@ -9,7 +9,7 @@ use p3d_scene::name::suggest;
 use crate::dynop::{DynOp, Typed};
 use crate::error::{ErrorCode, OpError};
 use crate::op::Category;
-use crate::{curve, deform, edit, element, expect, generate, prim, scene, select, shade, subd};
+use crate::{boolean, cleanup, curve, deform, edit, element, expect, generate, io, prim, scene, select, shade, subd};
 
 /// All available ops, built-in first, then addon and script ops in
 /// registration order.
@@ -48,6 +48,7 @@ impl Registry {
             Arc::new(Typed::<scene::SetMetadata>::new()),
             Arc::new(Typed::<scene::Join>::new()),
             Arc::new(Typed::<scene::Separate>::new()),
+            Arc::new(Typed::<io::Import>::new()),
             Arc::new(Typed::<prim::BoxOp>::new()),
             Arc::new(Typed::<prim::Cylinder>::new()),
             Arc::new(Typed::<prim::Cone>::new()),
@@ -94,6 +95,7 @@ impl Registry {
             Arc::new(Typed::<edit::Dissolve>::new()),
             Arc::new(Typed::<edit::PlaneCut>::new()),
             Arc::new(Typed::<edit::Symmetrize>::new()),
+            Arc::new(Typed::<boolean::Boolean>::new()),
             Arc::new(Typed::<edit::Thicken>::new()),
             Arc::new(Typed::<edit::Smooth>::new()),
             Arc::new(Typed::<edit::Bevel>::new()),
@@ -115,6 +117,8 @@ impl Registry {
             Arc::new(Typed::<deform::Twist>::new()),
             Arc::new(Typed::<deform::Taper>::new()),
             Arc::new(Typed::<deform::Displace>::new()),
+            Arc::new(Typed::<cleanup::Auto>::new()),
+            Arc::new(Typed::<cleanup::Report>::new()),
             Arc::new(Typed::<expect::Add>::new()),
             Arc::new(Typed::<expect::Remove>::new()),
         ];

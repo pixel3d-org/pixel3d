@@ -30,6 +30,9 @@ export type BevelParams = {
 /** Which rims of an extruded shape get the bevel. */
 export type BevelSides = "both" | "front" | "back";
 
+/** What the boolean keeps. */
+export type BoolOpParam = "difference" | "union" | "intersect";
+
 /** Advanced box settings. */
 export type BoxAdvanced = {
   /** Quads along X, Y and Z on each flat face. */
@@ -300,6 +303,9 @@ export type SubdAdvanced = {
   sharp_as_crease?: boolean;
 };
 
+/** One object or several. */
+export type ToolsParam = string | string[];
+
 /** Advanced settings of `edit.tris_to_quads`. */
 export type TrisToQuadsAdvanced = {
   /** Also join across sharp edges, UV seams and material borders. */
@@ -448,6 +454,18 @@ export type SceneSeparateParams = {
   groups?: string[];
   /** Mesh object (name, path or id). */
   target: string;
+};
+
+/** `io.import`: Reads a glTF, GLB, OBJ or FBX file into the scene, in meters with +Y up, repairing its meshes. */
+export type IoImportParams = {
+  /** Name of the object that holds the file's contents. Default: the file's single top object keeps its name; several get a parent named after the file. */
+  name?: string | null;
+  /** Parent object for the import. */
+  parent?: string | null;
+  /** File to read: `.glb`, `.gltf`, `.fbx` or `.obj`, inside the allowed folders. Relative paths start in the project folder. */
+  path: string;
+  /** Vertices closer than this weld while repairing the meshes; 0 (default) welds identical positions only. */
+  weld?: Length;
 };
 
 /** `prim.box`: Creates a box with optional rounded or chamfered edges and groups top, bottom, front, back, left, right. */
@@ -1243,6 +1261,20 @@ export type EditSymmetrizeParams = {
   weld?: Length;
 };
 
+/** `edit.boolean`: Cuts other mesh objects out of a mesh, adds them to it, or keeps only the overlap, with clean polygons. */
+export type EditBooleanParams = {
+  /** Keep the tool objects; by default they are deleted (their children stay). */
+  keep_tool?: boolean;
+  /** `difference` (default: cut the tools out), `union` or `intersect`. */
+  operation?: BoolOpParam;
+  /** Mesh object that receives the result (name, path or id). */
+  target: string;
+  /** The mesh object to cut with, add or intersect, or a list of them (applied in order). */
+  tool: ToolsParam;
+  /** Vertices the cut makes closer than this merge, so no sliver edges remain; 0 keeps them. */
+  weld?: Length;
+};
+
 /** `edit.thicken`: Gives surfaces a wall thickness: an offset back side joined to the front along open borders. */
 export type EditThickenParams = {
   /** Where the wall goes: -1 behind the surface (default), 0 centered, 1 in front. */
@@ -1483,6 +1515,46 @@ export type DeformDisplaceParams = {
   target: string;
 };
 
+/** `cleanup.auto`: Makes a mesh clean in one call: welds seams, collapses degenerate faces, removes specks and hidden parts, fills small holes, joins flat triangles into quads and turns parts outward. */
+export type CleanupAutoParams = {
+  /** Collapse faces with no area (their tiny edge folds away). */
+  degenerate?: boolean;
+  /** Join coplanar triangle pairs into quads. */
+  join_flat?: boolean;
+  /** Fill holes of at most this many edges on parts that are not flat sheets (0 fills none). */
+  max_hole_edges?: number;
+  /** Remove loose parts smaller than this across (0 keeps all). */
+  min_part_size?: Length;
+  /** Turn inside-out parts outward. */
+  orient?: boolean;
+  /** Remove closed parts buried inside other closed parts (never seen). */
+  remove_hidden?: boolean;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Weld vertices closer than this (0 skips welding). */
+  weld?: Length;
+};
+
+/** `cleanup.report`: Reports a mesh's topology problems and what cleanup.auto would fix, without changing anything. */
+export type CleanupReportParams = {
+  /** Collapse faces with no area (their tiny edge folds away). */
+  degenerate?: boolean;
+  /** Join coplanar triangle pairs into quads. */
+  join_flat?: boolean;
+  /** Fill holes of at most this many edges on parts that are not flat sheets (0 fills none). */
+  max_hole_edges?: number;
+  /** Remove loose parts smaller than this across (0 keeps all). */
+  min_part_size?: Length;
+  /** Turn inside-out parts outward. */
+  orient?: boolean;
+  /** Remove closed parts buried inside other closed parts (never seen). */
+  remove_hidden?: boolean;
+  /** Mesh object (name, path or id). */
+  target: string;
+  /** Weld vertices closer than this (0 skips welding). */
+  weld?: Length;
+};
+
 /** `expect.add`: Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. */
 export type ExpectAddParams = {
   /** The test: one of dims, symmetric, attached, not_intersecting, budget, watertight. */
@@ -1512,6 +1584,7 @@ export interface OpParams {
   "scene.set_metadata": SceneSetMetadataParams;
   "scene.join": SceneJoinParams;
   "scene.separate": SceneSeparateParams;
+  "io.import": IoImportParams;
   "prim.box": PrimBoxParams;
   "prim.cylinder": PrimCylinderParams;
   "prim.cone": PrimConeParams;
@@ -1558,6 +1631,7 @@ export interface OpParams {
   "edit.dissolve": EditDissolveParams;
   "edit.plane_cut": EditPlaneCutParams;
   "edit.symmetrize": EditSymmetrizeParams;
+  "edit.boolean": EditBooleanParams;
   "edit.thicken": EditThickenParams;
   "edit.smooth": EditSmoothParams;
   "edit.bevel": EditBevelParams;
@@ -1579,6 +1653,8 @@ export interface OpParams {
   "deform.twist": DeformTwistParams;
   "deform.taper": DeformTaperParams;
   "deform.displace": DeformDisplaceParams;
+  "cleanup.auto": CleanupAutoParams;
+  "cleanup.report": CleanupReportParams;
   "expect.add": ExpectAddParams;
   "expect.remove": ExpectRemoveParams;
 }

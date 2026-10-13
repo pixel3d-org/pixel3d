@@ -16,10 +16,12 @@ mod transform;
 
 pub use bevel::{BevelResult, BevelSpec, MAX_BEVEL_SEGMENTS, bevel};
 pub use dissolve::{DissolveResult, STRAIGHT_DEG, dissolve_edges, dissolve_faces, dissolve_limited, dissolve_verts};
+pub(crate) use dissolve::{Region, regions};
 pub use extrude::{ExtrudeMode, ExtrudeResult, ExtrudeSpec, extrude};
 pub use faces::{QuadSpec, poke, triangulate, tris_to_quads};
 pub use inset::{InsetMode, InsetResult, InsetSpec, inset};
 pub use loops::{BridgeResult, LoopCutResult, MAX_BRIDGE_LOOP, MAX_CUTS, bridge, loop_cut};
+pub(crate) use merge::simple_polygons;
 pub use merge::{MergeMode, MergeResult, merge, merge_by_distance};
 pub use plane::{Axis, Keep, PlaneCutResult, PlaneCutSpec, SymmetrizeResult, plane_cut, symmetrize};
 pub use shell::{MAX_SMOOTH_ITERATIONS, SmoothSpec, ThickenResult, ThickenSpec, smooth, thicken};

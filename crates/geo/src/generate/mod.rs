@@ -9,7 +9,7 @@ mod extrude;
 mod lathe;
 mod loft;
 mod scatter;
-mod shape;
+pub(crate) mod shape;
 mod sweep;
 
 pub use array::{MAX_COPIES, array, linear_copies, mirror_copy, path_copies, radial_copies};

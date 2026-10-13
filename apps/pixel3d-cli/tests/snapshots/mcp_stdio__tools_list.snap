@@ -1451,6 +1451,63 @@ expression: tools
       {
         "annotations": {
           "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Bring a glTF, GLB, OBJ or FBX file into the scene in meters with +Y up, repairing its meshes; the path must be inside the allowed folders.",
+        "inputSchema": {
+          "$defs": {
+            "Length": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "pattern": "^\\s*[-+]?(\\d+\\.?\\d*|\\.\\d+)([eE][-+]?\\d+)?\\s*(mm|cm|dm|m|km|in|ft)?\\s*$",
+                  "type": "string"
+                }
+              ],
+              "description": "Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. \"30cm\"."
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "description": "Parameters of `io.import`.",
+          "properties": {
+            "name": {
+              "description": "Name of the object that holds the file's contents. Default: the file's single top object keeps its name; several get a parent named after the file.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "parent": {
+              "description": "Parent object for the import.",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "path": {
+              "description": "File to read: `.glb`, `.gltf`, `.fbx` or `.obj`, inside the allowed folders. Relative paths start in the project folder.",
+              "type": "string"
+            },
+            "weld": {
+              "$ref": "#/$defs/Length",
+              "default": 0.0,
+              "description": "Vertices closer than this weld while repairing the meshes; 0 (default) welds identical positions only."
+            }
+          },
+          "required": [
+            "path"
+          ],
+          "title": "ImportParams",
+          "type": "object"
+        },
+        "name": "import"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
           "readOnlyHint": true
         },
         "description": "Read the guides: quickstart, modeling, debugging and the op reference.",

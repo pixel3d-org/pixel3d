@@ -295,6 +295,67 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Cleanup of a triangulated grid and a touching copy: a seam to weld,
+    // every triangle pair to join, two open parts to orient.
+    let mut g = c.benchmark_group("scale_cleanup_auto");
+    for &t in &sizes {
+        let n = ((t as f64 / 4.0).sqrt().round()) as u32;
+        let mut m = plane(&PlaneSpec { size_x: 1.0, size_z: 1.0, segments_x: n, segments_z: n }).unwrap_or_default();
+        let faces: Vec<u32> = m.faces().collect();
+        let _ = p3d_geo::edit::triangulate(&mut m, &faces);
+        let mut other = m.clone();
+        other.transform(Affine3A::from_translation(Vec3::X));
+        m.append(&other);
+        let spec = p3d_geo::cleanup::CleanupSpec::default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &m, |b, m| {
+            b.iter_batched(|| m.clone(), |mut x| p3d_geo::cleanup::cleanup(&mut x, &spec), BatchSize::LargeInput)
+        });
+    }
+    g.finish();
+
+    // Boolean union of two offset spheres of `t` triangles each, with the
+    // engine and the whole cleanup (polygon merge, refill, weld).
+    let mut g = c.benchmark_group("scale_boolean_union");
+    for &t in &sizes {
+        let a = sphere(t);
+        let mut b = a.clone();
+        b.transform(Affine3A::from_rotation_translation(glam::Quat::from_rotation_y(0.2), Vec3::new(0.3, 0.1, 0.05)));
+        let spec = p3d_geo::boolean::BooleanSpec::default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &(a, b), |bench, (a, b)| {
+            bench.iter(|| p3d_geo::boolean::boolean(black_box(a), &[b], &spec, &p3d_geo::boolean::ManifoldEngine))
+        });
+    }
+    g.finish();
+
+    // Soup repair of a sphere stored the way glTF stores it (a vertex per
+    // corner), with every tenth face flipped.
+    let mut g = c.benchmark_group("scale_soup_repair");
+    for &t in &sizes {
+        let m = sphere(t);
+        let mut pos = Vec::new();
+        let mut sizes_ = Vec::new();
+        let mut corners = Vec::new();
+        for (i, f) in m.faces().enumerate() {
+            let mut face: Vec<u32> = m
+                .face_verts(f)
+                .map(|v| {
+                    pos.push(m.positions[v as usize]);
+                    pos.len() as u32 - 1
+                })
+                .collect();
+            if i % 10 == 0 {
+                face.reverse();
+            }
+            sizes_.push(face.len() as u32);
+            corners.extend(face);
+        }
+        let spec = p3d_geo::soup::SoupSpec::default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &(pos, sizes_, corners), |b, (p, s, c)| {
+            b.iter(|| p3d_geo::soup::repair(black_box(p), s, c, &spec))
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)

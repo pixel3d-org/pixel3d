@@ -140,6 +140,11 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo { name: "history", description: "Undo, redo, checkpoints, revert and diffs between states.", schema: schema::<HistoryArgs>() },
         ToolInfo {
+            name: "import",
+            description: "Bring a glTF, GLB, OBJ or FBX file into the scene in meters with +Y up, repairing its meshes; the path must be inside the allowed folders.",
+            schema: schema::<p3d_ops::io::ImportParams>(),
+        },
+        ToolInfo {
             name: "docs",
             description: "Read the guides: quickstart, modeling, debugging and the op reference.",
             schema: schema::<DocsArgs>(),
@@ -202,6 +207,10 @@ impl Agent {
             "list_ops" => parse_params(&args).and_then(|a| self.list_ops(&a)),
             "describe_op" => parse_params(&args).and_then(|a| self.describe_op(&a)),
             "history" => parse_params(&args).and_then(|a| self.history(&a)),
+            // A shortcut for `run` with one `io.import` op.
+            "import" => parse_params::<p3d_ops::io::ImportParams>(&args)
+                .and_then(|_| parse_params(&serde_json::json!({ "ops": [{ "op": "io.import", "args": args }] })))
+                .and_then(|a| self.run(&a)),
             "render" => parse_params(&args).and_then(|a| self.render(&a)),
             "docs" => parse_params(&args).and_then(|a| docs::tool(&a)),
             other => Err(OpError::new(ErrorCode::UnknownOp, format!("no tool `{other}`")).with_suggestions(p3d_scene::name::suggest(

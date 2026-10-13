@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 glam = { workspace = true }
+manifold-rust = { workspace = true }
 obvhs = { workspace = true }
 p3d-mesh = { workspace = true }
 rustc-hash = { workspace = true }
@@ -34,4 +35,8 @@ harness = false
 
 [[bench]]
 name = "edit"
+harness = false
+
+[[bench]]
+name = "boolean_eval"
 harness = false

@@ -5,7 +5,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicU32};
 use std::time::{Duration, Instant};
 
-use p3d_ops::{ErrorCode, OpCtx, OpError, OpOutput, Registry, Tx};
+use p3d_ops::{ErrorCode, FileAccess, OpCtx, OpError, OpOutput, Registry, Tx};
 use p3d_scene::{Document, ObjectKey, OpNode};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -117,6 +117,7 @@ pub fn run_batch(
     seed: u64,
     cancel: Option<&AtomicBool>,
     progress: Option<&AtomicU32>,
+    files: Option<&FileAccess>,
 ) -> Result<(Document, Vec<OpResult>), BatchError> {
     let mut tx = Tx::new(base.clone());
     let mut results = Vec::with_capacity(calls.len());
@@ -126,7 +127,7 @@ pub fn run_batch(
         let _guard = span.enter();
         let fail = |error: OpError| BatchError { index: i, op: call.op.clone(), error: Box::new(error) };
         let op = registry.get(&call.op).map_err(|e| fail(e.at(&format!("/ops/{i}/op"))))?;
-        let ctx = OpCtx { seed: op_seed(seed, base.revision, i), label: call.label.as_deref(), cancel, progress };
+        let ctx = OpCtx { seed: op_seed(seed, base.revision, i), label: call.label.as_deref(), cancel, progress, files };
         ctx.check_cancel().map_err(|e| fail(e.at(&format!("/ops/{i}"))))?;
 
         let objects_before = tx.doc().object_count() as i64;
