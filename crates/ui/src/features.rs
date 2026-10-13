@@ -367,6 +367,31 @@ fn detail(app: &mut PixelApp, ui: &mut egui::Ui, info: &FeatureInfo) {
     });
     ui.add(egui::Label::new(RichText::new(info.summary).font(theme::small()).color(tk.text_dim)).wrap());
     ui.add_space(4.0);
+    // Where it goes, and Insert (kept in view above the parameters).
+    let active = app.active_object().and_then(|k| app.doc().object(k).map(|o| o.name().to_owned()));
+    ui.horizontal(|ui| {
+        let mut place = app.features.place;
+        ui.radio_value(&mut place, Place::Cursor, t("At the 3D cursor"));
+        ui.add_enabled_ui(active.is_some(), |ui| {
+            let label = active.as_deref().map_or_else(|| t("Under the active object").to_owned(), |n| format!("{} {n}", t("Under")));
+            ui.radio_value(&mut place, Place::Parent, label);
+        });
+        app.features.place = if active.is_none() { Place::Cursor } else { place };
+    });
+    let insert = ui.add_sized([ui.available_width(), 26.0], egui::Button::new(RichText::new(t("Insert")).strong()));
+    crate::control::record_widget(ui, &insert, t("Insert feature"), "button", None);
+    if insert.on_hover_text(t("Add the feature as a new object (one undo step); then parameter edits update it")).clicked()
+        && let Err(e) = app.features_insert()
+    {
+        app.set_status(e);
+    }
+    let live = app.features.inserted == Some(app.session.revision());
+    let note = if live { t("Editing a parameter now updates the inserted feature.") } else { t("Insert places it as a new object.") };
+    ui.add(egui::Label::new(RichText::new(note).font(theme::small()).color(tk.text_faint)).wrap());
+    if let Some(e) = &app.features.error {
+        ui.add(egui::Label::new(RichText::new(e).font(theme::small()).color(tk.health_error)).wrap());
+    }
+    ui.add_space(6.0);
     // The parameters, through the shared schema form.
     let registry = app.session.registry();
     let root = registry.get(crate::sdf::op_id(registry)).map(|op| op.params_schema()).unwrap_or(Value::Null);
@@ -398,31 +423,6 @@ fn detail(app: &mut PixelApp, ui: &mut egui::Ui, info: &FeatureInfo) {
             ui.label(RichText::new(*name).font(theme::mono()).color(tk.text));
             ui.label(RichText::new(*doc).font(theme::small()).color(tk.text_faint));
         });
-    }
-    ui.add_space(6.0);
-    // Where it goes, and Insert.
-    let active = app.active_object().and_then(|k| app.doc().object(k).map(|o| o.name().to_owned()));
-    ui.horizontal(|ui| {
-        let mut place = app.features.place;
-        ui.radio_value(&mut place, Place::Cursor, t("At the 3D cursor"));
-        ui.add_enabled_ui(active.is_some(), |ui| {
-            let label = active.as_deref().map_or_else(|| t("Under the active object").to_owned(), |n| format!("{} {n}", t("Under")));
-            ui.radio_value(&mut place, Place::Parent, label);
-        });
-        app.features.place = if active.is_none() { Place::Cursor } else { place };
-    });
-    let insert = ui.add_sized([ui.available_width(), 26.0], egui::Button::new(RichText::new(t("Insert")).strong()));
-    crate::control::record_widget(ui, &insert, t("Insert feature"), "button", None);
-    if insert.on_hover_text(t("Add the feature as a new object (one undo step); then parameter edits update it")).clicked()
-        && let Err(e) = app.features_insert()
-    {
-        app.set_status(e);
-    }
-    let live = app.features.inserted == Some(app.session.revision());
-    let note = if live { t("Editing a parameter now updates the inserted feature.") } else { t("Insert places it as a new object.") };
-    ui.add(egui::Label::new(RichText::new(note).font(theme::small()).color(tk.text_faint)).wrap());
-    if let Some(e) = &app.features.error {
-        ui.add(egui::Label::new(RichText::new(e).font(theme::small()).color(tk.health_error)).wrap());
     }
 }
 
