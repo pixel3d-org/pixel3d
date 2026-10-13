@@ -95,7 +95,7 @@ pub trait Engine {
 pub struct ManifoldEngine;
 
 impl ManifoldEngine {
-    fn import(t: &Tris) -> Result<manifold_rust::manifold::Manifold, BooleanError> {
+    fn import_one(t: &Tris) -> Result<manifold_rust::manifold::Manifold, BooleanError> {
         use manifold_rust::manifold::Manifold;
         use manifold_rust::types::{Error, MeshGL64};
         let mesh = MeshGL64 {
@@ -110,6 +110,35 @@ impl ManifoldEngine {
             Error::NoError => Ok(m),
             e => Err(BooleanError::Engine(format!("an operand was refused: {e:?}"))),
         }
+    }
+
+    /// An operand with its parts united first: arrays and joined objects
+    /// often hold overlapping (even coincident) parts, which the engine would
+    /// read as a solid that passes through itself. Each connected part is
+    /// imported on its own and the parts unite pairwise in a balanced tree.
+    /// Operands with a cavity (a part facing inward) are imported whole.
+    ///
+    /// Complexity: O(n log k) for n triangles in k parts (each tree level
+    /// handles every triangle once), plus the overlaps.
+    fn import(t: &Tris) -> Result<manifold_rust::manifold::Manifold, BooleanError> {
+        use manifold_rust::types::{BooleanEngine, OpType};
+        let parts = split_parts(t);
+        if parts.len() < 2 || parts.iter().any(|p| tris_volume(p) < 0.0) {
+            return Self::import_one(t);
+        }
+        let mut parts = parts.iter().map(Self::import_one).collect::<Result<Vec<_>, _>>()?;
+        while parts.len() > 1 {
+            let mut next = Vec::with_capacity(parts.len().div_ceil(2));
+            let mut it = parts.into_iter();
+            while let Some(a) = it.next() {
+                next.push(match it.next() {
+                    Some(b) => a.boolean_with_engine(&b, OpType::Add, BooleanEngine::Exact),
+                    None => a,
+                });
+            }
+            parts = next;
+        }
+        parts.pop().ok_or_else(|| BooleanError::Engine("an operand has no parts".into()))
     }
 }
 
@@ -137,6 +166,65 @@ impl Engine for ManifoldEngine {
         let source = g.face_id.iter().map(|&s| s as u32).collect();
         Ok(Tris { positions, tris, source })
     }
+}
+
+/// The connected parts of an engine mesh (triangles joined by shared
+/// vertices), each with its own vertex list, in order of first triangle.
+///
+/// Complexity: O(V + n) for n triangles.
+fn split_parts(t: &Tris) -> Vec<Tris> {
+    let mut parent: Vec<u32> = (0..t.positions.len() as u32).collect();
+    fn find(p: &mut [u32], mut x: u32) -> u32 {
+        while p[x as usize] != x {
+            let up = p[p[x as usize] as usize];
+            p[x as usize] = up;
+            x = up;
+        }
+        x
+    }
+    for tri in &t.tris {
+        for k in 1..3 {
+            let (a, b) = (find(&mut parent, tri[0]), find(&mut parent, tri[k]));
+            if a != b {
+                parent[a.max(b) as usize] = a.min(b);
+            }
+        }
+    }
+    let mut part_of: FxHashMap<u32, usize> = FxHashMap::default();
+    let mut local = vec![u32::MAX; t.positions.len()];
+    let mut out: Vec<Tris> = Vec::new();
+    for (tri, &src) in t.tris.iter().zip(&t.source) {
+        let root = find(&mut parent, tri[0]);
+        let next = out.len();
+        let i = *part_of.entry(root).or_insert(next);
+        if i == out.len() {
+            out.push(Tris::default());
+        }
+        let part = &mut out[i];
+        let mapped = tri.map(|v| {
+            if local[v as usize] == u32::MAX {
+                local[v as usize] = part.positions.len() as u32;
+                part.positions.push(t.positions[v as usize]);
+            }
+            local[v as usize]
+        });
+        part.tris.push(mapped);
+        part.source.push(src);
+    }
+    out
+}
+
+/// Signed volume of an engine mesh.
+///
+/// Complexity: O(n).
+fn tris_volume(t: &Tris) -> f64 {
+    t.tris
+        .iter()
+        .map(|tri| {
+            let [a, b, c] = tri.map(|v| t.positions[v as usize]);
+            a.dot(b.cross(c)) / 6.0
+        })
+        .sum()
 }
 
 /// Options of [`boolean`].
@@ -785,5 +873,83 @@ mod tests {
         let sharp = r.mesh.edges().filter(|&e| r.mesh.edge_flags(e).contains(EdgeFlags::SHARP)).count();
         assert_eq!(sharp, 12);
         assert_eq!(r.curved, 0);
+    }
+}
+#[cfg(test)]
+mod multi_part {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+    use super::*;
+    use crate::prim::{BoxSpec, Origin, cuboid};
+    use glam::Affine3A;
+
+    #[test]
+    fn tool_with_two_parts() {
+        let big =
+            cuboid(&BoxSpec { size: DVec3::new(4.0, 1.0, 1.0), segments: [1; 3], bevel_width: 0.0, bevel_segments: 0 }, Origin::Center).unwrap();
+        let mut tool = cuboid(&BoxSpec { size: DVec3::splat(0.4), segments: [1; 3], bevel_width: 0.0, bevel_segments: 0 }, Origin::Center).unwrap();
+        tool.transform(Affine3A::from_translation(Vec3::new(-1.0, 0.5, 0.0)));
+        let mut second = tool.clone();
+        second.transform(Affine3A::from_translation(Vec3::new(2.0, 0.0, 0.0)));
+        tool.append(&second);
+        let r = boolean(&big, &[&tool], &BooleanSpec { op: BoolOp::Difference, ..BooleanSpec::default() }, &ManifoldEngine).unwrap();
+        assert_eq!(r.cut.len(), 10);
+    }
+
+    #[test]
+    fn tool_with_many_parts() {
+        let slide =
+            cuboid(&BoxSpec { size: DVec3::new(0.19, 0.032, 0.026), segments: [1; 3], bevel_width: 0.0, bevel_segments: 0 }, Origin::Center).unwrap();
+        let mut groove =
+            cuboid(&BoxSpec { size: DVec3::new(0.0022, 0.024, 0.004), segments: [1; 3], bevel_width: 0.0, bevel_segments: 0 }, Origin::Center)
+                .unwrap();
+        groove.transform(Affine3A::from_translation(Vec3::new(-0.08, 0.0, 0.0135)));
+        let row = crate::generate::array(&groove, &crate::generate::linear_copies(9, Vec3::new(0.0055, 0.0, 0.0)), None).unwrap().0;
+        let mut both = row.clone();
+        let mut other = row.clone();
+        other.transform(Affine3A::from_scale(Vec3::new(1.0, 1.0, -1.0)));
+        other.flip_all();
+        both.append(&other);
+        let r = boolean(&slide, &[&both], &BooleanSpec { op: BoolOp::Difference, ..BooleanSpec::default() }, &ManifoldEngine).unwrap();
+        assert_eq!(r.cut.len(), 18 * 5);
+    }
+
+    #[test]
+    fn tool_with_coincident_copies() {
+        let big =
+            cuboid(&BoxSpec { size: DVec3::new(4.0, 1.0, 1.0), segments: [1; 3], bevel_width: 0.0, bevel_segments: 0 }, Origin::Center).unwrap();
+        let mut tool = cuboid(&BoxSpec { size: DVec3::splat(0.4), segments: [1; 3], bevel_width: 0.0, bevel_segments: 0 }, Origin::Center).unwrap();
+        tool.transform(Affine3A::from_translation(Vec3::new(-1.0, 0.5, 0.0)));
+        let copy = tool.clone();
+        tool.append(&copy);
+        let r = boolean(&big, &[&tool], &BooleanSpec { op: BoolOp::Difference, ..BooleanSpec::default() }, &ManifoldEngine).unwrap();
+        // A notch 0.4 x 0.2 x 0.4 deep, cut once although the tool holds it twice.
+        let vol: f64 = r
+            .mesh
+            .faces()
+            .flat_map(|f| r.mesh.face_triangles(f))
+            .map(|t| {
+                let [a, b, c] = t.map(|h| r.mesh.positions[r.mesh.origin(h) as usize].as_dvec3());
+                a.dot(b.cross(c)) / 6.0
+            })
+            .sum();
+        assert!((vol - (4.0 - 0.032)).abs() < 1e-5, "{vol}");
+        assert!(r.cut.len() >= 5);
+    }
+
+    #[test]
+    fn target_with_a_cavity() {
+        let slide =
+            cuboid(&BoxSpec { size: DVec3::new(0.19, 0.032, 0.026), segments: [1; 3], bevel_width: 0.0, bevel_segments: 0 }, Origin::Center).unwrap();
+        let inner =
+            cuboid(&BoxSpec { size: DVec3::new(0.02, 0.01, 0.01), segments: [1; 3], bevel_width: 0.0, bevel_segments: 0 }, Origin::Center).unwrap();
+        let hollow = boolean(&slide, &[&inner], &BooleanSpec { op: BoolOp::Difference, ..BooleanSpec::default() }, &ManifoldEngine).unwrap().mesh;
+        assert_eq!(hollow.face_count(), 12);
+        let mut groove =
+            cuboid(&BoxSpec { size: DVec3::new(0.0022, 0.024, 0.004), segments: [1; 3], bevel_width: 0.0, bevel_segments: 0 }, Origin::Center)
+                .unwrap();
+        groove.transform(Affine3A::from_translation(Vec3::new(-0.08, 0.0, 0.0135)));
+        let row = crate::generate::array(&groove, &crate::generate::linear_copies(9, Vec3::new(0.0055, 0.0, 0.0)), None).unwrap().0;
+        let r = boolean(&hollow, &[&row], &BooleanSpec { op: BoolOp::Difference, ..BooleanSpec::default() }, &ManifoldEngine).unwrap();
+        assert_eq!(r.cut.len(), 9 * 5);
     }
 }
