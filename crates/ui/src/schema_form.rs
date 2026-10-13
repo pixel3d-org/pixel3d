@@ -278,8 +278,13 @@ fn drag(ui: &mut egui::Ui, v: &mut f64, kind: &Kind, width: f32, bounds: (Option
         return ui.add(s);
     }
     let length_speed = (v.abs() * 0.005).max(0.001);
+    // Lengths read like everywhere else (`8 mm`, `0.25 m`); a bare typed
+    // number is in the unit shown.
+    let mm = *v != 0.0 && v.abs() < 0.1;
     let mut d = match kind {
-        Kind::Length => DragValue::new(v).speed(length_speed).suffix(" m").max_decimals(4),
+        Kind::Length => {
+            DragValue::new(v).speed(length_speed).custom_formatter(|x, _| p3d_math::format_length(x)).custom_parser(move |s| parse_length(s, mm))
+        }
         Kind::Angle => DragValue::new(v).speed(0.5).suffix("\u{b0}").max_decimals(2),
         Kind::Integer { .. } => DragValue::new(v).speed(0.1).fixed_decimals(0),
         _ => DragValue::new(v).speed(0.01).max_decimals(4),
@@ -477,6 +482,17 @@ fn field(
     out
 }
 
+/// A typed length: with a unit (`8cm`, `0.1 m`, `3 mm`) as the ops read
+/// it, or a bare number in millimetres (`mm`) or meters.
+pub fn parse_length(s: &str, mm: bool) -> Option<f64> {
+    let s = s.trim();
+    if let Ok(x) = s.parse::<f64>() {
+        return x.is_finite().then_some(if mm { x / 1000.0 } else { x });
+    }
+    let compact: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+    serde_json::from_value::<p3d_ops::params::Length>(json!(compact)).ok().map(|l| l.0).filter(|x| x.is_finite())
+}
+
 /// A value as short words, with units from its schema: `none` for nothing,
 /// lengths as `30 mm`, angles in degrees, lists joined with `; `.
 ///
@@ -527,6 +543,18 @@ mod tests {
     fn schema(id: &str) -> Value {
         let r = p3d_ops::Registry::builtin();
         r.get(id).map(|o| o.params_schema()).unwrap_or(Value::Null)
+    }
+
+    #[test]
+    fn typed_lengths_take_units_or_the_shown_one() {
+        assert_eq!(parse_length("8cm", false), Some(0.08));
+        assert_eq!(parse_length("0.1 m", true), Some(0.1));
+        assert_eq!(parse_length(" 3 mm ", false), Some(0.003));
+        assert_eq!(parse_length("35", true), Some(0.035), "a field showing millimetres");
+        assert_eq!(parse_length("2", false), Some(2.0));
+        assert_eq!(parse_length("wide", false), None);
+        assert_eq!(p3d_math::format_length(0.008), "8 mm");
+        assert_eq!(p3d_math::format_length(0.25), "0.25 m");
     }
 
     #[test]
