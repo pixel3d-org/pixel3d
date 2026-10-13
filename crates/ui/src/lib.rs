@@ -26,6 +26,7 @@ pub mod navgizmo;
 pub mod outliner;
 pub mod palette;
 pub mod panels;
+pub mod quick;
 pub mod remote;
 pub mod schema_form;
 pub mod screenshot;
@@ -1318,6 +1319,7 @@ impl PixelApp {
                 chrome::viewport_overlay(self, ui);
                 let gizmo_rect = self.viewport.rect;
                 gizmo::show(self, ui, gizmo_rect);
+                quick::show(self, ui, gizmo_rect);
                 health::badges(self, ui);
                 nav = navgizmo::show(ui, view_rect, &mut self.viewport, self.ui.view.ortho);
             }

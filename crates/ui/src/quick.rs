@@ -1,0 +1,96 @@
+//! Quick Properties: Blender's "Adjust Last Operation" panel, floating at
+//! the bottom left of the viewport after an operation. Its parameters (the
+//! target and the selection left out) are a form generated from the op's
+//! schema; changing one runs the op again in place of the last one, so it
+//! stays one undo step. It goes away once anything else changes the scene.
+
+use egui::{Align2, Rect, vec2};
+
+use crate::PixelApp;
+use crate::i18n::t;
+use crate::schema_form;
+use crate::theme::Tokens;
+use crate::widgets;
+
+/// Ops whose panel would only repeat what the gizmo or Properties show.
+const SKIP: &[&str] = &["scene.set_transform", "scene.rename", "edit.transform"];
+
+/// Draws the panel over the viewport `rect` when the last op can be adjusted.
+pub fn show(app: &mut PixelApp, ui: &egui::Ui, rect: Rect) {
+    let Some(last) = app.last_op.clone() else { return };
+    if app.session.revision() != last.revision || SKIP.contains(&last.op.as_str()) || !rect.is_positive() || app.gizmo.dragging() {
+        return;
+    }
+    let registry = std::sync::Arc::clone(app.session.registry());
+    let Ok(op) = registry.get(&last.op) else { return };
+    let schema = op.params_schema();
+    let tk = Tokens::get();
+    let mut params = last.params.clone();
+    let mut out = schema_form::FormOutput::default();
+    let title = format!("{}: {}", t("Adjust"), op.meta().label);
+    egui::Area::new(egui::Id::new("p3d_quick_properties"))
+        .order(egui::Order::Foreground)
+        .pivot(Align2::LEFT_BOTTOM)
+        .fixed_pos(rect.left_bottom() + vec2(12.0, -12.0))
+        .show(ui.ctx(), |ui| {
+            egui::Frame::NONE.show(ui, |ui| {
+                ui.set_width(280.0);
+                egui::ScrollArea::vertical().max_height((rect.height() * 0.6).max(120.0)).show(ui, |ui| {
+                    widgets::section(ui, "quick-properties", &title, false, |ui| {
+                        out = schema_form::form(ui, egui::Id::new(("quick", last.op.as_str())), &schema, &schema, &mut params, &["target", "select"]);
+                        if let Some(e) = &last.error {
+                            ui.label(egui::RichText::new(e).font(crate::theme::small()).color(tk.health_error));
+                        }
+                    });
+                });
+            });
+        });
+    if out.changed {
+        // Errors stay on the last op and show in the panel.
+        let _ = adjust(app, params);
+    }
+}
+
+/// Runs the last op again with `params` (one undo step), keeping the picked
+/// elements: running it again makes a new mesh with the same ids.
+pub fn adjust(app: &mut PixelApp, params: serde_json::Value) -> Result<(), String> {
+    let keep = app.edit.picked().0.clone();
+    let mode = app.edit.picked().1;
+    app.adjust_last(params)?;
+    if let (Some(k), Some(mode)) = (app.edit.object, mode)
+        && !keep.is_empty()
+    {
+        let doc = std::sync::Arc::clone(app.session.doc());
+        if let Some(mesh) = doc.object(k).and_then(|o| o.mesh_key()).and_then(|m| doc.mesh_arc(m)) {
+            app.edit.sync(Some(k), Some(mesh), app.ui.mode);
+            app.edit.apply_box(keep.into_iter().collect(), mode, crate::elements::BoxOp::Set);
+            app.edit.sync(Some(k), Some(mesh), app.ui.mode);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn adjusting_an_element_op_keeps_the_selection_and_one_step() {
+        let mut app = PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
+        app.run("prim.box", json!({ "name": "crate" })).unwrap();
+        app.run("ui.mode", json!({ "mode": "face" })).unwrap();
+        let k = app.doc().resolve("crate").unwrap();
+        let face = app.doc().object_mesh(k).and_then(|m| m.faces().next()).unwrap();
+        app.edit.click(Some(face), false);
+        app.run("edit.element_op", json!({ "op": "edit.extrude" })).unwrap();
+        let (picked, steps) = (app.edit.picked().0.clone(), app.session.history().len());
+        let mut params = app.last_op.as_ref().unwrap().params.clone();
+        params["distance"] = json!(0.25);
+        adjust(&mut app, params).unwrap();
+        assert_eq!(app.session.history().len(), steps, "still one undo step");
+        assert_eq!(app.edit.picked().0, &picked, "the cap stays picked");
+        let (lo, hi) = app.doc().object_mesh(k).and_then(|m| m.bounds()).unwrap();
+        assert!((hi - lo).max_element() > 1.2, "extruded by 25 cm");
+    }
+}
