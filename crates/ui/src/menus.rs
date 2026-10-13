@@ -276,6 +276,13 @@ pub fn menus() -> Vec<Menu> {
                 None,
                 header("Feature"),
                 None,
+                header("Strands"),
+                icon(Icon::Strands, with("Hair", "strands.start", || json!({ "kind": "hair" }))),
+                icon(Icon::Strands, with("Fur", "strands.start", || json!({ "kind": "fur" }))),
+                icon(Icon::Strands, with("Eyebrows", "strands.start", || json!({ "kind": "eyebrows" }))),
+                icon(Icon::Strands, with("Beard", "strands.start", || json!({ "kind": "beard" }))),
+                icon(Icon::Strands, with("Grass", "strands.start", || json!({ "kind": "grass" }))),
+                None,
                 header("Outline"),
                 icon(Icon::Leaf, with("Leaf shell", "outline.new", || json!({ "starter": "leaf" }))),
                 icon(Icon::Leaf, with("Ear shell", "outline.new", || json!({ "starter": "ear" }))),
@@ -469,7 +476,8 @@ mod tests {
     fn every_add_item_creates_an_object() {
         let mut app = crate::PixelApp::new(p3d_engine::Session::new(), crate::Services::default());
         let add = menus().into_iter().find(|m| m.label == "Add").unwrap();
-        for it in add.entries.into_iter().flatten().filter(|it| !it.is_header()) {
+        // Add > Strands opens the Strands panel on the selected mesh.
+        for it in add.entries.into_iter().flatten().filter(|it| !it.is_header() && it.command != "strands.start") {
             let before = app.doc().object_count();
             app.run(it.command, it.params.get()).unwrap_or_else(|e| panic!("{}: {e}", it.label));
             assert!(app.doc().object_count() > before, "{}", it.label);

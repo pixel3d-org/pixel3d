@@ -407,6 +407,7 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
             // A LOD or spec badge after the name.
             let badge = match (row.kind, obj) {
                 (_, Some(_)) if is_object_row && key.is_some_and(|k| specs.contains_key(&k)) => Some(t("spec").to_owned()),
+                (_, Some(o)) if is_object_row && o.tags.iter().any(|t| t == "strands") => Some(t("strands").to_owned()),
                 (Kind::Mesh | Kind::Curve | Kind::Empty, Some(o)) => lod_level(o).map(|n| format!("LOD{n}")),
                 (Kind::LodGroup, _) => Some("LOD".to_owned()),
                 _ => None,
@@ -496,7 +497,16 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
                 }
             });
             let resp = match key.filter(|_| is_object_row) {
-                Some(k) => resp.on_hover_text(format!("{} ({})", doc.path(k).unwrap_or_default(), obj.map(Object::public_id).unwrap_or_default())),
+                Some(k) => {
+                    // Strands say what they are (from the op that grew them).
+                    let what = if resp.hovered() { crate::strands::describe(&doc, k).map(|d| format!("\n{d}")) } else { None };
+                    resp.on_hover_text(format!(
+                        "{} ({}){}",
+                        doc.path(k).unwrap_or_default(),
+                        obj.map(Object::public_id).unwrap_or_default(),
+                        what.unwrap_or_default()
+                    ))
+                }
                 None => resp,
             };
             if resp.double_clicked() && is_object_row {

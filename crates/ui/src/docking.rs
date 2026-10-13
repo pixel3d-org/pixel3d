@@ -27,6 +27,8 @@ pub enum Panel {
     Export,
     /// The feature template library (ears, bolts, vents...).
     Features,
+    /// Hair, fur and grass grown on the selected mesh.
+    Strands,
 }
 
 impl Panel {
@@ -42,6 +44,7 @@ impl Panel {
         Panel::Bake,
         Panel::Export,
         Panel::Features,
+        Panel::Strands,
     ];
 
     pub fn id(self) -> &'static str {
@@ -57,6 +60,7 @@ impl Panel {
             Panel::Bake => "bake",
             Panel::Export => "export",
             Panel::Features => "features",
+            Panel::Strands => "strands",
         }
     }
 
@@ -73,6 +77,7 @@ impl Panel {
             Panel::Bake => t("Bake"),
             Panel::Export => t("Export"),
             Panel::Features => t("Features"),
+            Panel::Strands => t("Strands"),
         }
     }
 
@@ -168,7 +173,8 @@ impl Default for Workspace {
             ],
         };
         let root = split(SplitAxis::Horizontal, SplitSize::FixedSecond(320.0), center, right);
-        // The Features panel opens in the right column, below the Outliner.
+        // The Features and Strands panels open in the right column, below
+        // the Outliner.
         let features = Location {
             floating: None,
             anchor: Some(Panel::Outliner),
@@ -177,7 +183,10 @@ impl Default for Workspace {
             stack: Some((true, Some(420.0))),
             sibling: Vec::new(),
         };
-        Workspace { layout: Layout { root: Some(root), floating: Vec::new() }, hidden: vec![(Panel::Features, features)] }
+        Workspace {
+            layout: Layout { root: Some(root), floating: Vec::new() },
+            hidden: vec![(Panel::Features, features.clone()), (Panel::Strands, features)],
+        }
     }
 }
 
@@ -288,7 +297,9 @@ fn limits(panel: &Panel) -> PanelLimits {
         Panel::Viewport => (egui::vec2(240.0, 160.0), 1_000_000.0),
         Panel::History | Panel::Console | Panel::Timeline => (egui::vec2(200.0, 80.0), 1_000_000.0),
         Panel::UvEditor => (egui::vec2(240.0, 160.0), 1_000_000.0),
-        Panel::Outliner | Panel::Properties | Panel::Health | Panel::Bake | Panel::Export | Panel::Features => (egui::vec2(220.0, 90.0), 720.0),
+        Panel::Outliner | Panel::Properties | Panel::Health | Panel::Bake | Panel::Export | Panel::Features | Panel::Strands => {
+            (egui::vec2(220.0, 90.0), 720.0)
+        }
     };
     PanelLimits { min, max: egui::vec2(max_width, 1_000_000.0) }
 }
@@ -332,7 +343,7 @@ mod tests {
         w.validate().unwrap();
         // The Model layout: every panel but the other workspaces' editors
         // and the Features panel, which opens on demand.
-        let editors = [Panel::UvEditor, Panel::Timeline, Panel::Bake, Panel::Export, Panel::Features];
+        let editors = [Panel::UvEditor, Panel::Timeline, Panel::Bake, Panel::Export, Panel::Features, Panel::Strands];
         assert!(Panel::ALL.iter().all(|p| w.is_visible(*p) != editors.contains(p)));
         // It opens in the right column, below the Outliner.
         let mut f = Workspace::default();

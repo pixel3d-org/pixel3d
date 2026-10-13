@@ -3466,6 +3466,7 @@ dependencies = [
  "egui-wgpu",
  "egui_kittest",
  "glam",
+ "image",
  "p3d-control",
  "p3d-engine",
  "p3d-features",

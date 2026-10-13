@@ -35,3 +35,4 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }
+image = { workspace = true }
