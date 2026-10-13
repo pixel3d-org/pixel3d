@@ -1770,6 +1770,14 @@ export type SpecCompileParams = {
   target: string;
 };
 
+/** `brief.set`: Records what the user asked for (category, style, size, budget, must-haves) as checks the model is measured against. */
+export type BriefSetParams = {
+  /** The brief: title, category, style, size, budget, must_have, must_not, references (see the spec guide). */
+  brief: unknown;
+  /** Name of the brief; a spec answers it with `"brief": "<name>"`. */
+  name: string;
+};
+
 /** Parameters of each op, by op id. */
 export interface OpParams {
   "scene.create_empty": SceneCreateEmptyParams;
@@ -1864,6 +1872,7 @@ export interface OpParams {
   "spec.set": SpecSetParams;
   "spec.patch": SpecPatchParams;
   "spec.compile": SpecCompileParams;
+  "brief.set": BriefSetParams;
 }
 
 /** Every op id. */

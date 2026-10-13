@@ -27,7 +27,7 @@ async fn tools_resources_and_calls() {
     assert_eq!(info.server_info.as_ref().map(|i| i.name.as_str()), Some("pixel3d"));
     let tools = client.list_all_tools().await.unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
-    assert_eq!(names.len(), 14, "{names:?}");
+    assert_eq!(names.len(), 16, "{names:?}");
     assert!(names.contains(&"run") && names.contains(&"perceive"));
     let run = tools.iter().find(|t| t.name == "run").unwrap();
     assert_eq!(run.input_schema.get("additionalProperties"), Some(&json!(false)));
@@ -110,7 +110,7 @@ async fn connected_tools_act_on_the_app() {
     assert!(info.instructions.as_deref().unwrap_or("").contains("desktop app"));
     let tools = client.list_all_tools().await.unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
-    assert_eq!(names.len(), 17, "{names:?}");
+    assert_eq!(names.len(), 19, "{names:?}");
     assert!(names.ends_with(&["ui_state", "ui_command", "ui_screenshot"]), "{names:?}");
 
     // Scene tools run in the app's session.

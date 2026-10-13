@@ -259,12 +259,12 @@ fn compiles_are_deterministic() {
 fn every_spec_example_produces_its_documented_result() {
     let reg = registry();
     let mut setup: Option<Value> = None;
-    for id in ["spec.set", "spec.patch", "spec.compile"] {
+    for id in ["spec.set", "spec.patch", "spec.compile", "brief.set"] {
         let op = reg.get(id).unwrap();
         for ex in op.meta().examples {
             let mut tx = Tx::new(Document::new());
             // Patches and compiles act on the spec.set example's spec.
-            if let Some(args) = &setup {
+            if let Some(args) = setup.as_ref().filter(|_| id != "brief.set") {
                 ok(&mut tx, "spec.set", args.clone());
             }
             let args: Value = serde_json::from_str(ex.args).unwrap();

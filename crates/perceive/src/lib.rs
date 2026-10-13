@@ -12,6 +12,7 @@
 
 pub mod diagnose;
 pub mod diff;
+pub mod dna;
 pub mod error;
 pub mod expect;
 pub mod fmt;
@@ -23,6 +24,7 @@ pub mod shape;
 pub mod silhouette;
 pub mod structure;
 pub mod view;
+pub mod visibility;
 
 use serde::Serialize;
 

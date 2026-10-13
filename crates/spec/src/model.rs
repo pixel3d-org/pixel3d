@@ -29,13 +29,13 @@ pub struct ModelSpec {
     pub style: Option<Value>,
     /// Visual DNA genes (ADR 0011).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dna: Option<Value>,
+    pub dna: Option<p3d_perceive::dna::DnaSpec>,
     /// Seed of every random choice in the spec (noise, scatter).
     #[serde(default)]
     pub seed: u64,
     pub parts: BTreeMap<String, Part>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub constraints: Vec<Value>,
+    pub constraints: Vec<crate::constraints::Constraint>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub expect: Vec<Value>,
 }
@@ -317,6 +317,9 @@ pub fn parse(source: &Value) -> Result<ModelSpec, SpecError> {
     if spec.parts.is_empty() {
         return Err(SpecError::new("/parts", "give at least one part"));
     }
+    if let Some(d) = &spec.dna {
+        p3d_perceive::dna::targets(d).map_err(|(path, message)| SpecError::new(&format!("/dna{path}"), message))?;
+    }
     for name in spec.parts.keys() {
         p3d_scene::name::check_name(name)
             .map_err(|e| SpecError::new(&format!("/parts/{name}"), format!("`{name}` is not a valid part name: {e}")))?;
@@ -325,7 +328,7 @@ pub fn parse(source: &Value) -> Result<ModelSpec, SpecError> {
 }
 
 /// `parts.head.sdf[2].radius` (serde_path_to_error) as `/parts/head/sdf/2/radius`.
-fn pointer(dotted: &str) -> String {
+pub(crate) fn pointer(dotted: &str) -> String {
     if dotted == "." || dotted.is_empty() {
         return String::new();
     }

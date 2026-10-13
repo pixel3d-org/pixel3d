@@ -169,3 +169,4 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`spec.set`](spec.set.md) | Creates or replaces a Model Spec (named parts, shapes, anchors, joins) and compiles it into one object per part. |
 | [`spec.patch`](spec.patch.md) | Changes a Model Spec with a merge patch or JSON Patch and recompiles only the parts it affects. |
 | [`spec.compile`](spec.compile.md) | Recompiles a Model Spec: rebuilds changed parts (or all with force) and restores part objects. |
+| [`brief.set`](brief.set.md) | Records what the user asked for (category, style, size, budget, must-haves) as checks the model is measured against. |

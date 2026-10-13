@@ -42,6 +42,50 @@ Optional keys:
 
 Landmarks of every part: `top`, `bottom`, `front`, `back`, `left` (+X, the character's left), `right`, `center`, and the names of its SDF shapes. Category `humanoid_head` adds `crown`, `chin`, `forehead`, `nose_root`, `nose_base`, `mouth`, `eye_l/r`, `brow_l/r`, `cheek_l/r`, `jaw_l/r`, `ear_root_l/r`, `temple_l/r`, `hairline_front`, `nape` and `back_of_head`. Anchors re-resolve when the parent changes: lengthen the lamp's pole and the shade moves up without a rebuild.
 
+## Constraints
+
+`"constraints": [...]` relate parts after their anchors resolve; the compiler moves (or for `proportion`, scales) parts until every one holds, in the order written. Landmark references are `part.landmark`.
+
+| Constraint | Effect |
+|---|---|
+| `{"align": {"a": "ear_l.top", "b": "head.brow_l", "axis": "y", "offset": "1cm"}}` | moves `a`'s part so the coordinates match (`b` may be a number) |
+| `{"rest_on": {"part": "chest", "on": "table"}}` | drops the part onto another's top surface (`on` is `ground`, y = 0, by default) |
+| `{"symmetric": {"a": "lamp_l", "b": "lamp_r", "axis": "x"}}` | moves `b` to the mirror position of `a` |
+| `{"distribute": {"parts": ["rivet_1", "rivet_2", "rivet_3"], "from": "plate.left", "to": [0.2, 0.1, 0], "spacing": "varied"}}` | lines origins up from `from` to `to`; `varied` gives a rhythm instead of even steps |
+| `{"attach": {"part": "knob", "to": "door", "gap": "0mm"}}` | moves the part until the gap is exact (touching) |
+| `{"clearance": {"a": "door", "b": "frame", "min": "5mm"}}` | pushes `a` away until they are at least `min` apart |
+| `{"inside": {"part": "gem", "in": "socket"}}` | shifts the part into the other's bounds |
+| `{"offset": {"part": "plume", "from": "helmet.crown", "by": [0, 0.02, 0]}}` | puts the part's origin at a landmark plus an offset |
+| `{"proportion": {"a": "blade.length", "b": "haft.length", "ratio": 0.4}}` | scales `a`'s part (`.height`, `.width`, `.depth`, `.length`) |
+
+Constrain a mirror's source, not the mirror. Constraints that pull against each other are reported as warnings with how far each is off.
+
+## Briefs
+
+`brief.set {"name": "elf", "brief": {...}}` (or the `brief` tool) records the request: `title`, `category`, `style` (`realistic`, `stylized`), `size` (`{"height": "0.26m"}` means within 10%, or `[min, max]`), `budget` (`{"tris": [8000, 14000]}`), `must_have` (`{"feature": "ear", "count": 2, "traits": {"length_ratio_to_head": [0.35, 0.6]}}`; features are parts named after them or tagged with them), `must_not` (`"hair_penetrating_head"`). It expands into checks, with the category's defaults (a `humanoid_head` is symmetric and closed, its width, depth and eye line within the style's range) and "parts attached to what they sit on". A spec answers the brief with `"brief": "elf"`; until then every item is pending. Traits that need later phases (pointiness, UV seams) stay pending instead of failing.
+
+Anchored parts sunk into their parent on purpose (eyes in sockets) get `max_penetration` metadata, so diagnostics do not flag them.
+
+## Visual DNA
+
+A spec (or its brief) can say how the asset should feel with a `dna` block (ADR 0011). Every gene is written as a word or a few numbers and measured back from the geometry, so you can design what you cannot see:
+
+```json
+"dna": {"culture": "dwarven", "style": "stylized_painterly", "hierarchy": [0.65, 0.25, 0.1],
+        "lines": "angular", "edges": "varied", "rhythm": "regular",
+        "proportions": {"head_to_haft": [0.3, 0.5]}}
+```
+
+- `culture`: `dwarven` (angular lines, heavy primary form, varied chunky bevels), `elven` (flowing curves, strong taper, lighter masses, varied rhythm), `orcish` (heavy, crude, massive primary form), `human_medieval` (balanced). Presets set the defaults below; written genes override them.
+- `style`: `realistic` or `stylized_painterly` (a stronger outline: front and side silhouette solidity 0.45 to 0.88).
+- `hierarchy`: primary, secondary and tertiary volume shares (forms are parts, or a single part's shape groups).
+- `lines`: `angular`, `flowing`, `heavy`, `balanced`, or `{"curved": [min, max], "taper": [min, max]}` (share of surface that bends smoothly; taper of elongated parts).
+- `edges`: `varied`, `uniform`, `sharp`, `soft`, or `{"bevel_variation": [min, max]}` (coefficient of variation of bevel widths).
+- `silhouette`: `{"solidity": [min, max]}`; `rhythm`: `varied` or `regular`; `proportions`: height ratios `<a>_to_<b>`.
+- `surface` and `variation` are kept for Phase 6.
+
+`perceive dna` shows each gene measured against its target, then the critique: `twinning` (equal forms side by side), `tangent` (forms that just touch), `uniform_bevel` (one bevel width on forms of very different sizes) and `weak_silhouette` (an outline that reads as a blob), each with a fix. Every `spec` answer for a spec with DNA ends with `dna 5/6 genes on target; critique: ...`.
+
 ## Provenance
 
 Every face records the spec node that made it: a blended ear's faces in the head mesh trace to `/parts/ear_l/sdf/0`, an inset's faces to `/parts/body/edits/0`. Face groups name them too: `cranium`, `jaw`, `ear_l.lobe`, `nose.shape_0`, `panel.inner`.

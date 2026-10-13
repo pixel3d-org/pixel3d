@@ -145,7 +145,7 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": true
         },
-        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe or diff, as compact text.",
+        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief or dna, as compact text.",
         "inputSchema": {
           "$defs": {
             "Aspect": {
@@ -184,8 +184,145 @@ expression: tools
                   "const": "diff",
                   "description": "What changed since `from` (a revision or checkpoint; the previous revision by default).",
                   "type": "string"
+                },
+                {
+                  "const": "visibility",
+                  "description": "How it reads at the asset class view distance: pixel sizes, details for normal maps, hidden surface, triangles against screen share.",
+                  "type": "string"
+                },
+                {
+                  "const": "proportions",
+                  "description": "A spec root's ratios against its category and style ranges, and part sizes relative to the main part.",
+                  "type": "string"
+                },
+                {
+                  "const": "brief",
+                  "description": "Coverage of the brief the target's spec answers (or the only brief).",
+                  "type": "string"
+                },
+                {
+                  "const": "dna",
+                  "description": "Visual DNA: form genes measured against the spec's `dna` (or `dna` given here) and the art-direction critique.",
+                  "type": "string"
                 }
               ]
+            },
+            "DnaSpec": {
+              "additionalProperties": false,
+              "description": "The genes as written (a spec's or brief's `dna` block).",
+              "properties": {
+                "culture": {
+                  "description": "`dwarven`, `elven`, `orcish` or `human_medieval`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "edges": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EdgesGene"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hierarchy": {
+                  "description": "Primary, secondary and tertiary volume shares, for example `[0.6, 0.3, 0.1]`.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "lines": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/LinesGene"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "proportions": {
+                  "additionalProperties": {
+                    "items": {
+                      "format": "float",
+                      "type": "number"
+                    },
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "description": "Height ratios between parts: `{\"blade_to_haft\": [0.3, 0.45]}`.",
+                  "type": "object"
+                },
+                "rhythm": {
+                  "description": "`varied` (repeated parts must vary) or `regular`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "silhouette": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/SilhouetteGene"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "style": {
+                  "description": "`realistic` or `stylized_painterly`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "surface": {
+                  "description": "Surface genes (wear, damage, ornament), built in Phase 6."
+                },
+                "variation": {
+                  "description": "Seed, asymmetry and variants."
+                }
+              },
+              "type": "object"
+            },
+            "EdgesGene": {
+              "anyOf": [
+                {
+                  "description": "`varied`, `uniform`, `sharp` or `soft`.",
+                  "type": "string"
+                },
+                {
+                  "description": "Coefficient of variation of bevel widths.",
+                  "properties": {
+                    "bevel_variation": {
+                      "items": {
+                        "format": "float",
+                        "type": "number"
+                      },
+                      "maxItems": 2,
+                      "minItems": 2,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "bevel_variation"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "description": "The `edges` gene."
             },
             "Length": {
               "anyOf": [
@@ -198,6 +335,46 @@ expression: tools
                 }
               ],
               "description": "Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. \"30cm\"."
+            },
+            "LinesGene": {
+              "anyOf": [
+                {
+                  "description": "`angular`, `flowing`, `heavy` or `balanced`.",
+                  "type": "string"
+                },
+                {
+                  "properties": {
+                    "curved": {
+                      "default": null,
+                      "items": {
+                        "format": "float",
+                        "type": "number"
+                      },
+                      "maxItems": 2,
+                      "minItems": 2,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "taper": {
+                      "default": null,
+                      "items": {
+                        "format": "float",
+                        "type": "number"
+                      },
+                      "maxItems": 2,
+                      "minItems": 2,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              ],
+              "description": "The `lines` gene: a preset word or explicit ranges."
             },
             "RayFrom": {
               "additionalProperties": false,
@@ -224,6 +401,27 @@ expression: tools
               "required": [
                 "from"
               ],
+              "type": "object"
+            },
+            "SilhouetteGene": {
+              "additionalProperties": false,
+              "description": "The `silhouette` gene.",
+              "properties": {
+                "solidity": {
+                  "default": null,
+                  "description": "Filled share of the outline's convex hull, front and side.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              },
               "type": "object"
             },
             "SliceAxis": {
@@ -363,6 +561,17 @@ expression: tools
                 }
               ],
               "description": "`section`: slice across x, y (default, horizontal) or z."
+            },
+            "dna": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DnaSpec"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`dna`: genes to measure against, for example `{\"culture\": \"dwarven\"}` (the target spec's own when omitted)."
             },
             "from": {
               "description": "`diff`: base revision number or checkpoint name.",
@@ -835,6 +1044,155 @@ expression: tools
           "type": "object"
         },
         "name": "expect"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Capture what the user asked for (category, style, size, budget, must-haves) as checks, and see how well the model answers it.",
+        "inputSchema": {
+          "$defs": {
+            "BriefAction": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "set",
+                    "get"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "coverage",
+                  "description": "How well the model answers the brief (default).",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/BriefAction",
+              "default": "coverage",
+              "description": "`coverage` (default), `set` or `get`."
+            },
+            "brief": {
+              "description": "`set`: the brief: title, category, style, size, budget, must_have, must_not (see the spec guide)."
+            },
+            "name": {
+              "description": "The brief's name; a spec answers it with `\"brief\": \"<name>\"`.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ],
+          "title": "BriefArgs",
+          "type": "object"
+        },
+        "name": "brief"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
+        "description": "Author the model as a Model Spec (named parts, shapes, anchors at landmarks, joins): set, patch or compile; returns parts, brief coverage, problems and tests.",
+        "inputSchema": {
+          "$defs": {
+            "PatchOp": {
+              "additionalProperties": false,
+              "description": "One JSON Patch operation.",
+              "properties": {
+                "from": {
+                  "description": "Source pointer of `move` and `copy`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "op": {
+                  "description": "`add`, `remove`, `replace`, `move`, `copy` or `test`.",
+                  "type": "string"
+                },
+                "path": {
+                  "description": "JSON pointer into the spec, for example `/parts/ear_l/blend`.",
+                  "type": "string"
+                },
+                "value": true
+              },
+              "required": [
+                "op",
+                "path"
+              ],
+              "type": "object"
+            },
+            "SpecAction": {
+              "oneOf": [
+                {
+                  "enum": [
+                    "set",
+                    "patch",
+                    "compile"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "const": "get",
+                  "description": "The spec source and its parts (default).",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "$ref": "#/$defs/SpecAction",
+              "default": "get",
+              "description": "`get` (default), `set`, `patch` or `compile`."
+            },
+            "dry_run": {
+              "default": false,
+              "description": "Preview the result without changing anything.",
+              "type": "boolean"
+            },
+            "force": {
+              "default": false,
+              "description": "`compile`: rebuild every part.",
+              "type": "boolean"
+            },
+            "merge": {
+              "description": "`patch`: a JSON Merge Patch (`null` removes)."
+            },
+            "ops": {
+              "description": "`patch`: JSON Patch operations instead of a merge patch.",
+              "items": {
+                "$ref": "#/$defs/PatchOp"
+              },
+              "type": [
+                "array",
+                "null"
+              ]
+            },
+            "spec": {
+              "description": "`set`: the Model Spec `{\"parts\": {...}}`."
+            },
+            "target": {
+              "description": "The spec's root object (`set` creates it).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "title": "SpecArgs",
+          "type": "object"
+        },
+        "name": "spec"
       },
       {
         "annotations": {

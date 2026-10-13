@@ -13,6 +13,10 @@ Every aspect answers one question in under about 600 tokens, in millimeters, nam
 | `relations` | do parts fit: touching, gaps, how deep a part sinks into another, floating parts | `target` |
 | `probe` | what is at one spot: normal, face, groups, thickness, nearest other part | `point` |
 | `diff` | what an edit changed: parts added, removed, moved or resized, outline shift, problems added and resolved | `from` (revision or checkpoint) |
+| `visibility` | how it reads at the asset class's view distance on 1080p: pixel size per part, parts and walls too small to model (normal map instead), surface never seen, edges under a pixel, triangles against screen share | |
+| `proportions` | a spec root's category ratios against its style's range (`width_to_height`, `depth_to_height`, `eye_line` for heads) and every part's size as a share of the main part | `target` (spec root) |
+| `brief` | coverage of the brief the target's spec answers: each check passing, failing or pending with its measured value | `target` |
+| `dna` | visual DNA: form hierarchy, curved share and creases, taper, silhouette solidity, bevel variation and part ratios against the spec's `dna` (or `dna` given here), then the art-direction critique (`twinning`, `tangent`, `uniform_bevel`, `weak_silhouette`) | `target`, `dna` |
 
 Surface points for `probe`: `{"on": "crate", "landmark": "top"}` (top, bottom, front, back, left, right, center), `{"on": "crate", "nearest": [x, y, z]}`, `{"on": "crate", "ray": {"from": "+x", "at": [y, z]}}`, `{"on": "crate", "group": "front"}`.
 
@@ -38,7 +42,7 @@ F1 warn FLOATING_PART lid -> crate: touches nothing: 12 mm from crate
 | `LOOSE_PIECES` | several separate pieces in one part (info) | `scene.separate` |
 | `THIN_WALL` | walls under 1 mm | none yet |
 | `FLOATING_PART` | a part touches nothing and is off the ground | move it onto its nearest part |
-| `PENETRATION` | a part sinks deeper than a quarter of its thickness | pull it out |
+| `PENETRATION` | a part sinks deeper than a quarter of its thickness (or than its `max_penetration` metadata in meters, which spec anchors set for parts sunk on purpose) | pull it out |
 | `Z_FIGHTING` | faces lying on same-facing faces of another part | move it 0.5 mm off |
 
 Finding ids belong to one revision: run `diagnose` again after an edit.
