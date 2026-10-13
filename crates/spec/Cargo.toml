@@ -9,3 +9,18 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+glam = { workspace = true }
+p3d-geo = { workspace = true }
+p3d-math = { workspace = true }
+p3d-mesh = { workspace = true }
+p3d-ops = { workspace = true }
+p3d-scene = { workspace = true }
+p3d-sdf = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_path_to_error = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }

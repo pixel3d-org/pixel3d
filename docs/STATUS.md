@@ -96,10 +96,10 @@ Acceptance:
 
 ## Phase 3b: Brief, Model Spec and SDF
 
-- [ ] `spec`: Brief, Model Spec, parts, anchors, landmarks, surface coordinates
+- [ ] `spec`: Brief, Model Spec, parts, anchors, landmarks, surface coordinates (Model Spec done in `crates/spec`, ADR 0010: typed parts with errors at spec paths, shape kinds `sdf`, `primitive`, generators, `mirror`, `instance`; anchors by landmark, `param`, `ray` or `nearest`, resolved by sphere tracing on SDF parents and BVH rays on meshes; generic, SDF-shape and `humanoid_head` landmarks; ops `spec.set`, `spec.patch` (merge patch or JSON Patch) and `spec.compile`; guide `docs/agents/spec.md`. Brief open)
 - [ ] `spec`: constraints and solver
-- [ ] `spec`: joins `separate`, `blend`, `weld`, `decal`; mirror and instance; edit layers
-- [ ] `spec`: incremental compile to the op graph, provenance
+- [ ] `spec`: joins `separate`, `blend`, `weld`, `decal`; mirror and instance; edit layers (all but `weld`: blended SDF children join their parent tree with a smooth union, mirrors of blended parts reflect their SDF items, instances share meshes, edits run on the part)
+- [x] `spec`: incremental compile to the op graph, provenance (parts build through registered ops in scratch documents, cached by content hash and mesh fingerprint, so a moved parent only moves its children; per-face provenance entries (spec path, op) run-length encoded in the spec record)
 - [x] `sdf`: SDF trees, narrow-band surface nets (`crates/sdf`: sphere, ellipsoid, rounded box, tapered capsule, cone, torus, cylinder and groups joined by hard or smooth union, subtract and intersect, with round, shell, twist, bend, seeded noise and part-space mirror; octree culling on the Lipschitz bound with missed blocks recovered through the quads that need them; one vertex per surface piece per voxel (asymptotic decider) so thin walls stay manifold, refinement where walls are thinner than a voxel, sub-voxel specks dropped; faces grouped by shape; random trees mesh closed at 10,000 cases; slope 0.96, 64k triangles in 32 ms. Op `sdf.mesh`; `target` rebuilds an object in place so its history holds the shapes, `hidden` shapes stay in the list and keep the others' group names)
 - [ ] `remesh`: isotropic, then field-aligned quads with category topology rules (field-aligned quads done in `crates/remesh`: multi-resolution 4-RoSy orientation and position fields solved by graph-colored parallel Gauss-Seidel, extraction by error-sorted cluster merge at twice the edge then one Catmull-Clark step so every face is a quad, holes closed, flat pieces dropped, tangential relax onto the source; before subdividing, a pole cleanup (`crates/remesh/src/poles.rs`) lowers the energy sum (n - 4)^2 over face sizes and valences with greedy disjoint local edits: face merges, edge turns, chords, valence-2 dissolves, vertex splits and quad pokes of faces above six corners (torus poles 106 to 48, none above valence 5; 800 random solids with no pole of valence 2 or above 6); anisotropic inputs are first resampled through a mesh distance field; slope 0.76, 16k target in 323 ms. Ops `remesh.quad` and `sdf.from_mesh` (voxel remesh). Open: isotropic triangles and category topology rules)
 - [ ] Shape kinds `silhouettes` and `shell`; deform handles
@@ -112,8 +112,8 @@ Acceptance:
 Acceptance:
 
 - [ ] The elf head blockout compiles from a spec
-- [ ] A one-part patch recompiles in < 100 ms
-- [ ] Every face has provenance
+- [x] A one-part patch recompiles in < 100 ms (`a_one_part_patch_recompiles_only_that_part` asserts it in release builds)
+- [x] Every face has provenance (`every_face_has_provenance`)
 - [x] Remeshed SDF parts reach >= 95% quads with no poles above valence 6 outside designed spots (100% quads; `remesh_quad_leaves_no_high_poles_on_a_sculpted_head` remeshes the sculpted head example, and the remesh property test checks 800 random solids)
 
 ## Phase 3c: Feature library, strands, full diagnostics

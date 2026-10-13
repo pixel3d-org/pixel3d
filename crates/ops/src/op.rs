@@ -46,6 +46,7 @@ pub enum Category {
     Io,
     Sdf,
     Remesh,
+    Spec,
 }
 
 impl Category {
@@ -65,6 +66,7 @@ impl Category {
             Category::Io => "io",
             Category::Sdf => "sdf",
             Category::Remesh => "remesh",
+            Category::Spec => "spec",
         }
     }
 }
@@ -144,6 +146,9 @@ pub struct OpCtx<'a> {
     pub progress: Option<&'a AtomicU32>,
     /// Folders file ops may read and write; none means no file access.
     pub files: Option<&'a p3d_io::sandbox::FileAccess>,
+    /// The registry the call came from, for ops that run other ops (a Model
+    /// Spec compiles its parts through it).
+    pub registry: Option<&'a crate::Registry>,
 }
 
 impl OpCtx<'_> {

@@ -127,7 +127,7 @@ pub fn run_batch(
         let _guard = span.enter();
         let fail = |error: OpError| BatchError { index: i, op: call.op.clone(), error: Box::new(error) };
         let op = registry.get(&call.op).map_err(|e| fail(e.at(&format!("/ops/{i}/op"))))?;
-        let ctx = OpCtx { seed: op_seed(seed, base.revision, i), label: call.label.as_deref(), cancel, progress, files };
+        let ctx = OpCtx { seed: op_seed(seed, base.revision, i), label: call.label.as_deref(), cancel, progress, files, registry: Some(registry) };
         ctx.check_cancel().map_err(|e| fail(e.at(&format!("/ops/{i}"))))?;
 
         let objects_before = tx.doc().object_count() as i64;

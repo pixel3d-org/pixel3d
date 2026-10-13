@@ -161,3 +161,11 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 |---|---|
 | [`expect.add`](expect.add.md) | Adds a test for the model (size, symmetry, attachment, no intersections, budget, watertight) that runs after every change. |
 | [`expect.remove`](expect.remove.md) | Removes an expectation by name. |
+
+## spec
+
+| Op | Summary |
+|---|---|
+| [`spec.set`](spec.set.md) | Creates or replaces a Model Spec (named parts, shapes, anchors, joins) and compiles it into one object per part. |
+| [`spec.patch`](spec.patch.md) | Changes a Model Spec with a merge patch or JSON Patch and recompiles only the parts it affects. |
+| [`spec.compile`](spec.compile.md) | Recompiles a Model Spec: rebuilds changed parts (or all with force) and restores part objects. |

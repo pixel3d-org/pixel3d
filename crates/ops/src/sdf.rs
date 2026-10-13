@@ -346,11 +346,12 @@ struct Origin {
     inner: Vec<Origin>,
 }
 
-/// The parameter path of a kernel item path such as `1.0`.
+/// The parameter path of a kernel item path such as `1.0`, under `base`
+/// (the shapes' JSON path).
 ///
 /// Complexity: O(depth).
-fn param_path(origins: &[Origin], kernel: &str) -> String {
-    let mut out = String::from("/shapes");
+fn param_path(origins: &[Origin], kernel: &str, base: &str) -> String {
+    let mut out = String::from(base);
     let mut level = origins;
     for (depth, part) in kernel.split('.').enumerate() {
         let Ok(i) = part.parse::<usize>() else { break };
@@ -388,11 +389,87 @@ fn f(l: Length) -> f32 {
 /// another shape's group.
 ///
 /// Complexity: O(shapes).
-fn tree(shapes: &[SdfShapeParam], seed: u64) -> Result<(Vec<Item>, Vec<Origin>), OpError> {
+fn tree(shapes: &[SdfShapeParam], seed: u64, base: &str) -> Result<(Vec<Item>, Vec<Origin>), OpError> {
     let mut leaf = 0;
     let mut origins = Vec::new();
-    let items = items(shapes, seed, "/shapes", &mut leaf, &mut origins)?;
+    let items = items(shapes, seed, base, &mut leaf, &mut origins)?;
     Ok((items, origins))
+}
+
+/// The kernel items of `shapes` for callers that assemble SDF trees (the
+/// Model Spec compiler). Errors point under `base`, the shapes' JSON path;
+/// unnamed prims are named `item_<n>` (their faces group as `shape_<n>`).
+///
+/// Complexity: O(shapes).
+pub fn shape_items(shapes: &[SdfShapeParam], seed: u64, base: &str) -> Result<Vec<Item>, OpError> {
+    let (items, origins) = tree(shapes, seed, base)?;
+    // Kernel checks (sizes, depth) report at the shape that fails.
+    Sdf::new(items.clone()).map_err(|e| sdf_error(e, &origins, base))?;
+    Ok(items)
+}
+
+/// A meshed SDF tree: faces grouped by the prim that made them, and notes
+/// for the caller's warnings.
+#[derive(Debug, Clone)]
+pub struct MeshedSdf {
+    pub mesh: p3d_mesh::Mesh,
+    /// The voxel size asked for and the one used (smaller when thin walls
+    /// needed it).
+    pub voxel: f32,
+    pub used: f32,
+    pub warnings: Vec<Warning>,
+}
+
+/// Meshes kernel items (see [`shape_items`]); `detail` is the voxel size,
+/// about a 64th of the largest side when none. Errors point under `base`.
+///
+/// Complexity: O(active voxels) for the surface nets (see `p3d_sdf::mesh`).
+pub fn mesh_items(items: Vec<Item>, detail: Option<f32>, base: &str, ctx: &OpCtx) -> Result<MeshedSdf, OpError> {
+    let sdf = Sdf::new(items).map_err(|e| sdf_error(e, &[], base))?;
+    meshed(&sdf, detail, ctx, &|e| sdf_error(e, &[], base))
+}
+
+/// Meshes an SDF and groups its faces by prim.
+///
+/// Complexity: O(active voxels).
+fn meshed(sdf: &Sdf, detail: Option<f32>, ctx: &OpCtx, err: &dyn Fn(SdfError) -> OpError) -> Result<MeshedSdf, OpError> {
+    let (lo, hi) = sdf.bounds();
+    let voxel = detail.unwrap_or_else(|| ((hi - lo).max_element() / 64.0).clamp(MIN_DETAIL as f32, MAX_DETAIL as f32));
+    ctx.check_cancel()?;
+    let r = mesh(sdf, &MeshSpec { voxel }).map_err(err)?;
+    ctx.check_cancel()?;
+    let mut m = r.mesh;
+    let leaves = sdf.leaves();
+    let mut by_leaf: Vec<Vec<u32>> = vec![Vec::new(); leaves.len()];
+    let faces: Vec<u32> = m.faces().collect();
+    for (&face, &leaf) in faces.iter().zip(&r.face_leaf) {
+        if let Some(list) = by_leaf.get_mut(leaf as usize) {
+            list.push(face);
+        }
+    }
+    for (name, list) in leaves.iter().zip(by_leaf) {
+        let group = name.strip_prefix("item_").map_or_else(|| name.clone(), |n| format!("shape_{n}"));
+        if !list.is_empty() {
+            m.set_group(&group, ElementKind::Face, list).map_err(|e| OpError::internal(e.to_string()))?;
+        }
+    }
+    let mut warnings = Vec::new();
+    if r.voxel < voxel * 0.99 {
+        warnings.push(Warning {
+            message: format!("walls thinner than the {} mm detail: meshed at {} mm instead (more faces)", fmt_mm(voxel), fmt_mm(r.voxel)),
+            fix: None,
+        });
+    }
+    if r.specks > 0 {
+        warnings.push(Warning { message: format!("dropped {} bit(s) smaller than a voxel", r.specks), fix: None });
+    }
+    if !r.repair.is_clean() || r.unresolved > 0 {
+        warnings.push(Warning {
+            message: format!("{} spots could not be meshed cleanly; a smaller detail may fix them", r.repair.split_edges + r.unresolved),
+            fix: None,
+        });
+    }
+    Ok(MeshedSdf { mesh: m, voxel, used: r.voxel, warnings })
 }
 
 fn items(shapes: &[SdfShapeParam], seed: u64, path: &str, leaf: &mut usize, origins: &mut Vec<Origin>) -> Result<Vec<Item>, OpError> {
@@ -489,16 +566,19 @@ fn items(shapes: &[SdfShapeParam], seed: u64, path: &str, leaf: &mut usize, orig
     Ok(out)
 }
 
-fn sdf_error(e: SdfError, origins: &[Origin]) -> OpError {
+/// A kernel error as an op error under `base` (the shapes' JSON path; the
+/// detail is its sibling).
+fn sdf_error(e: SdfError, origins: &[Origin], base: &str) -> OpError {
+    let detail = base.rsplit_once('/').map_or_else(|| "/detail".to_owned(), |(parent, _)| format!("{parent}/detail"));
     match e {
         SdfError::Empty => OpError::new(ErrorCode::Topology, "the shapes leave nothing: every part is cut away, outside an intersection or hidden")
-            .at("/shapes")
+            .at(base)
             .with_hint("check subtract and intersect: a list that starts with a cut starts from nothing"),
-        SdfError::Invalid { path, message } => OpError::invalid(&param_path(origins, &path), message),
-        SdfError::TooManyItems => OpError::new(ErrorCode::BudgetExceeded, e.to_string()).at("/shapes"),
-        SdfError::TooDeep => OpError::new(ErrorCode::InvalidParam, e.to_string()).at("/shapes"),
+        SdfError::Invalid { path, message } => OpError::invalid(&param_path(origins, &path, base), message),
+        SdfError::TooManyItems => OpError::new(ErrorCode::BudgetExceeded, e.to_string()).at(base),
+        SdfError::TooDeep => OpError::new(ErrorCode::InvalidParam, e.to_string()).at(base),
         SdfError::TooLarge(n) => OpError::new(ErrorCode::BudgetExceeded, format!("{} voxels is more than one mesh takes", thousands(n as usize)))
-            .at("/detail")
+            .at(&detail)
             .with_hint("use a larger detail (voxel size)"),
     }
 }
@@ -558,33 +638,15 @@ impl Op for SdfMesh {
         if let Some(d) = p.detail {
             check_length("/detail", d, MIN_DETAIL, MAX_DETAIL)?;
         }
-        let (items, origins) = tree(&p.shapes, 0)?;
-        Sdf::new(items).map(|_| ()).map_err(|e| sdf_error(e, &origins))
+        let (items, origins) = tree(&p.shapes, 0, "/shapes")?;
+        Sdf::new(items).map(|_| ()).map_err(|e| sdf_error(e, &origins, "/shapes"))
     }
 
     fn apply(tx: &mut Tx, p: &SdfParams, ctx: &OpCtx) -> Result<OpOutput, OpError> {
-        let (items, origins) = tree(&p.shapes, ctx.seed)?;
-        let sdf = Sdf::new(items).map_err(|e| sdf_error(e, &origins))?;
-        let (lo, hi) = sdf.bounds();
-        let voxel = p.detail.map_or_else(|| ((hi - lo).max_element() / 64.0).clamp(MIN_DETAIL as f32, MAX_DETAIL as f32), f);
-        ctx.check_cancel()?;
-        let r = mesh(&sdf, &MeshSpec { voxel }).map_err(|e| sdf_error(e, &origins))?;
-        ctx.check_cancel()?;
-        let mut m = r.mesh;
-        let leaves = sdf.leaves();
-        let mut by_leaf: Vec<Vec<u32>> = vec![Vec::new(); leaves.len()];
-        let faces: Vec<u32> = m.faces().collect();
-        for (&face, &leaf) in faces.iter().zip(&r.face_leaf) {
-            if let Some(list) = by_leaf.get_mut(leaf as usize) {
-                list.push(face);
-            }
-        }
-        for (name, list) in leaves.iter().zip(by_leaf) {
-            let group = name.strip_prefix("item_").map_or_else(|| name.clone(), |n| format!("shape_{n}"));
-            if !list.is_empty() {
-                m.set_group(&group, ElementKind::Face, list).map_err(|e| OpError::internal(e.to_string()))?;
-            }
-        }
+        let (items, origins) = tree(&p.shapes, ctx.seed, "/shapes")?;
+        let sdf = Sdf::new(items).map_err(|e| sdf_error(e, &origins, "/shapes"))?;
+        let built = meshed(&sdf, p.detail.map(f), ctx, &|e| sdf_error(e, &origins, "/shapes"))?;
+        let m = built.mesh;
         let mut out = match &p.target {
             Some(t) => {
                 // Rebuild in place: the object keeps its name, transform,
@@ -616,21 +678,7 @@ impl Op for SdfMesh {
                 created_summary(tx, key, "sdf")
             }
         };
-        if r.voxel < voxel * 0.99 {
-            out.warnings.push(Warning {
-                message: format!("walls thinner than the {} mm detail: meshed at {} mm instead (more faces)", fmt_mm(voxel), fmt_mm(r.voxel)),
-                fix: None,
-            });
-        }
-        if r.specks > 0 {
-            out.warnings.push(Warning { message: format!("dropped {} bit(s) smaller than a voxel", r.specks), fix: None });
-        }
-        if !r.repair.is_clean() || r.unresolved > 0 {
-            out.warnings.push(Warning {
-                message: format!("{} spots could not be meshed cleanly; a smaller detail may fix them", r.repair.split_edges + r.unresolved),
-                fix: None,
-            });
-        }
+        out.warnings.extend(built.warnings);
         Ok(out)
     }
 }
@@ -708,7 +756,7 @@ impl Op for FromMesh {
             SdfError::Empty => OpError::new(ErrorCode::Topology, "nothing is left at this detail: the mesh is thinner than a voxel")
                 .at("/detail")
                 .with_hint("use a smaller detail"),
-            e => sdf_error(e, &[]),
+            e => sdf_error(e, &[], "/target"),
         })?;
         ctx.check_cancel()?;
         ctx.report(0.9);

@@ -98,7 +98,7 @@ fn unshared_bytes(a: &Document, b: &Document) -> usize {
 impl Session {
     /// An empty document with the built-in ops.
     pub fn new() -> Self {
-        Self::with_registry(Arc::new(Registry::builtin()))
+        Self::with_registry(Arc::new(p3d_spec::registry()))
     }
 
     pub fn with_registry(registry: Arc<Registry>) -> Self {

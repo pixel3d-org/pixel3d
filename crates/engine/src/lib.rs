@@ -13,3 +13,10 @@ mod session;
 
 pub use run::{BatchError, OpCall, OpResult, op_seed, run_batch};
 pub use session::{BatchOptions, BatchResult, HistoryEntry, Job, JobHandle, JobStatus, Session, UndoLimits};
+
+/// Every built-in op, the spec ops included: the registry sessions use.
+///
+/// Complexity: O(ops).
+pub fn registry() -> p3d_ops::Registry {
+    p3d_spec::registry()
+}

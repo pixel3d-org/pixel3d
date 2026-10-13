@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use anyhow::{Context, Result, bail};
 use p3d_engine::Session;
 use p3d_mcp::Agent;
+use p3d_ops::FileAccess;
 use p3d_ops::catalog::catalog_json;
-use p3d_ops::{FileAccess, Registry};
 use serde_json::{Value, json};
 
 const USAGE: &str = "\
@@ -176,7 +176,7 @@ fn main() -> ExitCode {
         Some("mcp") => mcp(rest),
         Some("run") => run(rest),
         Some("convert") => convert(rest),
-        Some("catalog") => serde_json::to_string_pretty(&catalog_json(&Registry::builtin())).map_err(Into::into).map(|s| {
+        Some("catalog") => serde_json::to_string_pretty(&catalog_json(&p3d_engine::registry())).map_err(Into::into).map(|s| {
             println!("{s}");
             ExitCode::SUCCESS
         }),

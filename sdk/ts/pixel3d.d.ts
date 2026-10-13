@@ -262,6 +262,17 @@ export type OriginMode = "center" | "bottom_center" | "bbox" | "point";
 /** Where a primitive's origin sits. */
 export type OriginParam = "center" | "bottom";
 
+/** One JSON Patch operation. */
+export type PatchOp = {
+  /** Source pointer of `move` and `copy`. */
+  from?: string | null;
+  /** `add`, `remove`, `replace`, `move`, `copy` or `test`. */
+  op: string;
+  /** JSON pointer into the spec, for example `/parts/ear_l/blend`. */
+  path: string;
+  value?: unknown;
+};
+
 /** A path: points [x, y, z] in object space, or {"curve": "<curve object>"} (one spline; the result lands where the curve is). */
 export type Path = [Length, Length, Length][] | {
   curve: string;
@@ -1720,6 +1731,45 @@ export type ExpectRemoveParams = {
   name: string;
 };
 
+/** `spec.set`: Creates or replaces a Model Spec (named parts, shapes, anchors, joins) and compiles it into one object per part. */
+export type SpecSetParams = {
+  /**
+   * Name of the spec's root object; it holds one object per part. An
+   * existing spec root of that name gets the new spec.
+   */
+  name: string;
+  /** Parent object of a new root; top level when omitted. */
+  parent?: string | null;
+  /** Position of a new root in its parent's space. */
+  position?: [Length, Length, Length] | null;
+  /** The Model Spec: `{"parts": {"head": {"sdf": [...]}, "ear_l": {...}}}` (see the spec guide). */
+  spec: unknown;
+};
+
+/** `spec.patch`: Changes a Model Spec with a merge patch or JSON Patch and recompiles only the parts it affects. */
+export type SpecPatchParams = {
+  /**
+   * JSON Merge Patch: objects merge, `null` removes a key, other values
+   * replace (`{"parts": {"ear_l": {"blend": "8mm"}}}`).
+   */
+  merge?: unknown;
+  /**
+   * JSON Patch operations, for one array element or a move
+   * (`[{"op": "replace", "path": "/parts/head/sdf/1/radii/0", "value": 0.06}]`).
+   */
+  ops?: PatchOp[] | null;
+  /** The spec's root object (name, path or id). */
+  target: string;
+};
+
+/** `spec.compile`: Recompiles a Model Spec: rebuilds changed parts (or all with force) and restores part objects. */
+export type SpecCompileParams = {
+  /** Rebuild every part, even unchanged ones. */
+  force?: boolean;
+  /** The spec's root object (name, path or id). */
+  target: string;
+};
+
 /** Parameters of each op, by op id. */
 export interface OpParams {
   "scene.create_empty": SceneCreateEmptyParams;
@@ -1811,6 +1861,9 @@ export interface OpParams {
   "cleanup.report": CleanupReportParams;
   "expect.add": ExpectAddParams;
   "expect.remove": ExpectRemoveParams;
+  "spec.set": SpecSetParams;
+  "spec.patch": SpecPatchParams;
+  "spec.compile": SpecCompileParams;
 }
 
 /** Every op id. */

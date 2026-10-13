@@ -12,6 +12,7 @@ pub const GUIDES: &[(&str, &str, &str)] = &[
     ("quickstart", "conventions, the modelling loop, a crate in two calls, the tools", include_str!("../../../docs/agents/quickstart.md")),
     ("modeling", "ops, placing parts, sizes and budgets, selectors", include_str!("../../../docs/agents/modeling.md")),
     ("debugging", "perception aspects, diagnostics codes and fixes, expectations", include_str!("../../../docs/agents/debugging.md")),
+    ("spec", "Model Specs: parts, shapes, anchors and landmarks, joins, patches, provenance", include_str!("../../../docs/agents/spec.md")),
 ];
 
 /// Every op id with its summary, grouped by category.
@@ -34,7 +35,7 @@ pub fn ops_guide(registry: &Registry) -> String {
 /// The text of a topic, if it exists.
 pub fn topic(name: &str) -> Option<String> {
     if name == "ops" {
-        return Some(ops_guide(&Registry::builtin()));
+        return Some(ops_guide(&p3d_engine::registry()));
     }
     GUIDES.iter().find(|(n, _, _)| *n == name).map(|(_, _, text)| (*text).to_owned())
 }

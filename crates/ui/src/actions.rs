@@ -204,6 +204,7 @@ pub fn category_label(c: Category) -> &'static str {
         Category::Io => "File",
         Category::Sdf => "Sculpt",
         Category::Remesh => "Remesh",
+        Category::Spec => "Spec",
         _ => "Other",
     }
 }

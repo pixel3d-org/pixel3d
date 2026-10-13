@@ -107,7 +107,7 @@ pub fn io_folder() -> (std::path::PathBuf, p3d_ops::FileAccess) {
 /// The fixture an op category's examples run against.
 pub fn for_category(c: Category) -> Tx {
     match c {
-        Category::Prim | Category::Io => Tx::new(Document::new()),
+        Category::Prim | Category::Io | Category::Spec => Tx::new(Document::new()),
         Category::Edit | Category::Shade | Category::Subd | Category::Deform | Category::Cleanup => edit_fixture(),
         Category::Expect => expect_fixture(),
         Category::Curve | Category::Gen | Category::Sdf => curve_fixture(),

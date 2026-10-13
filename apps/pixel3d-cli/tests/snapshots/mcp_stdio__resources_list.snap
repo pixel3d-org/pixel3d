@@ -26,6 +26,12 @@ expression: resources
         "uri": "pixel3d://guide/debugging"
       },
       {
+        "description": "Model Specs: parts, shapes, anchors and landmarks, joins, patches, provenance",
+        "mimeType": "text/markdown",
+        "name": "spec",
+        "uri": "pixel3d://guide/spec"
+      },
+      {
         "description": "every op with a one-line summary",
         "mimeType": "text/markdown",
         "name": "ops",

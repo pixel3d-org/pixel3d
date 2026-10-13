@@ -160,4 +160,5 @@ guides (docs with topic):
 - quickstart: conventions, the modelling loop, a crate in two calls, the tools
 - modeling: ops, placing parts, sizes and budgets, selectors
 - debugging: perception aspects, diagnostics codes and fixes, expectations
+- spec: Model Specs: parts, shapes, anchors and landmarks, joins, patches, provenance
 - ops: every op with a one-line summary
