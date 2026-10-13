@@ -54,24 +54,32 @@ impl Feature for Nose {
 
     fn build(&self, p: &Params) -> Result<Built, FeatureError> {
         let (len, wid) = (p.f("length"), p.f("width"));
-        let proj = len * (0.35 + 0.35 * p.f("bridge"));
+        let proj = len * (0.4 + 0.3 * p.f("bridge"));
         let lift = p.f("upturn").sin() * 0.3 * len;
-        let tip = Vec3::new(0.0, -len * 0.85 + lift, proj);
-        let tip_r = wid * 0.24 * p.f("tip");
-        let k = wid * 0.18;
+        let tip = Vec3::new(0.0, -len * 0.82 + lift, proj);
+        let tip_r = wid * 0.22 * p.f("tip");
+        let k = wid * 0.15;
+        // A body behind the bridge reaches back into the face, so the nose
+        // reads as a wedge on the face instead of a rod in front of it.
         let mut items = vec![
             item(
-                Prim::Capsule { a: Vec3::new(0.0, 0.0, wid * 0.05), b: tip * 0.88, ra: wid * 0.14, rb: wid * 0.2 },
-                Vec3::ZERO,
+                Prim::Ellipsoid { radii: Vec3::new(wid * 0.26, len * 0.48, proj * 0.55) },
+                Vec3::new(0.0, tip.y * 0.55, proj * 0.05),
                 Combine::Union,
+                "body",
+            ),
+            item(
+                Prim::Capsule { a: Vec3::new(0.0, 0.0, wid * 0.02), b: tip * 0.9, ra: wid * 0.13, rb: wid * 0.2 },
+                Vec3::ZERO,
+                Combine::SmoothUnion(k),
                 "bridge",
             ),
             item(Prim::Sphere { radius: tip_r }, tip, Combine::SmoothUnion(k), "tip"),
         ];
-        let ala = |side: f32| Vec3::new(side * wid * 0.36, tip.y - len * 0.06, tip.z - proj * 0.45);
+        let ala = |side: f32| Vec3::new(side * wid * 0.3, tip.y - len * 0.04, tip.z - proj * 0.5);
         for (side, name) in [(1.0f32, "ala_l"), (-1.0, "ala_r")] {
             items.push(item(
-                Prim::Ellipsoid { radii: Vec3::new(wid * 0.2 * p.f("flare"), len * 0.14, proj * 0.3) },
+                Prim::Ellipsoid { radii: Vec3::new(wid * 0.2 * p.f("flare"), len * 0.14, proj * 0.35) },
                 ala(side),
                 Combine::SmoothUnion(k * 0.8),
                 name,
@@ -80,9 +88,9 @@ impl Feature for Nose {
         if p.f("nostrils") > 0.0 {
             let depth = p.f("nostrils");
             for (side, name) in [(1.0f32, "nostril_l"), (-1.0, "nostril_r")] {
-                let c = Vec3::new(side * wid * 0.16, tip.y - len * 0.13, tip.z - proj * 0.28);
+                let c = Vec3::new(side * wid * 0.13, tip.y - len * 0.12, tip.z - proj * 0.3);
                 items.push(item(
-                    Prim::Ellipsoid { radii: Vec3::new(wid * 0.08, len * 0.05 * depth, proj * 0.16) },
+                    Prim::Ellipsoid { radii: Vec3::new(wid * 0.08, len * 0.05 * depth, proj * 0.18) },
                     c,
                     Combine::SmoothSubtract(wid * 0.04),
                     name,
@@ -90,11 +98,13 @@ impl Feature for Nose {
             }
         }
         let mut landmarks = BTreeMap::new();
-        landmarks.insert("root".to_owned(), Vec3::ZERO);
         landmarks.insert("tip".to_owned(), tip + Vec3::Z * tip_r);
         landmarks.insert("base".to_owned(), Vec3::new(0.0, tip.y - len * 0.15, tip.z - proj * 0.45));
         landmarks.insert("ala_l".to_owned(), ala(1.0) + Vec3::X * wid * 0.2);
         landmarks.insert("ala_r".to_owned(), ala(-1.0) - Vec3::X * wid * 0.2);
+        crate::onto_surface(&items, &mut landmarks);
+        // The root stays the origin: where the nose is anchored.
+        landmarks.insert("root".to_owned(), Vec3::ZERO);
         Ok(Built { shape: Shape::Sdf(items), landmarks })
     }
 }

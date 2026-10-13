@@ -97,3 +97,33 @@ fn most_random_parameters_succeed() {
         assert!(ok * 10 >= total * 7, "{}: only {ok} of {total} built", info.id);
     }
 }
+
+#[test]
+fn head_and_hand_landmarks_sit_where_they_are_named() {
+    let head = p3d_features::build("head_base", &json!({ "height": "23cm" })).unwrap();
+    let m = |n: &str| head.landmarks[n];
+    assert!((m("crown").y - 0.23).abs() < 0.005, "{}", m("crown"));
+    assert!(m("chin").y < 0.03 && m("chin").z > 0.06, "{}", m("chin"));
+    assert!(m("eye_l").x > 0.02 && (m("eye_l").x + m("eye_r").x).abs() < 1e-4, "{} {}", m("eye_l"), m("eye_r"));
+    assert!(m("eye_l").z < m("nose_root").z && m("brow_l").z > m("eye_l").z, "eyes sit in sockets under the brow");
+    assert!(m("ear_root_l").x > 0.06 && m("ear_root_l").z.abs() < 0.03, "{}", m("ear_root_l"));
+    assert!(m("back_of_head").z < -0.08 && m("nape").y < m("back_of_head").y);
+    // Landmarks lie on the surface.
+    let Shape::Sdf(items) = &head.shape else { panic!("head_base is SDF") };
+    let sdf = Sdf::new(items.clone()).unwrap();
+    for (n, p) in &head.landmarks {
+        assert!(sdf.eval(*p).abs() < 1e-3, "{n} off the surface by {}", sdf.eval(*p));
+    }
+    let hand = p3d_features::build("hand", &json!({ "length": "19cm", "curl": 0 })).unwrap();
+    let h = |n: &str| hand.landmarks[n];
+    assert!((h("middle_tip").y - 0.19).abs() < 0.01, "{}", h("middle_tip"));
+    assert!(h("index_tip").x > h("middle_tip").x && h("pinky_tip").x < h("middle_tip").x && h("pinky_tip").y < h("index_tip").y);
+    assert!(h("thumb_tip").x > h("index_tip").x, "the thumb is on +X");
+    assert!(h("palm").z < 0.0 && h("back").z > 0.0);
+    let fist = p3d_features::build("hand", &json!({ "curl": 80 })).unwrap();
+    assert!(
+        fist.landmarks["middle_tip"].y < 0.15 && fist.landmarks["middle_tip"].z < 0.0,
+        "curled toward the palm: {}",
+        fist.landmarks["middle_tip"]
+    );
+}

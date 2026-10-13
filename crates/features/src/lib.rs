@@ -16,7 +16,9 @@ use serde_json::Value;
 
 mod ear;
 mod eye;
+mod hand;
 mod hard;
+mod head;
 mod horn;
 mod nose;
 mod outline;
@@ -239,6 +241,8 @@ pub fn library() -> Vec<Box<dyn Feature>> {
         Box::new(hard::VentGrille),
         Box::new(hard::PanelInset),
         Box::new(hard::Molding),
+        Box::new(head::HeadBase),
+        Box::new(hand::Hand),
     ];
     v.sort_by_key(|f| f.info().id);
     v
@@ -349,6 +353,26 @@ pub fn build(id: &str, params: &Value) -> Result<Built, FeatureError> {
     let f = get(id)?;
     let p = resolve(&f.info(), params)?;
     f.build(&p)
+}
+
+/// Moves landmarks onto the surface of SDF items by Newton steps along
+/// the gradient (points already on it stay).
+///
+/// Complexity: O(landmarks x items).
+pub(crate) fn onto_surface(items: &[Item], marks: &mut BTreeMap<String, Vec3>) {
+    let Ok(sdf) = p3d_sdf::Sdf::new(items.to_vec()) else { return };
+    let (lo, hi) = sdf.bounds();
+    let eps = (hi - lo).max_element() * 1e-4;
+    for p in marks.values_mut() {
+        for _ in 0..16 {
+            let d = sdf.eval(*p);
+            let g = sdf.gradient(*p, eps).normalize_or_zero();
+            if d.abs() < eps || g == Vec3::ZERO {
+                break;
+            }
+            *p -= g * d;
+        }
+    }
 }
 
 /// Puts each landmark on its nearest vertex as a one-vertex group

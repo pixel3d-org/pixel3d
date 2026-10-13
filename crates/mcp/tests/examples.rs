@@ -1,5 +1,6 @@
 //! The example sessions in `docs/agents/examples/` (a fantasy sword, a
-//! dwarven battle axe as a Model Spec, a stylized tree) still build: every call succeeds and `diagnose` finds no
+//! dwarven battle axe as a Model Spec, an elf head from feature templates,
+//! a stylized tree) still build: every call succeeds and `diagnose` finds no
 //! errors. Warnings are allowed (a blade's edge is thinner than 1 mm by
 //! design, gems sit in their bezels).
 
@@ -34,6 +35,11 @@ fn sdf_head() {
 #[test]
 fn stylized_tree() {
     replay(include_str!("../../../docs/agents/examples/stylized_tree.json"));
+}
+
+#[test]
+fn feature_head() {
+    replay(include_str!("../../../docs/agents/examples/feature_head.json"));
 }
 
 #[test]

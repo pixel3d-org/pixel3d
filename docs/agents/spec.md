@@ -19,7 +19,7 @@ Each part has exactly one shape:
 | `lathe`, `sweep`, `loft`, `extrude`, `pipe` | the `gen.*` op with these parameters (inline points) | `"lathe": {"preset": "barrel", "height": 0.9}` |
 | `shell` | a curved sheet from one outline (`gen.shell`: `cup`, `bend`, `twist`, `thickness`; a card when thin): ears, leaves, wings, fins | `"shell": {"outline": "M 0 0 C 0.03 0.02 0.025 0.07 0 0.1 C -0.025 0.07 -0.03 0.02 0 0 Z", "cup": 0.3}` |
 | `silhouettes` | a solid from front, side and top outlines (`sdf.silhouettes`), like a blueprint | `"silhouettes": {"front": "M ...", "side": [[-0.015, 0], [0.015, 0], [0.015, 0.2], [-0.015, 0.2]], "round": "3mm"}` |
-| `feature` | a feature template with `params` (the `features` tool lists them): `ear`, `eye`, `horn`, `bolt`, `rivet`, `vent_grille`, `panel_inset` and `molding` are designed meshes; `nose` is SDF shapes and blends like an `sdf` part | `"feature": "ear", "params": {"variant": "elf", "length": "8cm", "pointiness": 0.9}` |
+| `feature` | a feature template with `params` (the `features` tool lists them): `ear`, `eye`, `horn`, `bolt`, `rivet`, `vent_grille`, `panel_inset` and `molding` are designed meshes; `head_base`, `hand` and `nose` are SDF shapes and blend like `sdf` parts | `"feature": "ear", "params": {"variant": "elf", "length": "8cm", "pointiness": 0.9}` |
 | `mirror` | a reflected copy of another part (`plane`: x by default) | `"ear_r": {"mirror": "ear_l"}` |
 | `instance` | another part's mesh, shared, at its own placement | `"post_2": {"instance": "post", "transform": {"position": [0.5, 0, 0]}}` |
 
@@ -126,3 +126,5 @@ Every face records the spec node that made it: a blended ear's faces in the head
 ```
 
 The ears and nose blend into one closed head mesh; the eyes are separate objects sunk 8 mm into their sockets. Then `spec.patch` with `{"parts": {"ear_l": {"sdf": [...]}}}` reshapes both ears and rebuilds only the head.
+
+The same head from feature templates (`docs/agents/examples/feature_head.json`) needs no coordinates at all: `head_base` brings proportions and the `humanoid_head` landmarks, `nose` blends in at `nose_root`, the `elf` ear and the eye sit at `ear_root_l` and in the `eye_l` socket, and the mirrors make the right side. Change the character with parameters: `{"parts": {"head": {"params": {"brow": 0.9, "jaw": 1.2}}}}` makes it dwarven.

@@ -1,0 +1,23 @@
+{
+ "prompt": "Elf head blockout with high cheekbones, a narrow jaw, pointed ears, a nose and eyes, from feature templates",
+ "calls": [
+  {
+   "tool": "spec",
+   "args": {
+    "action": "set",
+    "target": "elf",
+    "spec": {
+     "category": "humanoid_head",
+     "parts": {
+      "head": { "feature": "head_base", "params": { "cheekbones": 0.8, "jaw": 0.7 }, "detail": "2.5mm" },
+      "nose": { "feature": "nose", "params": { "length": "4.2cm", "width": "3cm" }, "anchor": { "on": "head", "landmark": "nose_root" }, "join": "blend", "blend": "4mm" },
+      "ear_l": { "feature": "ear", "params": { "variant": "elf", "length": "8cm" }, "anchor": { "on": "head", "landmark": "ear_root_l" } },
+      "ear_r": { "mirror": "ear_l" },
+      "eye_l": { "feature": "eye", "anchor": { "on": "head", "landmark": "eye_l" } },
+      "eye_r": { "mirror": "eye_l" }
+     }
+    }
+   }
+  }
+ ]
+}

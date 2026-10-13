@@ -1287,7 +1287,7 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": false
         },
-        "description": "Feature templates (ears, eyes, noses, horns, bolts, rivets, vents, panels, moldings) built from semantic parameters: list, search or describe one with its parameters and landmarks.",
+        "description": "Feature templates (head bases, hands, ears, eyes, noses, horns, bolts, rivets, vents, panels, moldings) built from semantic parameters: list, search or describe one with its parameters and landmarks.",
         "inputSchema": {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "additionalProperties": false,
