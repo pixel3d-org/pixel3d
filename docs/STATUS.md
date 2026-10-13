@@ -118,12 +118,12 @@ Acceptance:
 
 ## Phase 3c: Feature library, strands, full diagnostics
 
-- [ ] `features` v1: `ear`, `nose`, `eye`, `head_base`, `hand`, `horn`, `bolt`, `rivet`, `vent_grille`, `panel_inset`, `molding`
+- [ ] `features` v1: `ear`, `nose`, `eye`, `head_base`, `hand`, `horn`, `bolt`, `rivet`, `vent_grille`, `panel_inset`, `molding` (ADR 0012; all but `head_base` and `hand` done, with `gen.feature` and spec `feature` parts)
 - [ ] `strands`: hair, fur, eyebrows, grass, cables as cards, clumps and shells
 - [ ] Vegetation (ADR 0009): `tree` feature and `gen.tree` (species presets, crown hull, branch levels, roots), styles realistic, stylized painted and solid low poly; foliage as `clumps`, `cards` (cluster and single-leaf cards with leaf angle, repetition and coverage parameters) or `shell`, crown normal transfer, wind data per engine, `flower` and `grass_cards`, `vegetation` perception aspect and expectations
 - [ ] Full diagnostics: intent, edge flow, shading, detail scale, with predicted fixes
 - [ ] Visual DNA archetypes (ADR 0011): skeletons for weapon centerlines, humanoid races with anatomy kits, wings (feathered, membrane), vegetation; grooming genes on strands (braids, beads, clumps); ornament along paths; the full art-direction critique set
-- [ ] MCP tool `features`
+- [x] MCP tool `features`
 
 Acceptance:
 

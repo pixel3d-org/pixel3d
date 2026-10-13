@@ -93,6 +93,17 @@ pub struct ListOpsArgs {
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct FeaturesArgs {
+    /// Describe this feature in full (id or alias, for example `ear` or `ram horn`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
+    /// Words to find in feature ids, labels, aliases and summaries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub search: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct DescribeOpArgs {
     /// Op id or alias, for example `prim.box` or `cube`.
     pub op: String,

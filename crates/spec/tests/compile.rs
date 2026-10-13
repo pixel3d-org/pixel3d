@@ -424,3 +424,73 @@ fn head_remeshes_loop_around_the_eyes_by_category() {
     assert!(m.faces().all(|f| m.face_len(f) == 4), "quads");
     assert!(guided < free * 0.8, "loops around the eye: {guided} vs {free}");
 }
+
+#[test]
+fn feature_parts_build_templates_and_expose_their_landmarks() {
+    let mut tx = Tx::new(Document::new());
+    let stud = |on: &str| json!({ "primitive": { "uv_sphere": { "radius": "3mm" } }, "anchor": { "on": on, "landmark": "tip" } });
+    let s = ok(
+        &mut tx,
+        "spec.set",
+        json!({ "name": "elf", "spec": { "category": "humanoid_head", "parts": {
+            "head": { "sdf": [{ "ellipsoid": { "at": [0, 0.13, 0], "radii": [0.075, 0.105, 0.09] }, "name": "cranium" }], "detail": "5mm", "landmarks": "category" },
+            "nose": { "feature": "nose", "params": { "length": "4cm" }, "anchor": { "on": "head", "landmark": "nose_root" }, "join": "blend", "blend": "5mm" },
+            "ear_l": { "feature": "ear", "params": { "variant": "elf", "length": "8cm" }, "anchor": { "on": "head", "landmark": "ear_root_l" } },
+            "ear_r": { "mirror": "ear_l" },
+            "stud_l": stud("ear_l"),
+            "stud_r": stud("ear_r")
+        } } }),
+    );
+    assert!(s.contains("1 blended"), "{s}");
+    // The SDF nose blends into the head with its shapes as groups.
+    let head = tx.doc().object_mesh(key(&tx, "elf/head")).unwrap().clone();
+    for g in ["nose.bridge", "nose.tip", "nose.ala_l"] {
+        assert!(head.group(g).is_some_and(|g| g.count() > 0), "group {g}");
+    }
+    let rec = tx.doc().spec(key(&tx, "elf")).unwrap().clone();
+    assert!(rec.parts["head"].provenance.entries.iter().any(|e| e.path == "/parts/nose/feature"));
+    assert_eq!(
+        (rec.parts["ear_l"].provenance.entries[0].path.as_str(), rec.parts["ear_l"].provenance.entries[0].op.as_str()),
+        ("/parts/ear_l/feature", "gen.feature")
+    );
+    // A stud anchored at the ear's `tip` landmark sits on its baked tip vertex.
+    let ear = key(&tx, "elf/ear_l");
+    let mesh = tx.doc().object_mesh(ear).unwrap();
+    let v = mesh.group("lm.tip").unwrap().iter().next().unwrap();
+    let tip = tx.doc().world_affine(ear).unwrap().transform_point3(mesh.positions[v as usize]);
+    let (l, r) = (at(&tx, "elf/stud_l"), at(&tx, "elf/stud_r"));
+    assert!(l.distance(tip) < 1e-3, "{l} vs {tip}");
+    assert!((l.x + r.x).abs() < 1e-3 && (l.y - r.y).abs() < 1e-3, "mirrored: {l} {r}");
+    let marks = p3d_spec::part_landmarks(tx.doc(), key(&tx, "elf"), "ear_r").unwrap();
+    let names: Vec<&str> = marks.iter().map(|m| m.name.as_str()).collect();
+    for n in ["root", "tip", "lobe"] {
+        assert!(names.contains(&n), "{n} in {names:?}");
+    }
+    let marks = p3d_spec::part_landmarks(tx.doc(), key(&tx, "elf"), "nose").unwrap();
+    assert!(marks.iter().any(|m| m.name == "ala_l"), "{marks:?}");
+}
+
+#[test]
+fn feature_part_errors_point_at_the_parameters() {
+    let mut tx = Tx::new(Document::new());
+    let spec = |part: Value| json!({ "name": "m", "spec": { "parts": { "ear": part } } });
+    let e = run(&mut tx, "spec.set", spec(json!({ "feature": "eer" }))).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/spec/parts/ear/feature"), "{e:?}");
+    assert!(e.suggestions.contains(&"ear".to_owned()), "{e:?}");
+    let e = run(&mut tx, "spec.set", spec(json!({ "feature": "ear", "params": { "variant": "elff" } }))).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/spec/parts/ear/params/variant"), "{e:?}");
+    assert!(e.suggestions.contains(&"elf".to_owned()), "{e:?}");
+    let e = run(&mut tx, "spec.set", spec(json!({ "params": { "length": 0.1 }, "primitive": { "box": {} } }))).unwrap_err();
+    assert_eq!(e.path.as_deref(), Some("/spec/parts/ear/params"), "{e:?}");
+    // A mesh feature cannot take a blend join.
+    let e = run(
+        &mut tx,
+        "spec.set",
+        json!({ "name": "m", "spec": { "parts": {
+            "head": { "sdf": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 } }] },
+            "horn": { "feature": "horn", "anchor": { "on": "head", "landmark": "top" }, "join": "blend" }
+        } } }),
+    )
+    .unwrap_err();
+    assert!(e.message.contains("SDF parts on both sides"), "{e:?}");
+}

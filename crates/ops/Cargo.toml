@@ -13,6 +13,7 @@ workspace = true
 [dependencies]
 glam = { workspace = true }
 p3d-analyze = { workspace = true }
+p3d-features = { workspace = true }
 p3d-geo = { workspace = true }
 p3d-io = { workspace = true }
 p3d-math = { workspace = true }

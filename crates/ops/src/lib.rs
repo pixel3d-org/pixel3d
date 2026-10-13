@@ -16,6 +16,7 @@ pub mod edit;
 pub mod element;
 mod error;
 pub mod expect;
+pub mod feature;
 pub mod generate;
 pub mod io;
 mod op;

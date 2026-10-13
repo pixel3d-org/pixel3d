@@ -154,3 +154,25 @@ fn bisect_finds_the_patch_that_broke_the_brief() {
     let t = call(&mut a, "history", json!({ "action": "bisect", "test": { "finding": { "code": "FLOATING_PART" } } }));
     assert!(t.contains("passes now"), "{t}");
 }
+
+#[test]
+fn features_are_listed_described_and_used_in_specs() {
+    let mut a = Agent::new(Session::new());
+    let t = call(&mut a, "features", json!({}));
+    assert!(t.starts_with("9 features") && t.contains("nose (sdf):"), "{t}");
+    let t = call(&mut a, "features", json!({ "search": "horn" }));
+    assert!(t.contains("horn:"), "{t}");
+    let t = call(&mut a, "features", json!({ "feature": "ear" }));
+    assert!(t.contains("variant: human | elf") && t.contains("landmarks:") && t.contains("tip:"), "{t}");
+    let out = a.call("features", json!({ "feature": "eer" }));
+    assert!(out.is_error && out.text.contains("ear"), "{}", out.text);
+    let t = call(
+        &mut a,
+        "spec",
+        json!({ "action": "set", "target": "imp", "spec": { "parts": {
+            "head": { "sdf": [{ "sphere": { "at": [0, 0, 0], "radius": "8cm" } }], "detail": "6mm" },
+            "horn_l": { "feature": "horn", "params": { "length": "12cm", "curl": 200 }, "anchor": { "on": "head", "landmark": "top" } }
+        } } }),
+    );
+    assert!(t.contains("horn_l") && t.contains("feature horn"), "{t}");
+}

@@ -71,6 +71,13 @@ pub struct Part {
     /// A solid from front, side and top outlines (`sdf.silhouettes`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub silhouettes: Option<Value>,
+    /// A feature template by id (`ear`, `horn`, `nose`, `bolt`, ...) built
+    /// from `params`; SDF features (`nose`) blend like `sdf` parts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature: Option<String>,
+    /// The feature's parameters, for example `{"variant": "elf"}`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub params: Option<Value>,
     /// A mirrored copy of another part across a root plane (`plane`, x by
     /// default).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -290,7 +297,11 @@ pub enum Kind<'a> {
     Primitive(&'a str, &'a Value),
     Mirror(&'a str),
     Instance(&'a str),
+    /// A feature template id and its parameters.
+    Feature(&'a str, &'a Value),
 }
+
+const NO_PARAMS: &Value = &Value::Null;
 
 const PRIMITIVES: [&str; 11] = ["box", "cylinder", "cone", "quad_sphere", "uv_sphere", "ico_sphere", "torus", "tube", "capsule", "wedge", "plane"];
 
@@ -333,6 +344,11 @@ impl Part {
                 kinds.push((key, Kind::Op(key, op, v)));
             }
         }
+        match (&self.feature, &self.params) {
+            (Some(f), p) => kinds.push(("feature", Kind::Feature(f, p.as_ref().unwrap_or(NO_PARAMS)))),
+            (None, Some(_)) => return Err(SpecError::new(&format!("{path}/params"), "params belong to a feature part: give \"feature\" too")),
+            (None, None) => {}
+        }
         if let Some(m) = &self.mirror {
             kinds.push(("mirror", Kind::Mirror(m)));
         }
@@ -343,10 +359,18 @@ impl Part {
             [(_, k)] => Ok(*k),
             [] => Err(SpecError::new(
                 path,
-                "the part has no shape: give one of sdf, primitive, lathe, sweep, loft, extrude, pipe, shell, silhouettes, mirror or instance",
+                "the part has no shape: give one of sdf, primitive, lathe, sweep, loft, extrude, pipe, shell, silhouettes, feature, mirror or instance",
             )),
             [(a, _), (b, _), ..] => Err(SpecError::new(path, format!("the part has two shapes (`{a}` and `{b}`); give one"))),
         }
+    }
+
+    /// Whether the part's own shape is an SDF (`sdf` shapes or an SDF
+    /// feature such as `nose`); mirrors answer for their source elsewhere.
+    ///
+    /// Complexity: O(1).
+    pub fn is_sdf(&self) -> bool {
+        self.sdf.is_some() || self.feature.as_deref().and_then(|f| p3d_features::get(f).ok()).is_some_and(|f| f.info().sdf)
     }
 
     pub fn join(&self) -> Join {

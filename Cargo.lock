@@ -3159,6 +3159,17 @@ dependencies = [
 [[package]]
 name = "p3d-features"
 version = "0.1.0"
+dependencies = [
+ "glam",
+ "p3d-geo",
+ "p3d-math",
+ "p3d-mesh",
+ "p3d-scene",
+ "p3d-sdf",
+ "proptest",
+ "serde_json",
+ "thiserror 2.0.21",
+]
 
 [[package]]
 name = "p3d-geo"
@@ -3221,6 +3232,7 @@ dependencies = [
  "insta",
  "p3d-control",
  "p3d-engine",
+ "p3d-features",
  "p3d-mesh",
  "p3d-ops",
  "p3d-perceive",
@@ -3260,6 +3272,7 @@ dependencies = [
  "criterion 0.8.2",
  "glam",
  "p3d-analyze",
+ "p3d-features",
  "p3d-geo",
  "p3d-io",
  "p3d-math",
@@ -3397,6 +3410,7 @@ name = "p3d-spec"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "p3d-features",
  "p3d-geo",
  "p3d-math",
  "p3d-mesh",

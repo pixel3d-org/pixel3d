@@ -238,6 +238,8 @@ struct Compiler<'a> {
     pre: BTreeMap<String, Arc<Built>>,
     trs: BTreeMap<String, Trs>,
     items: BTreeMap<String, Arc<Vec<Item>>>,
+    /// Feature template outputs of feature parts.
+    features: BTreeMap<String, Arc<p3d_features::Built>>,
     surfaces: BTreeMap<String, Arc<Surface>>,
     /// Surfaces at the identity placement, moved by [`Surface::placed`].
     bases: BTreeMap<String, Surface>,
@@ -269,7 +271,7 @@ impl<'a> Compiler<'a> {
             let part = self.spec.parts.get(n)?;
             match &part.mirror {
                 Some(src) => n = self.spec.parts.get_key_value(src.as_str())?.0.as_str(),
-                None => return part.sdf.as_ref().map(|_| n),
+                None => return part.is_sdf().then_some(n),
             }
         }
         None
@@ -421,6 +423,10 @@ impl<'a> Compiler<'a> {
             return Ok(Hit { point: hit.point + self.placement(on)?.rotation * shift, normal: hit.normal });
         }
         let surface = self.surface(on)?;
+        if let Some(p) = self.feature_landmark(on, name)? {
+            let p = surface.to_root().transform_point3(p);
+            return surface.nearest(p).ok_or_else(|| err(path, format!("landmark `{name}` misses the surface of `{on}`")));
+        }
         if name == "center" {
             let (lo, hi) = surface.part_bounds();
             return Ok(Hit { point: surface.to_root().transform_point3((lo + hi) * 0.5), normal: self.placement(on)?.rotation * Vec3::Y });
@@ -446,6 +452,7 @@ impl<'a> Compiler<'a> {
         if let Some(Landmarks::Named(map)) = &part.landmarks {
             known.extend(map.keys().cloned());
         }
+        known.extend(self.feature_landmark_names(on));
         let mut e = err(path, format!("`{on}` has no landmark `{name}`"));
         e.suggestions = p3d_scene::name::suggest(name, known.iter().map(String::as_str), 3);
         if category.is_none() && landmarks::CATEGORIES.iter().any(|c| landmarks::category(c).is_some_and(|t| t.iter().any(|(n, _)| *n == name))) {
@@ -464,8 +471,8 @@ impl<'a> Compiler<'a> {
 
     /// The center of a named prim of an SDF part (part space).
     fn shape_center(&mut self, on: &str, name: &str) -> Result<Option<Vec3>, OpError> {
-        let part = self.part(on, "")?;
-        if part.sdf.is_none() {
+        self.part(on, "")?;
+        if self.sdf_source(on).is_none() {
             return Ok(None);
         }
         let items = self.items(on)?;
@@ -529,13 +536,73 @@ impl<'a> Compiler<'a> {
         let part = self.part(name, &format!("/parts/{name}"))?;
         let items = match &part.mirror {
             Some(src) => Arc::new(mirror_items(&self.items(src)?, part.plane.unwrap_or_default())),
-            None => {
-                let shapes = part.sdf.as_deref().unwrap_or(&[]);
-                Arc::new(shape_items(shapes, self.seed(name), &format!("/spec/parts/{name}/sdf"))?)
-            }
+            None => match self.feature(name)?.as_deref() {
+                Some(p3d_features::Built { shape: p3d_features::Shape::Sdf(items), .. }) => Arc::new(items.clone()),
+                _ => {
+                    let shapes = part.sdf.as_deref().unwrap_or(&[]);
+                    Arc::new(shape_items(shapes, self.seed(name), &format!("/spec/parts/{name}/sdf"))?)
+                }
+            },
         };
         self.items.insert(name.to_owned(), Arc::clone(&items));
         Ok(items)
+    }
+
+    /// A feature part's template output (built once), or none for other
+    /// parts. Errors point at the part's `feature` or `params`.
+    ///
+    /// Complexity: the template's build.
+    fn feature(&mut self, name: &str) -> Result<Option<Arc<p3d_features::Built>>, OpError> {
+        if let Some(f) = self.features.get(name) {
+            return Ok(Some(Arc::clone(f)));
+        }
+        let path = format!("/parts/{name}");
+        let part = self.part(name, &path)?;
+        let Some(id) = &part.feature else { return Ok(None) };
+        let built = p3d_features::build(id, part.params.as_ref().unwrap_or(&Value::Null)).map_err(|e| {
+            let mut o = err(&format!("{path}{}", e.path), e.message);
+            o.suggestions = e.suggestions;
+            o
+        })?;
+        let built = Arc::new(built);
+        self.features.insert(name.to_owned(), Arc::clone(&built));
+        Ok(Some(built))
+    }
+
+    /// A feature landmark of a part in part space (mirrors reflect their
+    /// source's), or none.
+    ///
+    /// Complexity: O(mirror chain) plus the template's build once.
+    fn feature_landmark(&mut self, on: &str, name: &str) -> Result<Option<Vec3>, OpError> {
+        let part = self.part(on, &format!("/parts/{on}"))?;
+        if let Some(src) = &part.mirror {
+            if self.active.iter().any(|n| n == &format!("landmark {on}")) {
+                return Ok(None);
+            }
+            self.enter(format!("landmark {on}"), &format!("/parts/{on}/mirror"))?;
+            let r = self.feature_landmark(src, name);
+            self.leave();
+            return Ok(r?.map(|p| p * reflection(part.plane.unwrap_or_default())));
+        }
+        Ok(self.feature(on)?.and_then(|f| f.landmarks.get(name).copied()))
+    }
+
+    /// The feature landmark names of a part (through mirrors).
+    ///
+    /// Complexity: O(mirror chain + landmarks).
+    fn feature_landmark_names(&self, on: &str) -> Vec<String> {
+        let mut n = on;
+        for _ in 0..=self.spec.parts.len() {
+            let Some(part) = self.spec.parts.get(n) else { break };
+            match (&part.mirror, &part.feature) {
+                (Some(src), _) => n = src,
+                (None, Some(f)) => {
+                    return p3d_features::get(f).map(|f| f.info().landmarks.iter().map(|(l, _)| (*l).to_owned()).collect()).unwrap_or_default();
+                }
+                (None, None) => break,
+            }
+        }
+        Vec::new()
     }
 
     // ---- meshes --------------------------------------------------------------
@@ -685,7 +752,34 @@ impl<'a> Compiler<'a> {
                 self.build_op(name, part, path, &format!("prim.{kind}"), args, &format!("{path}/primitive/{kind}"), "primitive")
             }
             Kind::Op(key, op, args) => self.build_op(name, part, path, op, args, &format!("{path}/{key}"), key),
+            Kind::Feature(..) if part.is_sdf() => self.build_sdf(name, part, path),
+            Kind::Feature(id, params) => self.build_feature(name, part, path, id, params),
         }
+    }
+
+    /// A designed-mesh feature part: the template's mesh, then the part's
+    /// edits.
+    ///
+    /// Complexity: the template's build plus the edits.
+    fn build_feature(&mut self, name: &str, part: &'a Part, path: &str, id: &str, params: &Value) -> Result<Arc<Built>, OpError> {
+        let mut h = Hasher::new();
+        h.bytes(b"feature");
+        h.bytes(id.as_bytes());
+        h.json(params);
+        h.json(&part.edits);
+        h.json(&part.deform);
+        let hash = h.0;
+        if let Some(c) = self.cached(name, hash) {
+            return Ok(c);
+        }
+        let mesh = match self.feature(name)?.as_deref() {
+            Some(p3d_features::Built { shape: p3d_features::Shape::Mesh(m), .. }) => m.clone(),
+            _ => return Err(err(&format!("{path}/feature"), "the feature has no mesh")),
+        };
+        let mut tx = Tx::new(Document::new());
+        let pk = tx.doc_mut().create_mesh_object("part", None, mesh).map_err(|e| OpError::internal(e.to_string()))?;
+        let entries = vec![ProvEntry { path: format!("/parts/{name}/feature"), op: "gen.feature".into() }];
+        self.edit_and_finish(name, part, path, tx, pk, entries, Vec::new(), hash)
     }
 
     /// The record's mesh when nothing that shapes the part changed.
@@ -776,16 +870,21 @@ impl<'a> Compiler<'a> {
         let path = format!("/parts/{name}");
         let part = self.part(name, &path)?;
         let source = self.sdf_source(name).ok_or_else(|| err(&format!("{path}/join"), "blend joins need SDF parts on both sides"))?;
-        let shapes = self.spec.parts[source].sdf.as_deref().unwrap_or(&[]);
+        let src = &self.spec.parts[source];
         let mut items = (*self.items(name)?).clone();
+        let mut groups = Vec::new();
+        let mut leaf = 0usize;
+        match &src.sdf {
+            Some(shapes) => leaf_groups(shapes, &format!("/parts/{source}/sdf"), prefix, &mut leaf, &mut groups),
+            None => item_leaves(&items, &format!("/parts/{source}/feature"), prefix, &mut leaf, &mut groups),
+        }
         if !prefix.is_empty() {
             rename(&mut items, prefix);
         }
-        let mut groups = Vec::new();
-        let mut leaf = 0usize;
-        leaf_groups(shapes, &format!("/parts/{source}/sdf"), prefix, &mut leaf, &mut groups);
         h.bytes(name.as_bytes());
-        h.json(shapes);
+        h.json(&src.sdf);
+        h.json(&src.feature);
+        h.json(&src.params);
         h.json(&part.plane);
         h.u64(self.seed(source));
         let place = self.placement(name)?.to_affine();
@@ -1139,6 +1238,9 @@ impl Compiler<'_> {
                 return Ok(surface.nearest(c).map_or(c, |h| h.point));
             }
         }
+        if let Some(p) = self.feature_landmark(name, n)? {
+            return Ok(surface.nearest(p).map_or(p, |h| h.point));
+        }
         let category = self.category_of(part);
         if let Some(d) = landmarks::direction(n, category.as_deref()) {
             return surface.toward(Vec3::from(d)).map(|h| h.point).ok_or_else(|| err(path, format!("`{n}` misses the surface")));
@@ -1153,6 +1255,7 @@ impl Compiler<'_> {
             known.extend(t.iter().map(|(g, _)| (*g).to_owned()));
         }
         known.extend(mesh.groups().map(|(g, _)| g.to_owned()));
+        known.extend(self.feature_landmark_names(name));
         let mut e = err(path, format!("`{name}` has no landmark, shape or group `{n}`"));
         e.suggestions = p3d_scene::name::suggest(n, known.iter().map(String::as_str), 3);
         Err(e)
@@ -1271,6 +1374,23 @@ fn leaf_groups(shapes: &[SdfShapeParam], path: &str, prefix: &str, leaf: &mut us
     }
 }
 
+/// Face group names of every prim of SDF items in leaf order, all with
+/// one spec path (an SDF feature's).
+///
+/// Complexity: O(items).
+fn item_leaves(items: &[Item], path: &str, prefix: &str, leaf: &mut usize, out: &mut Vec<(String, String)>) {
+    for it in items {
+        match &it.shape {
+            Shape::Group(inner) => item_leaves(inner, path, prefix, leaf, out),
+            _ => {
+                let base = it.name.clone().unwrap_or_else(|| format!("shape_{leaf}"));
+                out.push((format!("{prefix}{base}"), path.to_owned()));
+                *leaf += 1;
+            }
+        }
+    }
+}
+
 /// Blend children by the part they blend into, following mirror chains
 /// (a mirror joins like its source); checks every join.
 ///
@@ -1315,7 +1435,7 @@ fn blend_targets(spec: &ModelSpec) -> Result<(Children, Children), OpError> {
                         None => break,
                     }
                 }
-                if source.sdf.is_none() || target.is_some_and(|t| t.sdf.is_none()) {
+                if !source.is_sdf() || target.is_some_and(|t| !t.is_sdf()) {
                     return Err(err(&format!("{path}/join"), "blend joins need SDF parts on both sides"));
                 }
                 blends.entry(on).or_default().push(name.clone());
@@ -1355,6 +1475,7 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
             pre: BTreeMap::new(),
             trs: BTreeMap::new(),
             items: BTreeMap::new(),
+            features: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             bases: BTreeMap::new(),
             built: BTreeMap::new(),
@@ -1422,6 +1543,7 @@ fn kind_name(part: &Part) -> String {
         Ok(Kind::Op(k, _, _)) => k.to_owned(),
         Ok(Kind::Mirror(s)) => format!("mirror of {s}"),
         Ok(Kind::Instance(s)) => format!("instance of {s}"),
+        Ok(Kind::Feature(f, _)) => format!("feature {f}"),
         Err(_) => "?".into(),
     }
 }
@@ -1583,6 +1705,7 @@ fn query<'a>(doc: &'a Document, root: ObjectKey, spec: &'a ModelSpec, record: &'
         pre: BTreeMap::new(),
         trs: BTreeMap::new(),
         items: BTreeMap::new(),
+        features: BTreeMap::new(),
         surfaces: BTreeMap::new(),
         bases: BTreeMap::new(),
         built: BTreeMap::new(),
@@ -1621,9 +1744,13 @@ pub fn part_landmarks(doc: &Document, root: ObjectKey, part: &str) -> Result<Vec
     if let Some(Landmarks::Named(map)) = &p.landmarks {
         names.extend(map.keys().cloned());
     }
+    names.extend(c.feature_landmark_names(part));
     if let Some(source) = c.sdf_source(part) {
         let mut groups = Vec::new();
-        leaf_groups(spec.parts[source].sdf.as_deref().unwrap_or(&[]), "", "", &mut 0, &mut groups);
+        match &spec.parts[source].sdf {
+            Some(shapes) => leaf_groups(shapes, "", "", &mut 0, &mut groups),
+            None => item_leaves(&c.items(source)?, "", "", &mut 0, &mut groups),
+        }
         names.extend(groups.into_iter().map(|(g, _)| g).filter(|g| !g.starts_with("shape_")));
     }
     let mut seen = BTreeSet::new();

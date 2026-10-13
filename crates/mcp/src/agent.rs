@@ -129,6 +129,11 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<DeformArgs>(),
         },
         ToolInfo {
+            name: "features",
+            description: "Feature templates (ears, eyes, noses, horns, bolts, rivets, vents, panels, moldings) built from semantic parameters: list, search or describe one with its parameters and landmarks.",
+            schema: schema::<FeaturesArgs>(),
+        },
+        ToolInfo {
             name: "query",
             description: "Count and locate mesh elements picked by a selector (groups, normals, boundaries, boxes); optionally save them as a group.",
             schema: schema::<QueryArgs>(),
@@ -165,6 +170,34 @@ pub fn tools() -> Vec<ToolInfo> {
             schema: schema::<DocsArgs>(),
         },
     ]
+}
+
+/// The `features` tool: one feature in full, or a list.
+///
+/// Complexity: O(features x words).
+fn features(a: &FeaturesArgs) -> Result<ToolOutput, OpError> {
+    if let Some(id) = &a.feature {
+        let f = p3d_features::get(id).or_else(|e| {
+            // An alias names one feature: describe it.
+            match p3d_features::search(id).as_slice() {
+                [one] if one.aliases.iter().any(|x| x.eq_ignore_ascii_case(id)) => p3d_features::get(one.id),
+                _ => Err(e),
+            }
+        });
+        let info = f.map_err(|e| p3d_ops::feature::feature_error(e).at("/feature"))?.info();
+        return Ok(ToolOutput::ok(info.describe(), info.to_json()));
+    }
+    let list = match &a.search {
+        Some(q) => p3d_features::search(q),
+        None => p3d_features::library().iter().map(|f| f.info()).collect(),
+    };
+    let mut t = format!("{} feature{}\n", list.len(), if list.len() == 1 { "" } else { "s" });
+    for i in &list {
+        t.push_str(&format!("{}{}: {}\n", i.id, if i.sdf { " (sdf)" } else { "" }, i.summary));
+    }
+    t.push_str("describe one with {\"feature\": \"<id>\"}; build with op gen.feature or a spec part {\"feature\": \"<id>\"}\n");
+    let rows: Vec<Value> = list.iter().map(|i| json!({ "id": i.id, "summary": i.summary, "sdf": i.sdf })).collect();
+    Ok(ToolOutput::ok(t, json!({ "features": rows })))
 }
 
 /// Findings of the latest revision, cached: diagnose costs up to about
@@ -220,6 +253,7 @@ impl Agent {
             "brief" => parse_params(&args).and_then(|a| self.brief(&a)),
             "spec" => parse_params(&args).and_then(|a| self.spec(&a)),
             "deform" => parse_params(&args).and_then(|a| self.deform(&a)),
+            "features" => parse_params(&args).and_then(|a| features(&a)),
             "query" => parse_params(&args).and_then(|a| self.query(&a)),
             "analyze" => parse_params(&args).and_then(|a| self.analyze(&a)),
             "list_ops" => parse_params(&args).and_then(|a| self.list_ops(&a)),

@@ -1287,6 +1287,36 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": false
         },
+        "description": "Feature templates (ears, eyes, noses, horns, bolts, rivets, vents, panels, moldings) built from semantic parameters: list, search or describe one with its parameters and landmarks.",
+        "inputSchema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "additionalProperties": false,
+          "properties": {
+            "feature": {
+              "description": "Describe this feature in full (id or alias, for example `ear` or `ram horn`).",
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "search": {
+              "description": "Words to find in feature ids, labels, aliases and summaries.",
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "title": "FeaturesArgs",
+          "type": "object"
+        },
+        "name": "features"
+      },
+      {
+        "annotations": {
+          "openWorldHint": false,
+          "readOnlyHint": false
+        },
         "description": "Count and locate mesh elements picked by a selector (groups, normals, boundaries, boxes); optionally save them as a group.",
         "inputSchema": {
           "$defs": {

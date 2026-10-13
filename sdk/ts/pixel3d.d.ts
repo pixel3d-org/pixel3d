@@ -1241,6 +1241,22 @@ export type GenShellParams = {
   twist?: Angle;
 };
 
+/** `gen.feature`: Builds a feature template (ear, eye, horn, nose, bolt, rivet, vent grille, panel inset, molding) from semantic parameters. */
+export type GenFeatureParams = {
+  /** Voxel size for SDF features (`nose`); a 48th of the size when omitted. */
+  detail?: Length | null;
+  /** The template: `ear`, `eye`, `horn`, `nose`, `bolt`, `rivet`, `vent_grille`, `panel_inset` or `molding` (the `features` tool describes them). */
+  feature: string;
+  /** Object name; the feature's id is used when omitted. */
+  name?: string | null;
+  /** The template's parameters, for example `{"variant": "elf", "length": "9cm"}`; defaults for the rest. */
+  params?: unknown;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+};
+
 /** `remesh.quad`: Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field. */
 export type RemeshQuadParams = {
   /** Flow along an object axis (limbs, blades, tails). */
@@ -1930,6 +1946,7 @@ export interface OpParams {
   "sdf.from_mesh": SdfFromMeshParams;
   "sdf.silhouettes": SdfSilhouettesParams;
   "gen.shell": GenShellParams;
+  "gen.feature": GenFeatureParams;
   "remesh.quad": RemeshQuadParams;
   "remesh.isotropic": RemeshIsotropicParams;
   "prim.plane": PrimPlaneParams;

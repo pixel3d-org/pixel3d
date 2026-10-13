@@ -1219,3 +1219,21 @@ fn outline_ops_rebuild_a_target_in_place() {
     assert!(s.starts_with("rebuilt s (o:2) silhouettes"), "{s}");
     assert_eq!(tx.doc().object_count(), 2);
 }
+
+#[test]
+fn gen_feature_builds_templates_with_landmarks() {
+    let mut tx = Tx::new(Document::new());
+    let s = ok(&mut tx, "gen.feature", json!({ "name": "ear_l", "feature": "ear", "params": { "variant": "elf", "length": "9cm" } }));
+    assert!(s.contains("landmarks lobe, rim_back, root, tip"), "{s}");
+    let m = tx.doc().object_mesh(tx.resolve("ear_l", "/t").unwrap()).unwrap();
+    assert!(m.group("lm.tip").is_some());
+    // SDF features are meshed and keep their landmarks too.
+    let s = ok(&mut tx, "gen.feature", json!({ "feature": "nose", "detail": "2mm" }));
+    assert!(s.starts_with("created nose") && s.contains("ala_l"), "{s}");
+    let e = err(&mut tx, "gen.feature", json!({ "feature": "eer" }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::NotFound, Some("/feature")));
+    assert!(e.suggestions.contains(&"ear".to_owned()), "{:?}", e.suggestions);
+    let e = err(&mut tx, "gen.feature", json!({ "feature": "ear", "params": { "variant": "elff" } }));
+    assert_eq!(e.path.as_deref(), Some("/params/variant"));
+    assert!(e.suggestions.contains(&"elf".to_owned()), "{:?}", e.suggestions);
+}
