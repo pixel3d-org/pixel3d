@@ -24,7 +24,7 @@ Objects are remembered by id, so renaming them keeps the test.
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `expect` | `ExpectArgs` | required | The test: one of dims, symmetric, attached, not_intersecting, budget, watertight. |
+| `expect` | `ExpectArgs` | required | The test: one of dims, symmetric, attached, not_intersecting, budget, watertight, vegetation. |
 | `name` | `string \| null` | - | Name; `E1`, `E2`, ... when omitted. |
 
 ## Examples

@@ -71,7 +71,7 @@ fn mirror_deviation(view: &View, from: &[usize], onto: &[usize], axis: usize, at
 /// Complexity: bounded sampled queries for `symmetric`, one pair relation
 /// for `attached`, O(p^2) pair relations for `not_intersecting` (p is at
 /// most [`MAX_NOT_INTERSECTING`]), O(n) for `dims`, `budget` and
-/// `watertight`.
+/// `watertight`, O(F + raster cells) for `vegetation`.
 pub fn check(doc: &Document, e: &Expectation) -> Outcome {
     let label = e.check.label();
     let result = run(doc, &e.check);
@@ -84,6 +84,14 @@ pub fn check(doc: &Document, e: &Expectation) -> Outcome {
 
 fn run(doc: &Document, c: &Check) -> Result<(bool, String), String> {
     match c {
+        Check::Vegetation { target, crown_width, crown_height, coverage, max_overdraw } => {
+            let p = path(doc, target)?;
+            let view = View::new(doc, Some(&p)).map_err(|e| e.message)?;
+            let m = (0..view.parts.len())
+                .find_map(|i| crate::vegetation::measure(&view, i))
+                .ok_or_else(|| format!("{} has no foliage or trunk group", target.name))?;
+            Ok(crate::vegetation::expectation(&m, crown_width.as_ref(), crown_height.as_ref(), coverage.as_ref(), *max_overdraw))
+        }
         Check::Dims { target, width, height, depth } => {
             let p = path(doc, target)?;
             let view = View::new(doc, Some(&p)).map_err(|e| e.message)?;

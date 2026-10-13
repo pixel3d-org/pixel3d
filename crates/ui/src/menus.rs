@@ -214,6 +214,7 @@ pub fn menus() -> Vec<Menu> {
                 None,
                 checked(PixelApp::bottom_panel_visible, icon(Icon::History, item("History and Console", "ui.bottom"))),
                 checked(|a| a.ui.docking.is_visible(crate::docking::Panel::Features), icon(Icon::Features, item("Features panel", "features.open"))),
+                checked(|a| a.ui.docking.is_visible(crate::docking::Panel::Health), icon(Icon::Health, item("Health panel", "health.open"))),
                 checked(|a| a.ui.rail_labels, item("Tool labels", "ui.rail_labels")),
                 item("Reset panel layout", "ui.dock.reset"),
             ],

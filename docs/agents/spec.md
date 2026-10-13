@@ -20,7 +20,7 @@ Each part has exactly one shape:
 | `shell` | a curved sheet from one outline (`gen.shell`: `cup`, `bend`, `twist`, `thickness`; a card when thin): ears, leaves, wings, fins | `"shell": {"outline": "M 0 0 C 0.03 0.02 0.025 0.07 0 0.1 C -0.025 0.07 -0.03 0.02 0 0 Z", "cup": 0.3}` |
 | `silhouettes` | a solid from front, side and top outlines (`sdf.silhouettes`), like a blueprint | `"silhouettes": {"front": "M ...", "side": [[-0.015, 0], [0.015, 0], [0.015, 0.2], [-0.015, 0.2]], "round": "3mm"}` |
 | `ornament` | a motif repeated along `path` points (with the `normal` out of the surface) or around a `band` (`gen.ornament`): `stud`, `pyramid`, `bead`, `rune`, `rope`, `scroll`; `size`, `relief`, `sink`, `count` or `spacing`, `variation` | `"ornament": {"motif": "rune", "band": {"radius": 0.019}, "size": "2cm"}` anchored on a haft |
-| `feature` | a feature template with `params` (the `features` tool lists them): `ear`, `eye`, `horn`, `cable`, `wing`, `bolt`, `rivet`, `vent_grille`, `panel_inset` and `molding` are designed meshes; `head_base`, `hand` and `nose` are SDF shapes and blend like `sdf` parts | `"feature": "ear", "params": {"variant": "elf", "length": "8cm", "pointiness": 0.9}` |
+| `feature` | a feature template with `params` (the `features` tool lists them): `ear`, `eye`, `horn`, `cable`, `wing`, `bolt`, `rivet`, `vent_grille`, `panel_inset`, `molding`, `tree`, `flower` and `grass_cards` are designed meshes; `head_base`, `hand` and `nose` are SDF shapes and blend like `sdf` parts | `"feature": "ear", "params": {"variant": "elf", "length": "8cm", "pointiness": 0.9}` |
 | `strands` | hair, fur, eyebrows, beards or grass (`hair`, `fur`, `eyebrows`, `beard`, `grass`) grown on the part named by `params.on`, placed with it; `region` names landmarks of that part (or `{"groups": [...]}`, or `"all"`), the rest as in `gen.strands` | `"strands": "hair", "params": {"on": "head", "region": ["hairline_front", "temple_l", "nape", "temple_r"], "length": "22cm"}` |
 | `mirror` | a reflected copy of another part (`plane`: x by default) | `"ear_r": {"mirror": "ear_l"}` |
 | `instance` | another part's mesh, shared, at its own placement | `"post_2": {"instance": "post", "transform": {"position": [0.5, 0, 0]}}` |
@@ -133,6 +133,25 @@ stiff blade: {"merge":{"archetypes":{"s":{"params":{"curve":12}}}}} -> resolved;
 ```
 
 Run the patch with `spec patch` to apply it. Generated parts are fixed through their archetype's parameters when it has one (`heads`, `shoulders`, `legs`, `curve`), other parts through their transform, anchor offset or a deform handle. Detail below pixel size is the `DETAIL_SCALE` diagnostic, not a critique. Every `spec` answer for a spec with DNA ends with `dna 5/6 genes on target; critique: ...`.
+
+## Vegetation
+
+A tree is a `feature` part: `"oak": {"feature": "tree", "params": {"species": "broadleaf", "height": "12m", "crown": "dome", "seed": 3}}`.
+- Parameters left out come from the species preset, as in `gen.tree`.
+- Crown outlines need `gen.tree`; specs use the shape words.
+- The part is tagged `vegetation`: it renders two-sided, and diagnostics accept its open cards.
+- Flowers and grass are `"feature": "flower"` and `"feature": "grass_cards"` parts.
+- Anchor other parts on `lm.fork` or `lm.crown_top`. Put several trees on terrain with `gen.scatter`.
+
+The `dna` block takes a vegetation archetype: `"dna": {"vegetation": "broadleaf"}` (or `conifer`, `palm`, `birch`, `stylized`), or ranges such as `{"vegetation": {"preset": "broadleaf", "crown_ratio": [1.0, 1.2], "coverage": [0.85, 0.95]}}`. The genes are:
+- `crown_ratio`: crown width over height;
+- `crown_base` and `fork`: height shares;
+- `trunk`: diameter at breast height over height;
+- `limbs`;
+- `coverage`;
+- `root_spread`.
+
+`perceive dna` measures them back.
 
 ## Provenance
 

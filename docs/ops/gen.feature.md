@@ -30,4 +30,4 @@ Feature templates are details agents describe instead of drawing: an elf ear is 
 {"feature":"ear","params":{"length":"9cm","variant":"elf"}}
 ```
 
-Result: `created ear (o:4) ear feature 46.3 x 74.64 x 50.38 mm: 265 faces (440 tris; budget 6,000); landmarks lobe, rim_back, root, tip`
+Result: `created ear (o:4) ear feature 46.53 x 76.18 x 52.22 mm: 524 faces (954 tris; budget 6,000); landmarks lobe, rim_back, root, tip`

@@ -71,6 +71,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`gen.feature`](gen.feature.md) | Builds a feature template (head base, hand, ear, eye, nose, horn, cable, wing, bolt, rivet, vent grille, panel inset, molding) from semantic parameters. |
 | [`gen.strands`](gen.strands.md) | Grows hair, fur, eyebrows, beards or grass on an object's surface as alpha cards, stylized clumps or fur shells, from about ten parameters. |
 | [`gen.ornament`](gen.ornament.md) | Repeats a motif (studs, pyramids, beads, runes, rope, scroll filigree) along a path or around a band, raised off the surface as geometry. |
+| [`gen.tree`](gen.tree.md) | Grows a tree from a species preset (broadleaf, conifer, palm, birch, stylized) toward a crown hull, with buttress roots, swept wood and leaf cards, clumps or a crown shell. |
 
 ## sdf
 

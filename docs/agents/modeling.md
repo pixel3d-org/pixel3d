@@ -26,6 +26,7 @@ Build assets as several named parts in a hierarchy (`crate`, `crate/lid`, `crate
 - `gen.feature`: a feature template from semantic parameters instead of drawn geometry: humanoid head blockouts (`head_base`: jaw, chin, brow, cheekbones, eye sockets, neck, with the `humanoid_head` landmarks), hands (`hand`: 3 or 4 fingers, `curl` from flat to a fist, `spread`, `thumb`), ears (`variant` human, elf, cat, dog, horse or bat, with `pointiness`, `cup`, `flare`), eyes (iris, pupil, cornea), noses (SDF, like heads and hands), horns (`curl`, `spiral`, growth `ridges`), hanging cables and twisted ropes (`span`, `drop`, `sag`, `plies`, `twist`), bolts, rivets, vent grilles, inset panels and moldings. Every value in range gives clean topology and the landmarks (`lm.<name>` vertex groups) to anchor on. The `features` tool lists and describes them; in a spec, use a `feature` part.
 - `gen.ornament`: a motif repeated along a path or around a band, as geometry: `stud`, `pyramid`, `bead`, `rune` (angular glyphs of raised strokes), `rope` (twisted plies) or `scroll` (a wave with curls). Give `path` points and the `normal` out of the surface (studs along an edge), or a `band` with the surface's `radius` (a rune band on a haft), then `size`, `relief` and `sink`; `variation` loosens the rhythm (keep 0 for regular dwarven work). Every piece is closed; in a spec it is the `ornament` shape kind.
 - `gen.strands`: hair, fur, eyebrows, beards and grass described instead of drawn. Pick a `kind` (its preset sets the rest), a `region` (`"all"`, `{"groups": [...]}`, or a loop of landmarks around the patch such as `["hairline_front", "temple_l", "nape", "temple_r"]`; the smaller side unless `inside` says otherwise), then change what differs: `style` (`swept_back`, `parted`, `spiky`, `straight`, `combed`, `upright`, `wind_blown`, `ponytail` with an `anchor`), `length`, `clumps`, `gravity`, `curl`, `volume`. Strands never penetrate the surface. Output `cards` (scalp cap, layers, flyaways, atlas UVs), `clumps` (closed stylized locks) or `shells` (fur). The summary gives coverage and the largest bald spot: raise `clumps` or `width` when coverage is low. Grooming genes: `{"around": "brow_l", "radius": [0.03, 0.012, 0.03]}` is a region too (the faces near a point); clumps take a profile (`root_width`, `bulge` where they are widest, `tip_width`, `flatness`, `twist`) and `clump_layers` (1 to 3) for fuller beards; `braids: 2` plaits two hanging braids from the lowest, most forward roots (or near `braid_at` points) with `beads` threaded on them and a `tie` (`band`, `bead` or `none`) and a tuft at the end; `collide` names objects the strands stay outside of and drape over, such as the chest under a beard.
+- `gen.tree`: a whole tree from a `species` preset (`broadleaf`, `conifer`, `palm`, `birch`, `stylized`) and the few numbers that differ; see Vegetation below. Flowers and grass patches are the `flower` and `grass_cards` features (`gen.feature`).
 - `sdf.silhouettes`: a solid from a front outline plus a side and/or top outline (the visual hull), edges rounded by `round`: axe heads, helmets, guards, creature body plans drawn like blueprints.
 - `edit.boolean`: cut tool objects out of a mesh (`difference`, the default), add them (`union`) or keep the overlap (`intersect`). Both must be closed. The result stays clean: split faces merge back, faces with holes become convex polygons, UVs, flags and groups carry over; the tools' faces are `<label>.cut`, the seam `<label>.edges`, and the tools are deleted unless `keep_tool`. Prefer generators and `extrude` for shapes they can make; use booleans for holes, slots and sockets in hard-surface parts, and avoid cutting low-poly curved surfaces (the facets show along the cut).
 - `edit.*`, topology: `loop_cut` (edge loops across a ring of quads), `bridge` (join two holes), `subdivide` (flat quad split), `poke`, `triangulate`, `tris_to_quads`, `split` (detach faces), `flip` (reverse whole parts), `merge`, `merge_by_distance` (weld seams after `scene.join`), `dissolve` (remove vertices, edges or faces; `mode: "limited"` simplifies flat areas), `fill` (close holes), `recalc_normals` (make parts face outward), `delete_elements`.
@@ -40,6 +41,52 @@ Build assets as several named parts in a hierarchy (`crate`, `crate/lid`, `crate
 - `expect.add`, `expect.remove`: model tests.
 
 `list_ops` with `search` finds ops by Blender or Maya names too (`cube`, `separate by loose parts`, `shift n`).
+
+## Vegetation
+
+Trees are described, not drawn (ADR 0009, ADR 0014). `gen.tree {"species": "broadleaf"}` grows a mature 12 m broadleaf of about 9k triangles:
+- a trunk with buttress roots to the first fork at 37% of the height;
+- 4 scaffold limbs, with finer branches grown toward the crown hull;
+- leaf cluster cards until 90% of the crown silhouette is covered.
+
+Change only what differs from the species:
+
+- **Shape:**
+  - `height`, `trunk_radius`, `lean` and `lean_toward`;
+  - `fork` (height share of the first fork);
+  - `limbs` and `branch_angle` (scaffold limbs from vertical);
+  - `levels` (1 to 3 branch levels built as wood), `taper`, `gnarl`, `twist`;
+  - `roots` and `root_spread` (buttress width at the ground over the trunk diameter).
+- **Crown:**
+  - `crown`: `dome`, `sphere`, `ellipsoid`, `cone`, `umbrella`, `column`, or an outline `[[radius share, height share], ...]` from the crown base up;
+  - `crown_width`, `crown_base`, `crown_lumps` (an irregular outline).
+- **Foliage:**
+  - `foliage`: `cards`, `clumps`, `shell` or `none`; `style`: `realistic`, `painted` or `low_poly` sets the card layout and shading;
+  - `card_size` (0.4 to 0.8 m clusters for broadleaf), `coverage` (the silhouette target that sets the card count), `leaf_cards` (single leaves at the silhouette);
+  - leaf angles: `phyllotaxis` (137.5 degrees), `spread`, `droop` toward the tips, `sun_bias`.
+- **Look and budget:**
+  - `normal_blend` (crown normal transfer), `hue_jitter`, `value_jitter`, `gradient` (darker and cooler inside), `size_falloff`;
+  - `variants` (atlas variants), `budget` (triangles; the wood takes about a third), `seed`.
+
+The summary reads the tree back: crown size, fork height, limbs, cards, coverage against its target, overdraw, and wood and foliage triangles. A warning says when the budget ran out before the coverage target: raise `budget` or `card_size`.
+
+The mesh is one object:
+- Material 0 is bark, 1 is foliage.
+- Groups: `trunk`, `roots`, `level_1` to `level_3`, `twig_tips` and `foliage` (with `foliage.cluster_cards`, `foliage.leaf_cards`, `foliage.clumps`, `foliage.shell` or `foliage.fronds`).
+- Landmarks: `lm.base`, `lm.fork`, `lm.crown_top`, `lm.crown_center`, `lm.crown_base`.
+- Cards are emitted inner to outer. Their UVs point into a 4-column leaf atlas: cluster variants in the top half, single leaves in the bottom half.
+- Wind data per vertex: the branch level in vertex color alpha; phase and stiffness in UV layer 1.
+
+Check it without images:
+- `perceive` with `aspect: "vegetation"` reports:
+  - the crown's width over height and its base;
+  - the fork, the trunk diameter at breast height and the root spread;
+  - limbs and card pieces;
+  - coverage front and side, the largest gap, overdraw and trunk visibility.
+- `expect.add {"expect": {"vegetation": {"target": "oak", "crown_width": {"min": "10m"}, "coverage": {"min": 0.85}, "max_overdraw": 3}}}` keeps it so.
+- A spec's `"dna": {"vegetation": "broadleaf"}` measures the reference proportions (crown width over height 0.9 to 1.15, fork at 33 to 42%, trunk diameter 6 to 8.5% of the height, 3 to 5 limbs, coverage 83 to 93%).
+
+Worked example: `docs/agents/examples/broadleaf_tree.json`.
 
 ## Placing parts
 

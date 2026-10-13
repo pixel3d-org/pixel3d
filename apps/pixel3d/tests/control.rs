@@ -481,3 +481,51 @@ fn grow_hair_in_a_clicked_landmark_loop() {
     wait_for(30, || Some(inspect(&mut c)).filter(|s| s["scene"]["objects"].as_u64() == Some(objects)));
     let _ = c.call("ui.command", json!({ "id": "app.quit" }));
 }
+
+#[test]
+#[ignore = "needs a display and a GPU"]
+fn frame_and_fix_a_finding_from_the_health_panel() {
+    let dir = temp_dir("health");
+    let (_app, mut c) = start(&["--command".to_owned(), "ui.start on=false".to_owned()]);
+    // A bin with its bottom deleted and a lid floating above it.
+    c.call("ui.command", json!({ "id": "prim.box", "params": { "name": "bin" } })).unwrap();
+    let bottom = json!({ "target": "bin", "select": { "faces": { "group": "bottom" } } });
+    c.call("ui.command", json!({ "id": "edit.delete_elements", "params": bottom })).unwrap();
+    c.call("ui.command", json!({ "id": "prim.box", "params": { "name": "lid", "height": 0.1, "position": [0, 1.6, 0] } })).unwrap();
+    c.call("ui.command", json!({ "id": "ui.dock", "params": { "operation": "close", "panel": "properties" } })).unwrap();
+    c.call("ui.command", json!({ "id": "edit.select_none" })).unwrap();
+    c.call("ui.command", json!({ "id": "health.open", "params": { "on": true } })).unwrap();
+    c.call("ui.command", json!({ "id": "view.frame" })).unwrap();
+    c.call("ui.command", json!({ "id": "edit.select", "params": { "target": "lid" } })).unwrap();
+    settle_camera(&mut c);
+    let s = wait_for(60, || {
+        Some(inspect(&mut c)).filter(|s| s["health"]["current"] == json!(true) && s["health"]["badges"].as_array().is_some_and(|b| !b.is_empty()))
+    });
+    let open = s["health"]["findings"].as_array().unwrap().iter().find(|f| f["code"] == json!("OPEN_BOUNDARY")).cloned().unwrap();
+    let id = open["id"].as_str().unwrap().to_owned();
+    // A click on its badge frames it (closer than the whole scene).
+    let badge = s["health"]["badges"].as_array().unwrap().iter().find(|b| b["id"] == json!(id)).cloned().unwrap();
+    let far = s["camera"]["distance"].as_f64().unwrap();
+    let selected = s["selection"].clone();
+    assert_eq!(selected.as_array().map(Vec::len), Some(1));
+    c.call("ui.click", json!({ "target": { "at": badge["at"] } })).unwrap();
+    settle_camera(&mut c);
+    let s = inspect(&mut c);
+    assert!(s["camera"]["distance"].as_f64().unwrap() < far, "{} vs {far}", s["camera"]);
+    assert_eq!(s["selection"], selected, "the badge click picks nothing: the lid stays selected");
+    let shot = dir.join("health.png");
+    c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
+    assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    // Apply its first fix: the hole is closed, in one undo step.
+    let fix = wait_for(30, || {
+        let r = c.call("ui.elements", json!({ "label": format!("Fix {id}") })).ok()?;
+        r["elements"].as_array().and_then(|e| e.first().cloned())
+    });
+    c.call("ui.click", json!({ "target": { "id": fix["id"] } })).unwrap();
+    wait_for(60, || {
+        let s = inspect(&mut c);
+        let open = s["health"]["findings"].as_array()?.iter().any(|f| f["code"] == json!("OPEN_BOUNDARY"));
+        (s["health"]["current"] == json!(true) && !open).then_some(())
+    });
+    let _ = c.call("ui.command", json!({ "id": "app.quit" }));
+}

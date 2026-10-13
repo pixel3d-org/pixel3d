@@ -144,6 +144,10 @@ pub struct DnaSpec {
     /// Seed, asymmetry and variants.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variation: Option<serde_json::Value>,
+    /// The vegetation archetype: a species word (`broadleaf`, `conifer`,
+    /// `palm`, `birch`, `stylized`) or ranges (crate::vegetation).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vegetation: Option<crate::vegetation::VegetationGene>,
 }
 
 /// An archetype's default genes and critique thresholds (ADR 0011, ADR
@@ -367,6 +371,9 @@ pub fn targets(d: &DnaSpec) -> Result<Targets, (String, String)> {
     }
     for (k, r) in &d.proportions {
         t.proportions.insert(k.clone(), *r);
+    }
+    if let Some(v) = &d.vegetation {
+        crate::vegetation::gene_targets(v)?;
     }
     Ok(t)
 }
@@ -1175,6 +1182,12 @@ pub fn report(view: &View, spec: &DnaSpec) -> Result<Report, (String, String)> {
                 lines.push(format!("{name} {v:.2}{t} {s}"));
             }
             None => lines.push(format!("{name}: not measurable here (parts not found, or legs not apart)")),
+        }
+    }
+    if let Some(v) = &spec.vegetation {
+        for (s, l) in crate::vegetation::gene_lines(view, v)? {
+            count(s);
+            lines.push(l);
         }
     }
     let mut label: Vec<&str> = [spec.archetype.as_deref(), spec.culture.as_deref(), spec.style.as_deref()].into_iter().flatten().collect();

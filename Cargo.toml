@@ -27,6 +27,7 @@ p3d-sdf = { path = "crates/sdf" }
 p3d-remesh = { path = "crates/remesh" }
 p3d-features = { path = "crates/features" }
 p3d-strands = { path = "crates/strands" }
+p3d-vegetation = { path = "crates/vegetation" }
 p3d-io = { path = "crates/io" }
 p3d-profiles = { path = "crates/profiles" }
 p3d-analyze = { path = "crates/analyze" }

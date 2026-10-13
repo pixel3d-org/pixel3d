@@ -65,6 +65,7 @@ fn app_aliases(label: &str) -> &'static [&'static str] {
         "Features panel" => {
             &["features", "template", "kitbash", "ear", "eye", "nose", "horn", "bolt", "rivet", "vent", "panel inset", "molding", "insert feature"]
         }
+        "Health panel" => &["findings", "problems", "diagnose", "diagnostics", "errors", "warnings", "check model", "fix"],
         "Feature landmarks" => &["lm", "feature points", "landmark groups", "show landmarks"],
         "Leaf shell" | "Ear shell" => &["shell", "card", "leaf", "ear", "wing", "fin", "petal", "outline", "draw outline"],
         "Axe head silhouettes" => &["silhouettes", "blueprint", "front and side view", "visual hull", "outline", "axe"],
@@ -81,6 +82,7 @@ fn app_desc(label: &str) -> &'static str {
         "Voxel remesh" => "Rebuild the selected closed mesh from its volume as even quads, in the background",
         "Poles" => "Mark vertices of valence 3, 5 and 6 or more on the selected meshes",
         "Features panel" => "Show the feature library: ears, eyes, noses, horns, bolts, vents and more, with parameters and Insert",
+        "Health panel" => "Show the findings: problems by category with their cause, measured values and fixes to apply",
         "Feature landmarks" => "Show the landmark groups (lm.<name>) of the selected objects as labelled dots",
         "Leaf shell" => "Add a leaf card drawn from one outline, edited in the Outline tab",
         "Ear shell" => "Add an ear shell drawn from one outline with cup and bend, edited in the Outline tab",

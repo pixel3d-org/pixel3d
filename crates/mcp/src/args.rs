@@ -206,6 +206,8 @@ pub enum Aspect {
     Brief,
     /// Visual DNA: form genes measured against the spec's `dna` (or `dna` given here) and the art-direction critique.
     Dna,
+    /// Trees and plants: crown size and proportions, fork and trunk, cards, silhouette coverage and gaps, overdraw, trunk visibility.
+    Vegetation,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]

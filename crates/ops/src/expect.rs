@@ -110,6 +110,35 @@ pub enum ExpectArgs {
         /// Object (name, path or id).
         target: String,
     },
+    /// A tree or plant (an object with a `foliage` or `trunk` group): crown size, silhouette coverage and overdraw.
+    Vegetation {
+        /// Object (name, path or id).
+        target: String,
+        /// Crown width (the larger of its X and Z extents).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        crown_width: Option<LengthRange>,
+        /// Crown height.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        crown_height: Option<LengthRange>,
+        /// Covered share of the crown silhouette (front and side mean), for example `{"min": 0.85}`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        coverage: Option<ShareRange>,
+        /// Overdraw budget: most card layers per covered pixel on average.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_overdraw: Option<f64>,
+    },
+}
+
+/// A range of shares from 0 to 1; either end may be left open.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ShareRange {
+    /// Lowest share.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min: Option<f64>,
+    /// Highest share.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<f64>,
 }
 
 /// Parameters of `expect.add`.
@@ -119,7 +148,7 @@ pub struct AddParams {
     /// Name; `E1`, `E2`, ... when omitted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// The test: one of dims, symmetric, attached, not_intersecting, budget, watertight.
+    /// The test: one of dims, symmetric, attached, not_intersecting, budget, watertight, vegetation.
     pub expect: ExpectArgs,
 }
 
@@ -200,6 +229,26 @@ fn to_check(doc: &Document, a: &ExpectArgs) -> Result<Check, OpError> {
             }
         }
         ExpectArgs::Watertight { target } => Check::Watertight { target: object_ref(doc, target, "/expect/watertight/target")? },
+        ExpectArgs::Vegetation { target, crown_width, crown_height, coverage, max_overdraw } => {
+            if let Some(c) = coverage
+                && [c.min, c.max].iter().flatten().any(|x| !(0.0..=1.0).contains(x))
+            {
+                return Err(OpError::out_of_range("/expect/vegetation/coverage", "shares are between 0 and 1"));
+            }
+            if max_overdraw.is_some_and(|x| !(x.is_finite() && x > 0.0)) {
+                return Err(OpError::out_of_range("/expect/vegetation/max_overdraw", "must be above 0"));
+            }
+            if crown_width.is_none() && crown_height.is_none() && coverage.is_none() && max_overdraw.is_none() {
+                return Err(OpError::invalid("/expect/vegetation", "give at least one of crown_width, crown_height, coverage, max_overdraw"));
+            }
+            Check::Vegetation {
+                target: object_ref(doc, target, "/expect/vegetation/target")?,
+                crown_width: crown_width.as_ref().map(LengthRange::range),
+                crown_height: crown_height.as_ref().map(LengthRange::range),
+                coverage: coverage.as_ref().map(|c| Range { min: c.min, max: c.max }),
+                max_overdraw: *max_overdraw,
+            }
+        }
     })
 }
 

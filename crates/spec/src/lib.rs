@@ -11,6 +11,7 @@ pub mod archetype;
 pub mod brief;
 pub mod compile;
 pub mod constraints;
+pub mod diagnose;
 pub mod dna;
 pub mod landmarks;
 pub mod model;

@@ -170,8 +170,13 @@ pub fn shell(spec: &ShellSpec) -> Result<Mesh, PrimError> {
     thicken(&sheet, spec.thickness as f32)
 }
 
+/// Quads across the rim: a half round in steps of 45 degrees, so smooth
+/// shading never folds sharply where the front turns into the back.
+const RIM_SEGMENTS: u32 = 4;
+
 /// A closed solid from a sheet: front and back offset by half the
-/// thickness along the vertex normals, joined by a rim along the boundary.
+/// thickness along the vertex normals, joined by a half-round rim along the
+/// boundary (bulging out by half the thickness).
 ///
 /// Complexity: O(V + C).
 fn thicken(sheet: &Mesh, thickness: f32) -> Result<Mesh, PrimError> {
@@ -203,15 +208,52 @@ fn thicken(sheet: &Mesh, thickness: f32) -> Result<Mesh, PrimError> {
         sizes.push(vs.len() as u32);
         corners.extend(vs.iter().rev().map(|v| v + back));
     }
+    // Boundary edges, and the direction away from the sheet at each of
+    // their vertices (in the sheet's tangent plane).
+    let mut rim = Vec::new();
+    let mut outward = vec![Vec3::ZERO; n];
+    let mut ring = vec![u32::MAX; n];
+    let mut rim_verts = Vec::new();
     for hh in 0..sheet.he_slots() as u32 {
         if !sheet.is_he_alive(hh) || !sheet.is_boundary_he(hh) || sheet.face(hh).is_some() {
             continue;
         }
-        // The boundary half-edge runs opposite to its face's edge a -> b.
+        // The boundary half-edge runs opposite to its face's edge a -> b,
+        // so the face lies to the left of a -> b and outward is to the right.
         let (b, a) = (sheet.origin(hh), sheet.dest(hh));
-        rim_faces.push(sizes.len() as u32);
-        sizes.push(4);
-        corners.extend([b, a, a + back, b + back]);
+        let d = sheet.positions[b as usize] - sheet.positions[a as usize];
+        let o = d.cross((normal[a as usize] + normal[b as usize]).normalize_or(Vec3::Z));
+        for v in [a, b] {
+            outward[v as usize] += o;
+            if ring[v as usize] == u32::MAX {
+                ring[v as usize] = rim_verts.len() as u32;
+                rim_verts.push(v);
+            }
+        }
+        rim.push((b, a));
+    }
+    let middle = positions.len() as u32;
+    for j in 1..RIM_SEGMENTS {
+        let th = std::f32::consts::FRAC_PI_2 - std::f32::consts::PI * j as f32 / RIM_SEGMENTS as f32;
+        positions.extend(rim_verts.iter().map(|&v| {
+            let nv = normal[v as usize].normalize_or(Vec3::Z);
+            let o = outward[v as usize] - nv * outward[v as usize].dot(nv);
+            let o = o.normalize_or(nv.any_orthonormal_vector());
+            sheet.positions[v as usize] + nv * (h * th.sin()) + o * (h * th.cos())
+        }));
+    }
+    let count = rim_verts.len() as u32;
+    let at = |j: u32, v: u32| match j {
+        0 => v,
+        RIM_SEGMENTS => v + back,
+        _ => middle + (j - 1) * count + ring[v as usize],
+    };
+    for &(b, a) in &rim {
+        for j in 0..RIM_SEGMENTS {
+            rim_faces.push(sizes.len() as u32);
+            sizes.push(4);
+            corners.extend([at(j, b), at(j, a), at(j + 1, a), at(j + 1, b)]);
+        }
     }
     let mut mesh = Mesh::from_polygons(positions, &sizes, &corners)?;
     mesh.compact();
@@ -268,6 +310,33 @@ mod tests {
             }
         }
         assert!(vol > 0.0, "{vol}");
+    }
+
+    #[test]
+    fn the_rim_is_a_half_round_without_sharp_folds() {
+        let disc: Vec<DVec2> = (0..48).map(|i| DVec2::from_angle(i as f64 / 48.0 * std::f64::consts::TAU) * 0.03).collect();
+        let m = shell(&ShellSpec { contours: vec![disc], spacing: 0.004, thickness: 0.004, cup: 0.3, bend: 0.0, twist: 0.0 }).unwrap();
+        assert_eq!(m.validate(), Ok(()));
+        assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "closed");
+        let rim = m.group("rim").unwrap();
+        assert_eq!(rim.count() as u32 % RIM_SEGMENTS, 0);
+        let on_rim = |f: u32| rim.contains(f);
+        let mut checked = 0;
+        for h in 0..m.he_slots() as u32 {
+            if !m.is_he_alive(h) {
+                continue;
+            }
+            let (Some(f), Some(g)) = (m.face(h), m.face(m.twin(h))) else { continue };
+            if on_rim(f) || on_rim(g) {
+                let fold = m.face_normal(f).angle_between(m.face_normal(g)).to_degrees();
+                assert!(fold < 50.0, "rim edge folds {fold} degrees");
+                checked += 1;
+            }
+        }
+        assert!(checked > 48 * 4, "{checked}");
+        // The rim bulges out by about half the thickness.
+        let (lo, hi) = m.bounds().unwrap();
+        assert!((hi.x - lo.x - 0.064).abs() < 0.0015, "{lo} {hi}");
     }
 
     #[test]

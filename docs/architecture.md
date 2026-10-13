@@ -19,7 +19,7 @@ Directory `crates/<name>`, package `p3d-<name>`, library `p3d_<name>`.
 |---|---|---|
 | L0 foundation | `math`, `mesh` | Units, angles, axes, transforms, predicates; the half-edge kernel, attributes, groups, topology queries, validation, triangle buffers |
 | L1 document | `scene`, `query` | Document, objects, hierarchy, materials, textures, skeletons, clips, ids, names, settings; the selector language |
-| L2 algorithms | `geo`, `tex`, `uv`, `opt`, `rig`, `bake`, `anim`, `sdf`, `remesh`, `features`, `strands` | Pure kernels with no IO and no global state |
+| L2 algorithms | `geo`, `tex`, `uv`, `opt`, `rig`, `bake`, `anim`, `sdf`, `remesh`, `strands`, `vegetation`, `features` | Pure kernels with no IO and no global state |
 | L2 algorithms | `render` | wgpu renderer for the viewport and headless renders, no egui |
 | L3 IO and analysis | `profiles`, `io`, `analyze`, `perceive` | Engine profiles; `.p3d`, glTF, FBX, OBJ, USD; metrics and validation; perception, diagnostics and expectation checks |
 | L4 engine | `ops`, `graph`, `spec`, `engine` | Op trait, registry and schemas; node graph evaluation; Brief and Model Spec compiler with provenance; Session, transactions, undo, jobs, events, fix prediction |
@@ -32,14 +32,14 @@ Directory `crates/<name>`, package `p3d-<name>`, library `p3d_<name>`.
 
 A crate may depend on every crate of a lower layer, and on crates of its own layer with a lower rank (ADR 0001):
 
-| Layer | Rank 0 | Rank 1 | Rank 2 | Rank 3 |
-|---|---|---|---|---|
-| L0 | `math` | `mesh` | | |
-| L1 | `scene` | `query` | | |
-| L2 | `geo`, `tex` | `uv`, `opt`, `rig`, `bake` | `anim`, `sdf`, `remesh` | `features`, `strands` |
-| L3 | `profiles` | `io`, `analyze` | `perceive` | |
-| L4 | `ops` | `graph` | `spec` | `engine` |
-| L5 | `plugin`, `control` | `mcp` | `ai` | `ui` |
+| Layer | Rank 0 | Rank 1 | Rank 2 | Rank 3 | Rank 4 |
+|---|---|---|---|---|---|
+| L0 | `math` | `mesh` | | | |
+| L1 | `scene` | `query` | | | |
+| L2 | `geo`, `tex` | `uv`, `opt`, `rig`, `bake` | `anim`, `sdf`, `remesh` | `strands`, `vegetation` | `features` |
+| L3 | `profiles` | `io`, `analyze` | `perceive` | | |
+| L4 | `ops` | `graph` | `spec` | `engine` | |
+| L5 | `plugin`, `control` | `mcp` | `ai` | `ui` | |
 
 - `render` is isolated: it depends on L0 and L1 only, and no L2 crate depends on it.
 - `testdata` depends on L0 to L3 and is only ever a dev-dependency.

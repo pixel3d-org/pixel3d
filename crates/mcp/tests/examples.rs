@@ -1,6 +1,6 @@
 //! The example sessions in `docs/agents/examples/` (a fantasy sword, a
 //! dwarven battle axe as a Model Spec, an elf head from feature templates,
-//! a stylized tree) still build: every call succeeds and `diagnose` finds no
+//! a stylized tree, a broadleaf tree) still build: every call succeeds and `diagnose` finds no
 //! errors. Warnings are allowed (a blade's edge is thinner than 1 mm by
 //! design, gems sit in their bezels).
 
@@ -66,4 +66,23 @@ fn t11_elf_head_with_hair_answers_its_brief() {
     for code in ["OPEN_BOUNDARY", "FLOATING_PART", "SELF_INTERSECTION"] {
         assert!(!d.contains(code), "{code} on strands: {d}");
     }
+}
+
+/// The AAA broadleaf of ADR 0009 from one spec part: it reads like the
+/// reference profile in text, passes its crown and budget tests, and its
+/// vegetation genes are on target.
+#[test]
+fn broadleaf_tree() {
+    let source = include_str!("../../../docs/agents/examples/broadleaf_tree.json");
+    replay(source);
+    let session: Value = serde_json::from_str(source).unwrap();
+    let mut agent = Agent::new(Session::new());
+    let mut outs = Vec::new();
+    for call in session["calls"].as_array().unwrap() {
+        outs.push(agent.call(call["tool"].as_str().unwrap(), call["args"].clone()).text);
+    }
+    let veg = &outs[1];
+    assert!(veg.contains("trunk: fork at") && veg.contains("coverage front") && veg.contains("wind data: level"), "{veg}");
+    assert!(outs[2].contains("tests 2/2 pass"), "{}", outs[2]);
+    assert!(outs[3].contains("crown width / height") && !outs[3].contains("LOW") && !outs[3].contains("HIGH"), "{}", outs[3]);
 }

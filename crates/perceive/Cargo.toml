@@ -26,7 +26,12 @@ serde_json = { workspace = true }
 criterion = { workspace = true }
 insta = { workspace = true, features = ["json"] }
 p3d-testdata = { workspace = true }
+p3d-vegetation = { workspace = true }
 
 [[bench]]
 name = "aspects"
+harness = false
+
+[[bench]]
+name = "scale"
 harness = false

@@ -83,7 +83,7 @@ impl Op for GenFeature {
                    **Use for** head blockouts, hands, ears, eyes, noses, horns, hanging cables and ropes, and hard-surface details (bolts, rivets, vents, panels, moldings).",
             examples: &[OpExample {
                 args: r#"{"feature": "ear", "params": {"variant": "elf", "length": "9cm"}}"#,
-                result: "created ear (o:4) ear feature 46.3 x 74.64 x 50.38 mm: 265 faces (440 tris; budget 6,000); landmarks lobe, rim_back, root, tip",
+                result: "created ear (o:4) ear feature 46.53 x 76.18 x 52.22 mm: 524 faces (954 tris; budget 6,000); landmarks lobe, rim_back, root, tip",
             }],
             aliases: &["feature", "template", "kitbash", "detail", "elf ear", "horn", "bolt", "rivet", "vent", "molding"],
             complexity: "the template's build, about O(output faces)",
@@ -105,6 +105,12 @@ impl Op for GenFeature {
         let m = feature_mesh(&p.feature, &p.params, p.detail.map(|d| d.0 as f32), ctx)?;
         let marks: Vec<String> = p3d_features::baked_landmarks(&m).into_keys().collect();
         let key = create_mesh_object(tx, Some(p.name.as_deref().unwrap_or(&p.feature)), &p.feature, p.parent.as_deref(), &p.position, m)?;
+        if p3d_features::vegetation::is_vegetation(&p.feature)
+            && let Some(o) = tx.doc_mut().object_mut(key)
+        {
+            // Card meshes: drawn two-sided, open by design.
+            o.tags.push(p3d_features::vegetation::TAG.into());
+        }
         let mut out = created_summary(tx, key, &format!("{} feature", p.feature));
         out.summary.push_str(&format!("; landmarks {}", marks.join(", ")));
         Ok(out)

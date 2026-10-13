@@ -159,7 +159,7 @@ fn bisect_finds_the_patch_that_broke_the_brief() {
 fn features_are_listed_described_and_used_in_specs() {
     let mut a = Agent::new(Session::new());
     let t = call(&mut a, "features", json!({}));
-    assert!(t.starts_with("13 features") && t.contains("nose (sdf):") && t.contains("wing:"), "{t}");
+    assert!(t.starts_with("16 features") && t.contains("nose (sdf):") && t.contains("wing:"), "{t}");
     assert!(t.contains("archetypes") && t.contains("dwarf:") && t.contains("feathered_wings:"), "{t}");
     let t = call(&mut a, "features", json!({ "search": "horn" }));
     assert!(t.contains("horn:"), "{t}");

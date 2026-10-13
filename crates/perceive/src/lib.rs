@@ -23,6 +23,7 @@ pub mod section;
 pub mod shape;
 pub mod silhouette;
 pub mod structure;
+pub mod vegetation;
 pub mod view;
 pub mod visibility;
 

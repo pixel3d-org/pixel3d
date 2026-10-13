@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use glam::{DVec2, Mat3, Vec3};
 use p3d_geo::generate::{ShellSpec, shell};
 
-use crate::outline::shaped;
+use crate::outline::{round_corners, shaped};
 use crate::{Built, Feature, FeatureError, FeatureInfo, ParamInfo, ParamKind, Params, Shape};
 
 const VARIANTS: &[&str] = &["human", "elf", "cat", "dog", "horse", "bat"];
@@ -126,7 +126,7 @@ impl Feature for Ear {
                 ("lobe", "the bottom of the back edge"),
                 ("rim_back", "the back edge at mid height"),
             ],
-            budget: 800,
+            budget: 950,
             aliases: &["elf ear", "pointed ear", "animal ear", "cat ear", "pinna"],
             sdf: false,
         }
@@ -153,7 +153,10 @@ impl Feature for Ear {
         for q in pts.iter_mut().filter(|q| q.0 > 0.0 && q.1 > 0.02 && q.1 < 0.3) {
             q.0 += 0.18 * lobe * (1.0 - q.1 / 0.3);
         }
-        let outline: Vec<DVec2> = shaped(&pts, wid, len, 3);
+        // A sharp tip keeps a small round nub (about the thickness across) so
+        // it shades smoothly and keeps a wall.
+        let nub = (0.5 * p.get("thickness")).max(0.02 * len);
+        let outline: Vec<DVec2> = round_corners(&shaped(&pts, wid, len, 3), nub, std::f64::consts::FRAC_PI_4);
         let spacing = if p.get("detail") > 0.0 { p.get("detail") } else { len / 14.0 };
         let spec = ShellSpec { contours: vec![outline], spacing, thickness: p.get("thickness"), cup: p.get("cup"), bend: p.get("bend"), twist: 0.0 };
         let mut mesh = shell(&spec).map_err(|e| FeatureError { path: "/params".into(), message: e.to_string(), suggestions: Vec::new() })?;

@@ -25,6 +25,7 @@ mod nose;
 pub mod ornament;
 mod outline;
 mod tube;
+pub mod vegetation;
 pub mod wing;
 
 /// What kind of value a parameter takes.
@@ -173,6 +174,8 @@ fn kind_word(k: ParamKind) -> &'static str {
 pub struct Params {
     values: BTreeMap<&'static str, f64>,
     choices: BTreeMap<&'static str, &'static str>,
+    /// Names of the parameters the caller gave (the rest are defaults).
+    given: std::collections::BTreeSet<&'static str>,
 }
 
 impl Params {
@@ -191,6 +194,11 @@ impl Params {
 
     pub fn choice(&self, name: &str) -> &'static str {
         self.choices.get(name).copied().unwrap_or("")
+    }
+
+    /// Whether the caller gave this parameter (presets fill the others).
+    pub fn given(&self, name: &str) -> bool {
+        self.given.contains(name)
     }
 }
 
@@ -248,6 +256,9 @@ pub fn library() -> Vec<Box<dyn Feature>> {
         Box::new(hand::Hand),
         Box::new(cable::Cable),
         Box::new(wing::Wing),
+        Box::new(vegetation::Tree),
+        Box::new(vegetation::Flower),
+        Box::new(vegetation::GrassCards),
     ];
     v.sort_by_key(|f| f.info().id);
     v
@@ -317,6 +328,9 @@ pub fn resolve_params(id: &str, params: &[ParamInfo], v: &Value) -> Result<Param
     for p in params {
         let path = format!("/params/{}", p.name);
         let given = obj.get(p.name);
+        if given.is_some() {
+            out.given.insert(p.name);
+        }
         if let ParamKind::Choice(words) = p.kind {
             let w = match given {
                 None => words.get(p.default as usize).copied().unwrap_or(""),

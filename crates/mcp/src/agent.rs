@@ -10,12 +10,13 @@ use p3d_engine::predict::{apply_fix, diagnose_predicted, explain, op_error};
 use p3d_engine::{BatchOptions, OpCall, Session};
 use p3d_ops::catalog::catalog_json;
 use p3d_ops::{ErrorCode, OpError, parse_params};
-use p3d_perceive::diagnose::{Finding, diagnose, findings_text};
+use p3d_perceive::diagnose::{Finding, findings_text};
 use p3d_perceive::fmt::{dims, point, thousands};
 use p3d_perceive::section::SectionOptions;
 use p3d_perceive::silhouette::SilhouetteOptions;
 use p3d_perceive::{Report, View, expect as checks};
 use p3d_scene::Document;
+use p3d_spec::diagnose::diagnose;
 use serde_json::{Value, json};
 
 use crate::args::*;
@@ -100,7 +101,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "perceive",
-            description: "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief or dna, as compact text.",
+            description: "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief, dna or vegetation, as compact text.",
             schema: schema::<PerceiveArgs>(),
         },
         ToolInfo {
@@ -478,6 +479,7 @@ impl Agent {
                         })?
                     }
                     Aspect::Visibility => p3d_perceive::visibility::report(&view),
+                    Aspect::Vegetation => p3d_perceive::vegetation::report(&view),
                     Aspect::Dna => {
                         let root = target.and_then(|t| doc.resolve(t).ok());
                         let genes = a.dna.clone().or_else(|| root.and_then(|k| p3d_spec::dna_of(&doc, k))).unwrap_or_default();

@@ -553,3 +553,24 @@ fn strands_part_errors_point_into_the_params() {
     let e = run(&mut tx, "spec.set", with(json!({ "strands": "hair", "params": { "on": "head" }, "join": "blend" }))).unwrap_err();
     assert_eq!(e.path.as_deref(), Some("/spec/parts/hair/join"), "{e:?}");
 }
+
+#[test]
+fn tree_parts_are_vegetation_with_landmarks_to_anchor_on() {
+    let mut tx = Tx::new(Document::new());
+    let s = ok(
+        &mut tx,
+        "spec.set",
+        json!({ "name": "yard", "spec": { "parts": {
+            "oak": { "feature": "tree", "params": { "species": "stylized", "height": "5m" } },
+            "oak_2": { "mirror": "oak" },
+            "nest": { "primitive": { "uv_sphere": { "radius": 0.2 } }, "anchor": { "on": "oak", "landmark": "fork" } }
+        } } }),
+    );
+    assert!(s.contains("3 parts, 3 built"), "{s}");
+    for p in ["yard/oak", "yard/oak_2"] {
+        assert!(tx.doc().object(key(&tx, p)).unwrap().tags.iter().any(|t| t == "vegetation"), "{p}");
+    }
+    assert!(!tx.doc().object(key(&tx, "yard/nest")).unwrap().tags.iter().any(|t| t == "vegetation"));
+    let fork = at(&tx, "yard/nest").y;
+    assert!((1.5..2.6).contains(&fork), "the nest sits in the fork: {fork}");
+}
