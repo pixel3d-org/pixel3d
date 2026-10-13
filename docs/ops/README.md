@@ -91,6 +91,7 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 | [`edit.dissolve`](edit.dissolve.md) | Removes vertices, edges or faces while keeping the surface closed, merging the faces around them into polygons. |
 | [`edit.plane_cut`](edit.plane_cut.md) | Cuts the mesh along a plane, optionally removing one side and capping the opening. |
 | [`edit.symmetrize`](edit.symmetrize.md) | Makes a mesh mirror-symmetric: keeps one half and replaces the other with its mirror image, welded at the seam. |
+| [`edit.boolean`](edit.boolean.md) | Cuts other mesh objects out of a mesh, adds them to it, or keeps only the overlap, with clean polygons. |
 | [`edit.thicken`](edit.thicken.md) | Gives surfaces a wall thickness: an offset back side joined to the front along open borders. |
 | [`edit.smooth`](edit.smooth.md) | Smooths vertex positions without shrinking the shape (Taubin smoothing). |
 | [`edit.bevel`](edit.bevel.md) | Rounds or chamfers edges: each edge becomes a strip of faces `width` wide, with caps where strips meet or end. |

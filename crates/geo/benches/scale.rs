@@ -313,6 +313,20 @@ fn scale(c: &mut Criterion) {
     }
     g.finish();
 
+    // Boolean union of two offset spheres of `t` triangles each, with the
+    // engine and the whole cleanup (polygon merge, refill, weld).
+    let mut g = c.benchmark_group("scale_boolean_union");
+    for &t in &sizes {
+        let a = sphere(t);
+        let mut b = a.clone();
+        b.transform(Affine3A::from_rotation_translation(glam::Quat::from_rotation_y(0.2), Vec3::new(0.3, 0.1, 0.05)));
+        let spec = p3d_geo::boolean::BooleanSpec::default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &(a, b), |bench, (a, b)| {
+            bench.iter(|| p3d_geo::boolean::boolean(black_box(a), &[b], &spec, &p3d_geo::boolean::ManifoldEngine))
+        });
+    }
+    g.finish();
+
     // Curve kernels on a wavy closed polyline of `t` points.
     let wave = |t: usize| -> Vec<Vec3> {
         (0..t)

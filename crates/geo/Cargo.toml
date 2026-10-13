@@ -12,6 +12,7 @@ workspace = true
 
 [dependencies]
 glam = { workspace = true }
+manifold-rust = { workspace = true }
 obvhs = { workspace = true }
 p3d-mesh = { workspace = true }
 rustc-hash = { workspace = true }
@@ -23,9 +24,6 @@ thiserror = { workspace = true }
 proptest = { workspace = true }
 criterion = { workspace = true }
 p3d-testdata = { workspace = true }
-# Boolean engine candidates, compared by benches/boolean_eval.rs (ADR 0008).
-manifold-rust = { workspace = true }
-boolmesh = { workspace = true }
 
 [[bench]]
 name = "prim"

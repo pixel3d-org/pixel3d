@@ -2,6 +2,7 @@
 //!
 //! Layer L2 (algorithms). See `docs/architecture.md`.
 
+pub mod boolean;
 pub mod bvh;
 pub mod cleanup;
 pub mod curve;

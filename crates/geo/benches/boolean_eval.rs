@@ -1,6 +1,8 @@
-//! Boolean engine evaluation (ADR 0008): manifold-rust against boolmesh on
-//! correctness (valid manifold results, volumes, coplanar and degenerate
-//! cases, random pairs) and speed. Run with
+//! Boolean correctness and speed check for engine upgrades (ADR 0008):
+//! `p3d_geo::boolean` on manifold-rust over named cases (offset, touching,
+//! coplanar, identical and nearly identical cubes, spheres) and 200 random
+//! pairs, checking closed results, volumes and inclusion-exclusion, then
+//! timing unions of growing spheres. Run with
 //! `cargo bench -p p3d-geo --bench boolean_eval`.
 
 // A measurement program, not library code: it reports with println and stops on setup errors.
@@ -9,128 +11,30 @@
 use std::time::{Duration, Instant};
 
 use glam::{Affine3A, DVec3, Quat, Vec3};
+use p3d_geo::boolean::{BoolOp, BooleanError, BooleanSpec, ManifoldEngine, boolean};
 use p3d_geo::prim::{BoxSpec, IcoSphereSpec, Origin, QuadSphereSpec, cuboid, ico_sphere, quad_sphere};
 use p3d_mesh::Mesh;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-enum Op {
-    Union,
-    Difference,
-    Intersect,
+fn volume(m: &Mesh) -> f64 {
+    m.faces()
+        .flat_map(|f| m.face_triangles(f))
+        .map(|t| {
+            let [a, b, c] = t.map(|h| m.positions[m.origin(h) as usize].as_dvec3());
+            a.dot(b.cross(c)) / 6.0
+        })
+        .sum()
 }
 
-/// Welded triangles: positions and three indices per triangle.
-#[derive(Clone, Default)]
-struct Tris {
-    pos: Vec<DVec3>,
-    idx: Vec<usize>,
+fn closed(m: &Mesh) -> bool {
+    m.edges().all(|e| !m.is_boundary_edge(e))
 }
 
-fn tris(m: &Mesh) -> Tris {
-    let mut m = m.clone();
-    m.compact();
-    let mut idx = Vec::new();
-    for f in m.faces() {
-        for t in m.face_triangles(f) {
-            idx.extend(t.map(|h| m.origin(h) as usize));
-        }
-    }
-    Tris { pos: m.positions.iter().map(|p| p.as_dvec3()).collect(), idx }
-}
-
-fn volume(t: &Tris) -> f64 {
-    t.idx.chunks(3).map(|c| t.pos[c[0]].dot(t.pos[c[1]].cross(t.pos[c[2]]))).sum::<f64>() / 6.0
-}
-
-/// Whether the result is a closed, consistently wound 2-manifold (it builds
-/// into a `Mesh` with no open edges).
-fn manifold(t: &Tris) -> bool {
-    if t.idx.is_empty() {
-        return true;
-    }
-    let pos: Vec<Vec3> = t.pos.iter().map(|p| p.as_vec3()).collect();
-    let idx: Vec<u32> = t.idx.iter().map(|&i| i as u32).collect();
-    // Drop unused vertices so the builder accepts the soup.
-    let mut used = vec![false; pos.len()];
-    idx.iter().for_each(|&i| used[i as usize] = true);
-    let mut map = vec![u32::MAX; pos.len()];
-    let mut kept = Vec::new();
-    for (i, p) in pos.iter().enumerate() {
-        if used[i] {
-            map[i] = kept.len() as u32;
-            kept.push(*p);
-        }
-    }
-    let idx: Vec<u32> = idx.iter().map(|&i| map[i as usize]).collect();
-    match Mesh::from_polygons(kept, &vec![3; idx.len() / 3], &idx) {
-        Ok(m) => m.edges().all(|e| !m.is_boundary_edge(e)),
-        Err(_) => false,
-    }
-}
-
-trait Engine {
-    fn name(&self) -> &'static str;
-    fn run(&self, a: &Tris, b: &Tris, op: Op) -> Result<Tris, String>;
-}
-
-struct ManifoldRust;
-
-impl Engine for ManifoldRust {
-    fn name(&self) -> &'static str {
-        "manifold-rust"
-    }
-
-    fn run(&self, a: &Tris, b: &Tris, op: Op) -> Result<Tris, String> {
-        use manifold_rust::manifold::Manifold;
-        use manifold_rust::types::{BooleanEngine, MeshGL64, OpType};
-        let to = |t: &Tris| {
-            let mesh = MeshGL64 {
-                num_prop: 3,
-                vert_properties: t.pos.iter().flat_map(|p| [p.x, p.y, p.z]).collect(),
-                tri_verts: t.idx.iter().map(|&i| i as u64).collect(),
-                ..MeshGL64::default()
-            };
-            Manifold::from_mesh_gl64(&mesh)
-        };
-        let (ma, mb) = (to(a), to(b));
-        let op = match op {
-            Op::Union => OpType::Add,
-            Op::Difference => OpType::Subtract,
-            Op::Intersect => OpType::Intersect,
-        };
-        let r = ma.boolean_with_engine(&mb, op, BooleanEngine::Exact);
-        if r.status() != manifold_rust::types::Error::NoError {
-            return Err(format!("{:?}", r.status()));
-        }
-        let g = r.get_mesh_gl64(-1);
-        let n = g.num_prop as usize;
-        let pos = g.vert_properties.chunks(n).map(|c| DVec3::new(c[0], c[1], c[2])).collect();
-        Ok(Tris { pos, idx: g.tri_verts.iter().map(|&i| i as usize).collect() })
-    }
-}
-
-struct BoolMesh;
-
-impl Engine for BoolMesh {
-    fn name(&self) -> &'static str {
-        "boolmesh"
-    }
-
-    fn run(&self, a: &Tris, b: &Tris, op: Op) -> Result<Tris, String> {
-        use boolmesh::prelude::{Manifold, OpType, compute_boolean};
-        let to = |t: &Tris| {
-            let pos: Vec<f64> = t.pos.iter().flat_map(|p| [p.x, p.y, p.z]).collect();
-            Manifold::new(&pos, &t.idx)
-        };
-        let (ma, mb) = (to(a)?, to(b)?);
-        let op = match op {
-            Op::Union => OpType::Add,
-            Op::Difference => OpType::Subtract,
-            Op::Intersect => OpType::Intersect,
-        };
-        let r = compute_boolean(&ma, &mb, op)?;
-        let pos = r.ps.iter().map(|p| DVec3::new(p.x, p.y, p.z)).collect();
-        Ok(Tris { pos, idx: r.hs.iter().map(|h| h.tail).collect() })
+/// The result's volume, 0 for an empty result.
+fn run(a: &Mesh, b: &Mesh, op: BoolOp) -> Result<Option<Mesh>, BooleanError> {
+    match boolean(a, &[b], &BooleanSpec { op, ..BooleanSpec::default() }, &ManifoldEngine) {
+        Ok(r) => Ok(Some(r.mesh)),
+        Err(BooleanError::Empty) => Ok(None),
+        Err(e) => Err(e),
     }
 }
 
@@ -156,32 +60,32 @@ impl Rng {
 
 struct Case {
     name: String,
-    a: Tris,
-    b: Tris,
-    op: Op,
+    a: Mesh,
+    b: Mesh,
+    op: BoolOp,
     expect: Option<f64>,
 }
 
 fn cases() -> Vec<Case> {
     let c = cube(1.0);
     let mut out = Vec::new();
-    let mut add = |name: &str, a: &Mesh, b: &Mesh, op: Op, expect: Option<f64>| {
-        out.push(Case { name: name.into(), a: tris(a), b: tris(b), op, expect });
+    let mut add = |name: &str, a: &Mesh, b: &Mesh, op: BoolOp, expect: Option<f64>| {
+        out.push(Case { name: name.into(), a: a.clone(), b: b.clone(), op, expect });
     };
     let off = moved(&c, Vec3::splat(0.5), Quat::IDENTITY);
-    add("cube | offset cube", &c, &off, Op::Union, Some(1.875));
-    add("cube - offset cube", &c, &off, Op::Difference, Some(0.875));
-    add("cube & offset cube", &c, &off, Op::Intersect, Some(0.125));
-    add("cube | touching cube", &c, &moved(&c, Vec3::X, Quat::IDENTITY), Op::Union, Some(2.0));
-    add("cube | coplanar half", &c, &moved(&c, Vec3::X * 0.5, Quat::IDENTITY), Op::Union, Some(1.5));
-    add("cube - coplanar slab", &c, &moved(&cube(1.0), Vec3::new(0.0, 0.75, 0.0), Quat::IDENTITY), Op::Difference, Some(0.75));
-    add("cube | same cube", &c, &c, Op::Union, Some(1.0));
-    add("cube - same cube", &c, &c, Op::Difference, Some(0.0));
-    add("cube | 1e-9 shift", &c, &moved(&c, Vec3::splat(1e-9), Quat::IDENTITY), Op::Union, None);
-    add("cube - rotated cube", &c, &moved(&c, Vec3::ZERO, Quat::from_rotation_y(0.4)), Op::Difference, None);
+    add("cube | offset cube", &c, &off, BoolOp::Union, Some(1.875));
+    add("cube - offset cube", &c, &off, BoolOp::Difference, Some(0.875));
+    add("cube & offset cube", &c, &off, BoolOp::Intersect, Some(0.125));
+    add("cube | touching cube", &c, &moved(&c, Vec3::X, Quat::IDENTITY), BoolOp::Union, Some(2.0));
+    add("cube | coplanar half", &c, &moved(&c, Vec3::X * 0.5, Quat::IDENTITY), BoolOp::Union, Some(1.5));
+    add("cube - coplanar slab", &c, &moved(&cube(1.0), Vec3::new(0.0, 0.75, 0.0), Quat::IDENTITY), BoolOp::Difference, Some(0.75));
+    add("cube | same cube", &c, &c, BoolOp::Union, Some(1.0));
+    add("cube - same cube", &c, &c, BoolOp::Difference, Some(0.0));
+    add("cube | 1e-9 shift", &c, &moved(&c, Vec3::splat(1e-9), Quat::IDENTITY), BoolOp::Union, None);
+    add("cube - rotated cube", &c, &moved(&c, Vec3::ZERO, Quat::from_rotation_y(0.4)), BoolOp::Difference, None);
     let s = quad_sphere(&QuadSphereSpec { radius: 0.6, segments: 8 }, Origin::Center).unwrap();
-    add("cube - sphere", &c, &s, Op::Difference, None);
-    add("sphere & cube", &s, &c, Op::Intersect, None);
+    add("cube - sphere", &c, &s, BoolOp::Difference, None);
+    add("sphere & cube", &s, &c, BoolOp::Intersect, None);
     // Random pairs of boxes and spheres, rotated and offset.
     let mut rng = Rng(42);
     for i in 0..200 {
@@ -197,90 +101,75 @@ fn cases() -> Vec<Case> {
         let b = pick(&mut rng);
         let t = Vec3::new(rng.next() - 0.5, rng.next() - 0.5, rng.next() - 0.5);
         let r = Quat::from_euler(glam::EulerRot::XYZ, rng.next() * 3.0, rng.next() * 3.0, rng.next() * 3.0);
-        let op = [Op::Union, Op::Difference, Op::Intersect][i % 3];
+        let op = [BoolOp::Union, BoolOp::Difference, BoolOp::Intersect][i % 3];
         add(&format!("random {i}"), &a, &moved(&b, t, r), op, None);
     }
     out
 }
 
 fn main() {
-    let engines: [&dyn Engine; 2] = [&ManifoldRust, &BoolMesh];
     let cases = cases();
     println!("\n== correctness ({} cases) ==", cases.len());
-    for e in engines {
-        let (mut ok, mut failed, mut not_manifold, mut wrong_volume, mut inconsistent) = (0, 0, 0, 0, 0);
-        let mut notes = Vec::new();
-        let mut time = Duration::ZERO;
-        for c in &cases {
-            let start = Instant::now();
-            let r = e.run(&c.a, &c.b, c.op);
-            time += start.elapsed();
-            match r {
-                Err(msg) => {
-                    failed += 1;
-                    if notes.len() < 6 {
-                        notes.push(format!("{}: error {msg}", c.name));
-                    }
-                }
-                Ok(t) => {
-                    let v = volume(&t);
-                    let good_shape = manifold(&t);
-                    if !good_shape {
-                        not_manifold += 1;
-                        if notes.len() < 6 {
-                            notes.push(format!("{}: result is not a closed manifold", c.name));
-                        }
-                    }
-                    if let Some(x) = c.expect
-                        && (v - x).abs() > 1e-6
-                    {
-                        wrong_volume += 1;
-                        notes.push(format!("{}: volume {v:.6}, expected {x}", c.name));
-                    }
-                    // Inclusion and exclusion: |A| + |B| = |A u B| + |A n B|.
-                    if c.op == Op::Union
-                        && let Ok(i) = e.run(&c.a, &c.b, Op::Intersect)
-                    {
-                        let err = (volume(&c.a) + volume(&c.b) - v - volume(&i)).abs();
-                        if err > 1e-6 * (volume(&c.a) + volume(&c.b)) {
-                            inconsistent += 1;
-                            if notes.len() < 8 {
-                                notes.push(format!("{}: union and intersection disagree by {err:.2e}", c.name));
-                            }
-                        }
-                    }
-                    if good_shape && !c.expect.is_some_and(|x| (v - x).abs() > 1e-6) {
-                        ok += 1;
-                    }
-                }
+    let (mut ok, mut failed, mut open, mut wrong_volume, mut inconsistent) = (0, 0, 0, 0, 0);
+    let mut notes = Vec::new();
+    let mut time = Duration::ZERO;
+    for c in &cases {
+        let start = Instant::now();
+        let r = run(&c.a, &c.b, c.op);
+        time += start.elapsed();
+        let m = match r {
+            Err(e) => {
+                failed += 1;
+                notes.push(format!("{}: error {e}", c.name));
+                continue;
+            }
+            Ok(m) => m,
+        };
+        let v = m.as_ref().map_or(0.0, volume);
+        let good = m.as_ref().is_none_or(closed);
+        if !good {
+            open += 1;
+            notes.push(format!("{}: the result is not closed", c.name));
+        }
+        let wrong = c.expect.is_some_and(|x| (v - x).abs() > 1e-5);
+        if wrong {
+            wrong_volume += 1;
+            notes.push(format!("{}: volume {v:.6}, expected {:?}", c.name, c.expect));
+        }
+        // Inclusion and exclusion: |A| + |B| = |A u B| + |A n B|.
+        if c.op == BoolOp::Union
+            && let Ok(i) = run(&c.a, &c.b, BoolOp::Intersect)
+        {
+            let total = volume(&c.a) + volume(&c.b);
+            let err = (total - v - i.as_ref().map_or(0.0, volume)).abs();
+            if err > 1e-5 * total {
+                inconsistent += 1;
+                notes.push(format!("{}: union and intersection disagree by {err:.2e}", c.name));
             }
         }
-        println!(
-            "{:<14} ok {ok:>3}  errors {failed:>3}  not manifold {not_manifold:>3}  wrong volume {wrong_volume:>3}  inconsistent {inconsistent:>3}  total time {:.1} ms",
-            e.name(),
-            time.as_secs_f64() * 1e3
-        );
-        for n in notes {
-            println!("    {n}");
+        if good && !wrong {
+            ok += 1;
         }
     }
-    println!("\n== speed: union of two offset spheres of n triangles each ==");
+    println!(
+        "ok {ok:>3}  errors {failed:>3}  not closed {open:>3}  wrong volume {wrong_volume:>3}  inconsistent {inconsistent:>3}  total time {:.1} ms",
+        time.as_secs_f64() * 1e3
+    );
+    for n in notes.iter().take(12) {
+        println!("    {n}");
+    }
+    println!("\n== speed: union of two offset spheres of n triangles each, with cleanup ==");
     for n in [4_000usize, 16_000, 64_000, 256_000] {
         let a = p3d_testdata::sphere(n);
         let b = moved(&a, Vec3::new(0.3, 0.1, 0.05), Quat::from_rotation_y(0.2));
-        let (ta, tb) = (tris(&a), tris(&b));
-        let mut row = format!("{:>7} tris", ta.idx.len() / 3);
-        for e in engines {
-            let start = Instant::now();
-            let r = e.run(&ta, &tb, Op::Union);
-            let ms = start.elapsed().as_secs_f64() * 1e3;
-            let status = match &r {
-                Ok(t) if manifold(t) => "ok",
-                Ok(_) => "not manifold",
-                Err(_) => "error",
-            };
-            row.push_str(&format!("   {}: {ms:>8.1} ms ({status})", e.name()));
-        }
-        println!("{row}");
+        let start = Instant::now();
+        let r = run(&a, &b, BoolOp::Union);
+        let ms = start.elapsed().as_secs_f64() * 1e3;
+        let status = match &r {
+            Ok(Some(m)) if closed(m) => format!("ok, {} faces", m.face_count()),
+            Ok(_) => "not closed".to_owned(),
+            Err(e) => format!("error {e}"),
+        };
+        println!("{:>7} faces: {ms:>8.1} ms ({status})", a.face_count());
     }
 }

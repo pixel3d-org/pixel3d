@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 
 use glam::{DVec2, Vec3};
 use p3d_mesh::Mesh;
+use rustc_hash::FxHashMap;
 use spade::{ConstrainedDelaunayTriangulation, Point2, Triangulation};
 
 use super::invalid;
@@ -77,6 +78,24 @@ pub(crate) fn orient(contours: &[Vec<DVec2>]) -> Result<(Vec<Vec<DVec2>>, Vec<bo
 ///
 /// Complexity: O(n log n) in contour points.
 pub(crate) fn fill(contours: &[Vec<DVec2>]) -> Result<Vec<Vec<u32>>, PrimError> {
+    let tris = fill_tris(contours)?;
+    // Join pairs into quads on a flat temporary mesh (vertex ids are kept).
+    let positions: Vec<Vec3> = contours.iter().flatten().map(|p| Vec3::new(p.x as f32, p.y as f32, 0.0)).collect();
+    let corners: Vec<u32> = tris.iter().flatten().copied().collect();
+    let mut mesh = Mesh::from_polygons(positions, &vec![3; tris.len()], &corners)?;
+    let faces: Vec<u32> = mesh.faces().collect();
+    // Flat caps tolerate rougher quads than curved surfaces (trapezoids between nested contours).
+    let spec = QuadSpec { max_face_angle_deg: 1.0, max_shape_angle_deg: 60.0, ignore_boundaries: false };
+    tris_to_quads(&mut mesh, &faces, &spec).map_err(|e| invalid("shape", "fill", e.to_string()))?;
+    Ok(mesh.faces().map(|f| mesh.face_verts(f).collect()).collect())
+}
+
+/// The constrained Delaunay triangles of the area the contours enclose
+/// (even-odd), counter-clockwise, indexing the contours' points
+/// concatenated in order.
+///
+/// Complexity: O(n log n) in contour points.
+pub(crate) fn fill_tris(contours: &[Vec<DVec2>]) -> Result<Vec<[u32; 3]>, PrimError> {
     let total: usize = contours.iter().map(Vec::len).sum();
     let mut verts = Vec::with_capacity(total);
     let mut edges = Vec::with_capacity(total);
@@ -125,16 +144,64 @@ pub(crate) fn fill(contours: &[Vec<DVec2>]) -> Result<Vec<Vec<u32>>, PrimError> 
     if tris.is_empty() {
         return Err(invalid("shape", "contours", "enclose nothing"));
     }
+    Ok(tris)
+}
 
-    // Join pairs into quads on a flat temporary mesh (vertex ids are kept).
-    let positions: Vec<Vec3> = contours.iter().flatten().map(|p| Vec3::new(p.x as f32, p.y as f32, 0.0)).collect();
-    let corners: Vec<u32> = tris.iter().flatten().copied().collect();
-    let mut mesh = Mesh::from_polygons(positions, &vec![3; tris.len()], &corners)?;
-    let faces: Vec<u32> = mesh.faces().collect();
-    // Flat caps tolerate rougher quads than curved surfaces (trapezoids between nested contours).
-    let spec = QuadSpec { max_face_angle_deg: 1.0, max_shape_angle_deg: 60.0, ignore_boundaries: false };
-    tris_to_quads(&mut mesh, &faces, &spec).map_err(|e| invalid("shape", "fill", e.to_string()))?;
-    Ok(mesh.faces().map(|f| mesh.face_verts(f).collect()).collect())
+/// Merges counter-clockwise triangles into convex polygons (Hertel and
+/// Mehlhorn): shared edges go longest first whenever both of their ends
+/// stay convex (straight counts as convex). The result has at most four
+/// times as many polygons as the fewest convex ones, and every polygon is
+/// simple. Polygons index `pts` and run counter-clockwise.
+///
+/// Complexity: O(n log n) for n triangles.
+pub(crate) fn convex_merge(pts: &[DVec2], tris: &[[u32; 3]]) -> Vec<Vec<u32>> {
+    let hn = 3 * tris.len();
+    // Half-edge h runs from corner h % 3 of triangle h / 3 to the next corner.
+    let from = |h: usize| tris[h / 3][h % 3];
+    let mut next: Vec<usize> = (0..hn).map(|h| h / 3 * 3 + (h % 3 + 1) % 3).collect();
+    let mut prev: Vec<usize> = (0..hn).map(|h| h / 3 * 3 + (h % 3 + 2) % 3).collect();
+    let by_ends: FxHashMap<(u32, u32), usize> = (0..hn).map(|h| ((from(h), from(next[h])), h)).collect();
+    let twin: Vec<usize> = (0..hn).map(|h| by_ends.get(&(from(next[h]), from(h))).copied().unwrap_or(usize::MAX)).collect();
+    let length = |h: usize| pts[from(h) as usize].distance(pts[from(next[h]) as usize]);
+    let mut shared: Vec<usize> = (0..hn).filter(|&h| twin[h] != usize::MAX && h < twin[h]).collect();
+    shared.sort_by(|&a, &b| length(b).total_cmp(&length(a)).then(a.cmp(&b)));
+    let convex = |a: u32, b: u32, c: u32| {
+        let (u, v) = (pts[b as usize] - pts[a as usize], pts[c as usize] - pts[b as usize]);
+        u.perp_dot(v) >= -1e-9 * u.length() * v.length()
+    };
+    let mut alive = vec![true; hn];
+    for h in shared {
+        let t = twin[h];
+        // h runs a -> b in one polygon, t runs b -> a in the other; after the
+        // merge a sits between prev(h) and next(t), b between prev(t) and next(h).
+        let (a, b) = (from(h), from(t));
+        if !convex(from(prev[h]), a, from(next[next[t]])) || !convex(from(prev[t]), b, from(next[next[h]])) {
+            continue;
+        }
+        let (ph, nh, pt, nt) = (prev[h], next[h], prev[t], next[t]);
+        next[ph] = nt;
+        prev[nt] = ph;
+        next[pt] = nh;
+        prev[nh] = pt;
+        alive[h] = false;
+        alive[t] = false;
+    }
+    let mut seen = vec![false; hn];
+    let mut out = Vec::new();
+    for h in 0..hn {
+        if !alive[h] || seen[h] {
+            continue;
+        }
+        let mut poly = Vec::new();
+        let mut e = h;
+        while !seen[e] {
+            seen[e] = true;
+            poly.push(from(e));
+            e = next[e];
+        }
+        out.push(poly);
+    }
+    out
 }
 
 /// Moves a closed contour sideways by `d` toward its left (into the solid
@@ -164,6 +231,29 @@ mod tests {
 
     fn square(c: DVec2, h: f64) -> Vec<DVec2> {
         vec![c + DVec2::new(-h, -h), c + DVec2::new(h, -h), c + DVec2::new(h, h), c + DVec2::new(-h, h)]
+    }
+
+    #[test]
+    fn convex_merge_keeps_area_and_convexity() {
+        let octagon: Vec<DVec2> = (0..8).map(|i| DVec2::from_angle(std::f64::consts::TAU * f64::from(i) / 8.0) * 0.1).collect();
+        let contours = vec![square(DVec2::ZERO, 0.3), octagon];
+        let pts = contours.concat();
+        let tris = fill_tris(&contours).unwrap();
+        let polys = convex_merge(&pts, &tris);
+        assert!(polys.len() < tris.len(), "{} pieces from {} triangles", polys.len(), tris.len());
+        // Every hole corner is reflex for the ring, so at least 8 pieces.
+        assert!(polys.len() >= 8);
+        assert!((area_of(&polys, &pts) - (0.36 - 2.0 * 2f64.sqrt() * 0.01)).abs() < 1e-9);
+        for p in &polys {
+            let q: Vec<DVec2> = p.iter().map(|&i| pts[i as usize]).collect();
+            for k in 0..q.len() {
+                let (a, b, c) = (q[k], q[(k + 1) % q.len()], q[(k + 2) % q.len()]);
+                assert!((b - a).perp_dot(c - b) >= -1e-12, "{q:?} is not convex");
+            }
+        }
+        // A plain square merges into one quad.
+        let one = vec![square(DVec2::ZERO, 1.0)];
+        assert_eq!(convex_merge(&one.concat(), &fill_tris(&one).unwrap()).len(), 1);
     }
 
     fn area_of(polys: &[Vec<u32>], pts: &[DVec2]) -> f64 {

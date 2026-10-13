@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0cdd24d6582a7e3b50916a0db4d65da1a3ffe8edea38bb16a04e7a0256408ec2 # shrinks to ka = 2, kb = 0, sa = 0.5, sb = 0.5, segments = 9, turn = [0.0, 0.0, 0.0], shift = [0.0, 0.0, 0.0]
+cc 8ec30925c0a652410f762055e0f42da32cf05833c9eab16a7b1a8c6bee6047f6 # shrinks to ka = 2, kb = 2, sa = 0.5, sb = 0.5, segments = 6, turn = [0.0, 0.0, 0.0], shift = [0.0, 0.0, 0.0]
+cc ac1ce06a2aab357b2f15eb73d415007e62761d878a379a4a5fa10fc929aaaaa1 # shrinks to ka = 2, kb = 0, sa = 0.5064476203499031, sb = 1.0607901014516319, segments = 6, turn = [-0.05611179, 1.3542101, 1.3464062], shift = [-0.17597659, 0.110006824, 0.04718544]

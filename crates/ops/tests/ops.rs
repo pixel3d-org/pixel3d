@@ -53,10 +53,6 @@ fn expect_fixture() -> Tx {
     tx
 }
 
-/// The fixture plus bin (o:5), an open box without its top, tiles (o:6), a
-/// triangulated 4 x 4 grid, and duct (o:7), two open tubes one above the
-/// other, and panels (o:9), two touching 1 m planes joined but not welded,
-/// for `edit.*` examples.
 /// A box, an open polyline `path` (o:2) and a closed rectangle `outline` (o:3).
 fn curve_fixture() -> Tx {
     let mut tx = Tx::new(Document::new());
@@ -66,6 +62,11 @@ fn curve_fixture() -> Tx {
     tx
 }
 
+/// The fixture plus bin (o:5), an open box without its top, tiles (o:6), a
+/// triangulated 4 x 4 grid, and duct (o:7), two open tubes one above the
+/// other, and panels (o:9), two touching 1 m planes joined but not welded,
+/// and drill (o:11), a thin cylinder through crate,
+/// for `edit.*` examples.
 fn edit_fixture() -> Tx {
     let mut tx = fixture();
     ok(&mut tx, "prim.box", json!({ "name": "bin", "width": 0.4, "height": 0.3, "depth": 0.4, "position": [-2, 0, 0] }));
@@ -79,6 +80,7 @@ fn edit_fixture() -> Tx {
     ok(&mut tx, "prim.plane", json!({ "name": "panels", "position": [5, 0, 0] }));
     ok(&mut tx, "prim.plane", json!({ "name": "panel_r", "position": [6, 0, 0] }));
     ok(&mut tx, "scene.join", json!({ "targets": ["panels", "panel_r"] }));
+    ok(&mut tx, "prim.cylinder", json!({ "name": "drill", "radius": 0.1, "height": 1.0, "segments": 8, "position": [0, -0.2, 0] }));
     tx
 }
 
@@ -986,4 +988,53 @@ fn expectations_are_added_checked_and_removed() {
     assert_eq!(ok(&mut tx, "expect.remove", json!({ "name": "E2" })), "removed E2 dims(lid); 2 left");
     let e = err(&mut tx, "expect.remove", json!({ "name": "E9" }));
     assert_eq!((e.code, e.path.as_deref()), (ErrorCode::NotFound, Some("/name")));
+}
+
+#[test]
+fn edit_boolean_cuts_adds_and_intersects() {
+    let mut tx = edit_fixture();
+    // The drill is deleted by default and its hole lined with 8 faces.
+    let s = ok(&mut tx, "edit.boolean", json!({ "target": "crate", "tool": "drill" }));
+    assert!(s.contains("deleted drill"), "{s}");
+    assert!(tx.resolve("drill", "/t").is_err());
+    let m = tx.doc().object_mesh(tx.resolve("crate", "/target").unwrap()).unwrap();
+    assert_eq!(m.group("boolean_1.cut").unwrap().count(), 8);
+    assert!(m.edges().all(|e| !m.is_boundary_edge(e)));
+    // Groups of the target survive: the top face is still "top", with a hole.
+    assert!(m.group("top").unwrap().count() >= 2);
+
+    // keep_tool, several tools and a union.
+    ok(&mut tx, "prim.box", json!({ "name": "knob", "width": 0.2, "height": 0.2, "depth": 0.2, "position": [0, 0.5, 0] }));
+    ok(&mut tx, "prim.box", json!({ "name": "knob2", "width": 0.2, "height": 0.2, "depth": 0.2, "position": [0.25, 0.5, 0] }));
+    let s = ok(&mut tx, "edit.boolean", json!({ "target": "crate", "tool": ["knob", "knob2"], "operation": "union", "keep_tool": true }));
+    assert!(s.contains("union with knob (o:"), "{s}");
+    assert!(!s.contains("deleted"), "{s}");
+    assert!(tx.resolve("knob2", "/t").is_ok());
+
+    // Intersection of disjoint objects is refused, nothing changes.
+    let e = err(&mut tx, "edit.boolean", json!({ "target": "crate", "tool": "post", "operation": "intersect" }));
+    assert_eq!(e.code, ErrorCode::Topology);
+    assert!(e.message.contains("do not overlap"), "{}", e.message);
+    // A difference that misses changes nothing and keeps the tool.
+    let s = ok(&mut tx, "edit.boolean", json!({ "target": "crate", "tool": "post" }));
+    assert!(s.contains("misses it; nothing changed"), "{s}");
+    assert!(tx.resolve("post", "/t").is_ok());
+}
+
+#[test]
+fn edit_boolean_errors_are_precise() {
+    let mut tx = edit_fixture();
+    let e = err(&mut tx, "edit.boolean", json!({ "target": "crate", "tool": "crate" }));
+    assert_eq!(e.path.as_deref(), Some("/tool"));
+    let e = err(&mut tx, "edit.boolean", json!({ "target": "crate", "tool": ["drill", "drill"] }));
+    assert_eq!(e.path.as_deref(), Some("/tool/1"));
+    let e = err(&mut tx, "edit.boolean", json!({ "target": "crate", "tool": [] }));
+    assert_eq!(e.path.as_deref(), Some("/tool"));
+    // The open bin has no inside.
+    let e = err(&mut tx, "edit.boolean", json!({ "target": "bin", "tool": "drill" }));
+    assert_eq!(e.code, ErrorCode::NonManifoldInput);
+    assert_eq!(e.path.as_deref(), Some("/target"));
+    assert!(e.message.contains("4 open edges"), "{}", e.message);
+    let e = err(&mut tx, "edit.boolean", json!({ "target": "crate", "tool": "hinge" }));
+    assert_eq!(e.path.as_deref(), Some("/tool"));
 }

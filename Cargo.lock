@@ -550,15 +550,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "boolmesh"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "db6504723206a532f9cace8eb63d339c14a17ad9c2b06d7c35b1c3127f7b945f"
-dependencies = [
- "glam 0.32.1",
-]
-
-[[package]]
 name = "borsh"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1788,12 +1779,6 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.32.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f70749695b063ecbf6b62949ccccde2e733ec3ecbbd71d467dca4e5c6c97cca0"
-
-[[package]]
-name = "glam"
 version = "0.34.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc148d4ddd3930c52f9e5ae79b89805c6f07e9ff417e7b083e0348cea60a5aba"
@@ -2986,7 +2971,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9e079e5dff9fc17017bfb526d5b71fe077e603de662e4b22f6deb4b6b36e5895"
 dependencies = [
  "bytemuck",
- "glam 0.34.1",
+ "glam",
  "half",
  "log",
  "rdst",
@@ -3053,7 +3038,7 @@ name = "p3d-analyze"
 version = "0.1.0"
 dependencies = [
  "criterion 0.8.2",
- "glam 0.34.1",
+ "glam",
  "p3d-geo",
  "p3d-mesh",
  "p3d-testdata",
@@ -3101,9 +3086,8 @@ version = "0.1.0"
 name = "p3d-geo"
 version = "0.1.0"
 dependencies = [
- "boolmesh",
  "criterion 0.8.2",
- "glam 0.34.1",
+ "glam",
  "manifold-rust",
  "obvhs",
  "p3d-mesh",
@@ -3125,7 +3109,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "criterion 0.8.2",
- "glam 0.34.1",
+ "glam",
  "p3d-geo",
  "p3d-math",
  "p3d-mesh",
@@ -3143,7 +3127,7 @@ dependencies = [
 name = "p3d-math"
 version = "0.1.0"
 dependencies = [
- "glam 0.34.1",
+ "glam",
  "thiserror 2.0.21",
 ]
 
@@ -3152,7 +3136,7 @@ name = "p3d-mcp"
 version = "0.1.0"
 dependencies = [
  "base64",
- "glam 0.34.1",
+ "glam",
  "insta",
  "p3d-engine",
  "p3d-mesh",
@@ -3177,7 +3161,7 @@ version = "0.1.0"
 dependencies = [
  "criterion 0.8.2",
  "fixedbitset",
- "glam 0.34.1",
+ "glam",
  "indexmap",
  "p3d-testdata",
  "proptest",
@@ -3190,7 +3174,7 @@ dependencies = [
 name = "p3d-ops"
 version = "0.1.0"
 dependencies = [
- "glam 0.34.1",
+ "glam",
  "p3d-analyze",
  "p3d-geo",
  "p3d-math",
@@ -3215,7 +3199,7 @@ name = "p3d-perceive"
 version = "0.1.0"
 dependencies = [
  "criterion 0.8.2",
- "glam 0.34.1",
+ "glam",
  "insta",
  "p3d-analyze",
  "p3d-geo",
@@ -3242,7 +3226,7 @@ name = "p3d-query"
 version = "0.1.0"
 dependencies = [
  "criterion 0.8.2",
- "glam 0.34.1",
+ "glam",
  "p3d-mesh",
  "p3d-scene",
  "p3d-testdata",
@@ -3261,7 +3245,7 @@ name = "p3d-render"
 version = "0.1.0"
 dependencies = [
  "bytemuck",
- "glam 0.34.1",
+ "glam",
  "p3d-mesh",
  "p3d-scene",
  "p3d-testdata",
@@ -3281,7 +3265,7 @@ name = "p3d-scene"
 version = "0.1.0"
 dependencies = [
  "criterion 0.8.2",
- "glam 0.34.1",
+ "glam",
  "p3d-math",
  "p3d-mesh",
  "p3d-testdata",
@@ -3308,7 +3292,7 @@ version = "0.1.0"
 name = "p3d-testdata"
 version = "0.1.0"
 dependencies = [
- "glam 0.34.1",
+ "glam",
  "p3d-geo",
  "p3d-mesh",
  "p3d-scene",
@@ -3327,7 +3311,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui_kittest",
- "glam 0.34.1",
+ "glam",
  "p3d-control",
  "p3d-engine",
  "p3d-geo",

@@ -42,3 +42,14 @@ Use manifold-rust (Exact engine) behind `p3d_geo::boolean::Engine`, a trait with
 boolmesh's per-corner value interpolation is attractive, but manifold-rust's vertex properties cover UVs as well.
 
 The comparison harness stays in history (this ADR's commit). After the switch it is reduced to manifold-rust and kept as a correctness and speed check for engine upgrades.
+
+## Cleanup after the engine
+
+The engine returns triangles. `p3d_geo::boolean` gives every input triangle a unique id and gets it back on each output triangle. That gives exact barycentric interpolation of UVs and colors, and tells which source polygon every output triangle came from. The cleanup then:
+
+- merges the triangles of each source polygon back into one polygon where its outline is a single loop (untouched faces come back exactly as they were);
+- refills a face the cut punched a hole through with a constrained Delaunay triangulation, merged into convex polygons (Hertel and Mehlhorn), instead of the engine's slivers. Convex pieces were chosen over quads because quad joins with a 60 degree shape limit left a square with an octagon hole as 12 triangles, while convex merging gives the minimum of 8 pieces;
+- drops cut points left on straight edges (where the cut crossed a quad's diagonal), but only where both faces around them can be rebuilt without them;
+- welds cut vertices closer than `weld` (0.1 mm by default), so no sliver edges stay; a result that collapses completely is reported as empty.
+
+The comparison harness is now `benches/boolean_eval.rs` on this pipeline: 212 of 212 cases correct, and a union of two 4k-triangle spheres takes 12.5 ms including cleanup.

@@ -83,7 +83,7 @@ Acceptance:
 - [x] Subdivision (`subd.catmull_clark`: semi-sharp creases (DeRose et al. 1998; crease x 10 = sharpness, one level less per level), borders as creases with fixed corners, UVs and colors interpolated, groups, flags and creases carried; `crates/geo/src/subd.rs`, slope 1.04)
 - [x] Deformers (`deform.bend`, `twist`, `taper`, `displace` (seeded fractal gradient noise along area-weighted normals); `crates/geo/src/deform.rs`, slopes 0.90 and 0.97; `lattice` is a later phase)
 - [x] `cleanup.auto` and `cleanup.report` (weld until settled, degenerate collapse, specks, small holes except flat sheets, flat triangle pairs to quads, buried parts by BVH ray parity with cavities kept, outward by volume or area-weighted ray votes; idempotent by property test; slope 0.99; ADR 0007: soup repair such as non-manifold splits belongs to import)
-- [ ] Booleans (benchmark manifold-rust against boolmesh, choose, ADR)
+- [x] Booleans (`edit.boolean`: difference, union, intersect with one or several tools; manifold-rust exact engine behind `p3d_geo::boolean::Engine` after a 212-case comparison with boolmesh (ADR 0008); cleanup merges the triangles of each source polygon back, refills faces with holes as convex polygons (Hertel and Mehlhorn), drops cut points on straight edges, welds slivers, interpolates UVs and colors, carries materials, sharp and seam flags, creases and the target's groups; `<label>.cut` and `<label>.edges`; warning for cuts across low-poly curved surfaces; property test on random primitives (closed results, volumes add up, 20,000 cases); slope 0.96)
 - [ ] glTF, OBJ and FBX import
 
 Acceptance:

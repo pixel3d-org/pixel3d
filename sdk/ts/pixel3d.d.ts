@@ -30,6 +30,9 @@ export type BevelParams = {
 /** Which rims of an extruded shape get the bevel. */
 export type BevelSides = "both" | "front" | "back";
 
+/** What the boolean keeps. */
+export type BoolOpParam = "difference" | "union" | "intersect";
+
 /** Advanced box settings. */
 export type BoxAdvanced = {
   /** Quads along X, Y and Z on each flat face. */
@@ -299,6 +302,9 @@ export type SubdAdvanced = {
   /** Treat edges marked sharp like fully creased edges. */
   sharp_as_crease?: boolean;
 };
+
+/** One object or several. */
+export type ToolsParam = string | string[];
 
 /** Advanced settings of `edit.tris_to_quads`. */
 export type TrisToQuadsAdvanced = {
@@ -1243,6 +1249,20 @@ export type EditSymmetrizeParams = {
   weld?: Length;
 };
 
+/** `edit.boolean`: Cuts other mesh objects out of a mesh, adds them to it, or keeps only the overlap, with clean polygons. */
+export type EditBooleanParams = {
+  /** Keep the tool objects; by default they are deleted (their children stay). */
+  keep_tool?: boolean;
+  /** `difference` (default: cut the tools out), `union` or `intersect`. */
+  operation?: BoolOpParam;
+  /** Mesh object that receives the result (name, path or id). */
+  target: string;
+  /** The mesh object to cut with, add or intersect, or a list of them (applied in order). */
+  tool: ToolsParam;
+  /** Vertices the cut makes closer than this merge, so no sliver edges remain; 0 keeps them. */
+  weld?: Length;
+};
+
 /** `edit.thicken`: Gives surfaces a wall thickness: an offset back side joined to the front along open borders. */
 export type EditThickenParams = {
   /** Where the wall goes: -1 behind the surface (default), 0 centered, 1 in front. */
@@ -1598,6 +1618,7 @@ export interface OpParams {
   "edit.dissolve": EditDissolveParams;
   "edit.plane_cut": EditPlaneCutParams;
   "edit.symmetrize": EditSymmetrizeParams;
+  "edit.boolean": EditBooleanParams;
   "edit.thicken": EditThickenParams;
   "edit.smooth": EditSmoothParams;
   "edit.bevel": EditBevelParams;
