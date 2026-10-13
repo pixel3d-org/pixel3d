@@ -308,9 +308,7 @@ fn whorls(spec: &TreeSpec, g: &mut Grower, trunk: &[u32], hull: &Hull, rng: &mut
         // Smaller branches between the whorls fill the tiers.
         for k in 0..2 {
             let a = az + 1.3 + k as f32 * std::f32::consts::PI + rng.unit();
-            if branch(g, y + gap * (0.35 + 0.3 * k as f32), a, 0.62, rng)? {
-                count += 1;
-            }
+            branch(g, y + gap * (0.35 + 0.3 * k as f32), a, 0.62, rng)?;
         }
         y += gap;
     }
