@@ -102,7 +102,8 @@ pub fn ci() -> Result<(), String> {
         vec![
             ("fmt", cargo_step(&["fmt", "--all", "--", "--check"])),
             ("clippy", cargo_step(&["clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"])),
-            ("test", cargo_step(&["test", "--workspace", "--locked"])),
+            // Every failing test binary in one run (one CI round trip per platform).
+            ("test", cargo_step(&["test", "--workspace", "--locked", "--no-fail-fast"])),
             ("layers", Box::new(layers_step)),
             ("codegen", Box::new(|| crate::codegen::run(&["--check"]))),
             ("emdash", Box::new(emdash_step)),

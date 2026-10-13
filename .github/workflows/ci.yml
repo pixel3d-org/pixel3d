@@ -41,3 +41,16 @@ jobs:
       # fmt, clippy, test, layers, emdash, deny, release build.
       - name: cargo xtask ci
         run: cargo xtask ci
+
+      # Image tests that fail leave their pictures next to the baselines:
+      # keep them to see the difference or to add a per-platform baseline.
+      - name: Upload failing images
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failing-images-${{ matrix.os }}
+          path: |
+            **/tests/snapshots/**/*.new.png
+            **/tests/snapshots/**/*.diff.png
+            **/tests/golden/*.new.png
+          if-no-files-found: ignore

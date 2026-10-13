@@ -92,33 +92,79 @@ fn sheets_and_labels() {
     assert!(paper(labelled) > paper(plain) + 100);
 }
 
-/// Compares with a golden PNG: mean absolute difference under 2 levels and
-/// under 0.5% of pixels off by more than 48 levels (GPU drivers differ in
-/// edge coverage). `P3D_UPDATE_GOLDEN=1` rewrites the goldens.
+/// Largest channel difference of two RGBA pixels.
+fn pixel_diff(a: &[u8], b: &[u8]) -> u32 {
+    (0..3).map(|k| (i32::from(a[k]) - i32::from(b[k])).unsigned_abs()).max().unwrap_or(0)
+}
+
+/// Mean difference and pixels off by more than 48 levels, forgiving
+/// one-pixel shifts: each pixel matches its best neighbour within 3 x 3 in
+/// the other image, both ways. GPU rasterizers (Metal, WARP, lavapipe)
+/// place thin lines and edge coverage a pixel apart; a missing or extra
+/// edge still differs everywhere along it.
+///
+/// Complexity: O(w h) (18 lookups per pixel).
+fn compare(a: &[u8], b: &[u8], w: usize, h: usize) -> (f64, usize) {
+    let at = |img: &[u8], x: usize, y: usize| -> [u8; 4] {
+        let i = (y * w + x) * 4;
+        [img[i], img[i + 1], img[i + 2], img[i + 3]]
+    };
+    let best = |p: [u8; 4], other: &[u8], x: usize, y: usize| -> u32 {
+        let mut d = u32::MAX;
+        for ny in y.saturating_sub(1)..=(y + 1).min(h - 1) {
+            for nx in x.saturating_sub(1)..=(x + 1).min(w - 1) {
+                d = d.min(pixel_diff(&p, &at(other, nx, ny)));
+            }
+        }
+        d
+    };
+    let (mut sum, mut off) = (0u64, 0usize);
+    for y in 0..h {
+        for x in 0..w {
+            let d = best(at(a, x, y), b, x, y).max(best(at(b, x, y), a, x, y));
+            sum += u64::from(d);
+            off += usize::from(d > 48);
+        }
+    }
+    (sum as f64 / (w * h) as f64, off)
+}
+
+/// The goldens' tolerance: mean difference under 2 levels and under 0.5%
+/// of pixels off.
+fn close_enough((mean, off): (f64, usize), n: usize) -> bool {
+    mean < 2.0 && (off as f64) < 0.005 * n as f64
+}
+
+fn read_png(path: &std::path::Path) -> (Vec<u8>, u32, u32) {
+    let bytes = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e} (run with P3D_UPDATE_GOLDEN=1 once)", path.display()));
+    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
+    let mut reader = decoder.read_info().unwrap();
+    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut buf).unwrap();
+    (buf, info.width, info.height)
+}
+
+fn golden_path(name: &str, suffix: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(format!("{name}{suffix}.png"))
+}
+
+/// Compares with a golden PNG ([`compare`], [`close_enough`]). A failing
+/// render is written next to it as `<name>.new.png` (CI keeps it as an
+/// artifact). `P3D_UPDATE_GOLDEN=1` rewrites the goldens.
 fn golden(name: &str, img: &Image) {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(format!("{name}.png"));
+    let path = golden_path(name, "");
     if std::env::var("P3D_UPDATE_GOLDEN").is_ok_and(|v| v == "1") {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, img.to_png().unwrap()).unwrap();
         return;
     }
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{}: {e} (run with P3D_UPDATE_GOLDEN=1 once)", path.display()));
-    let decoder = png::Decoder::new(std::io::Cursor::new(bytes));
-    let mut reader = decoder.read_info().unwrap();
-    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buf).unwrap();
-    assert_eq!((info.width, info.height), (img.width, img.height), "{name}: size");
-    let (mut sum, mut off) = (0u64, 0usize);
-    for (a, b) in buf.chunks(4).zip(img.pixels.chunks(4)) {
-        let d = (0..3).map(|k| (i32::from(a[k]) - i32::from(b[k])).unsigned_abs()).max().unwrap_or(0);
-        sum += u64::from(d);
-        if d > 48 {
-            off += 1;
-        }
+    let (buf, w, h) = read_png(&path);
+    assert_eq!((w, h), (img.width, img.height), "{name}: size");
+    let (mean, off) = compare(&buf, &img.pixels, w as usize, h as usize);
+    if !close_enough((mean, off), (w * h) as usize) {
+        let _ = std::fs::write(golden_path(name, ".new"), img.to_png().unwrap());
+        panic!("{name}: mean difference {mean:.2}, {off} pixels off (see {name}.new.png)");
     }
-    let n = (img.width * img.height) as usize;
-    let mean = sum as f64 / n as f64;
-    assert!(mean < 2.0 && (off as f64) < 0.005 * n as f64, "{name}: mean difference {mean:.2}, {off} pixels off");
 }
 
 #[test]
@@ -129,4 +175,40 @@ fn golden_images() {
         let img = &renderer().render(&scene, &one(ViewKind::ThreeQuarter, mode, 192, true)).unwrap()[0].1;
         golden(&format!("crate_three_quarter_{}", mode.name()), img);
     }
+}
+
+/// The tolerance forgives a wireframe shifted by a pixel, not another
+/// picture or a missing edge.
+#[test]
+fn golden_tolerance_forgives_shifts_only() {
+    let (wire, w, h) = read_png(&golden_path("crate_three_quarter_wire", ""));
+    let (w, h) = (w as usize, h as usize);
+    let n = w * h;
+    // Shift right by one pixel.
+    let mut shifted = wire.clone();
+    for y in 0..h {
+        for x in (1..w).rev() {
+            let (to, from) = ((y * w + x) * 4, (y * w + x - 1) * 4);
+            shifted.copy_within(from..from + 4, to);
+        }
+    }
+    assert!(close_enough(compare(&wire, &shifted, w, h), n));
+    let (matcap, _, _) = read_png(&golden_path("crate_three_quarter_matcap", ""));
+    assert!(!close_enough(compare(&wire, &matcap, w, h), n));
+    // Edges missing from the left half.
+    let mut erased = wire.clone();
+    let paper = [wire[0], wire[1], wire[2], wire[3]];
+    let mut dark = 0;
+    for y in 0..h {
+        for x in 0..w / 2 {
+            let i = (y * w + x) * 4;
+            if erased[i] < 100 {
+                erased[i..i + 4].copy_from_slice(&paper);
+                dark += 1;
+            }
+        }
+    }
+    assert!(dark > 100, "{dark}");
+    let (mean, off) = compare(&wire, &erased, w, h);
+    assert!(!close_enough((mean, off), n), "mean {mean:.2}, {off} off");
 }
