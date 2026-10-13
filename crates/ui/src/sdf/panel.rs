@@ -87,6 +87,8 @@ struct Out {
     dragging: bool,
     /// A new detail (meters, `None` for automatic) and whether it is dragged.
     detail: Option<(Option<f64>, bool)>,
+    /// Open the quad remesh run card on the object.
+    remesh: bool,
 }
 
 /// The Shapes tab body.
@@ -122,6 +124,12 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
     mesh_fields(app, ui, &mut out);
     // Apply what was asked, in one place.
     app.sdf.hover_next = out.hovered;
+    app.sdf.panel_hover_next = ui.rect_contains_pointer(ui.clip_rect());
+    if out.remesh
+        && let Err(e) = app.open_job_card("remesh.quad")
+    {
+        app.set_status(e);
+    }
     if let Some(p) = out.select {
         app.sdf.selected = Some(p);
     }
@@ -416,5 +424,12 @@ fn mesh_fields(app: &PixelApp, ui: &mut egui::Ui, out: &mut Out) {
         ui.with_layout(Layout::top_down(Align::Min), |ui| {
             ui.add(egui::Label::new(RichText::new(note).font(theme::small()).color(tk.text_faint)).wrap());
         });
+        // Clean quads for UVs and rigging: a quad remesh of the result.
+        ui.add_space(4.0);
+        let b = ui.add_enabled(!app.job_card.busy(), egui::Button::new(t("Remesh to quads")));
+        crate::control::record_widget(ui, &b, t("Remesh to quads"), "button", None);
+        if b.on_hover_text(t("Quad remesh this mesh in the background. A later rebuild from the shapes replaces the remesh.")).clicked() {
+            out.remesh = true;
+        }
     });
 }

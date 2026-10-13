@@ -393,6 +393,10 @@ pub fn run(app: &mut PixelApp, a: &Action) -> Result<Value, String> {
     if a.input == Input::ToolsOnActive {
         return app.run_tools_on_active(a.op, &a.preset);
     }
+    // Long ops (remesh) open their run card and run in the background.
+    if crate::jobcard::runs_in_card(app.session.registry(), a.op) {
+        return app.open_job_card(a.op);
+    }
     let calls = calls(app, a)?;
     app.execute(&calls)
 }
@@ -421,6 +425,8 @@ impl ActionPreview {
 ///
 /// Complexity: O(1) per frame; the preview is one op run on a working copy.
 pub fn hover(app: &mut PixelApp, hovered: Option<&Action>, ctx: &egui::Context) {
+    // Long ops are not previewed: the run card estimates them instead.
+    let hovered = hovered.filter(|a| !crate::jobcard::runs_in_card(app.session.registry(), a.op));
     let Some(a) = hovered else {
         if app.action_preview.hovered.is_some() {
             app.action_preview.clear();

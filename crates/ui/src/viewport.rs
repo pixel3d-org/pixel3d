@@ -46,6 +46,8 @@ pub struct ViewSettings {
     /// X-ray: see-through surfaces (Alt+Z), with this opacity.
     pub xray: bool,
     pub xray_alpha: f32,
+    /// Marks poles (vertices of valence 3, 5, 6 or more) on the selected meshes.
+    pub poles: bool,
 }
 
 impl Default for ViewSettings {
@@ -60,6 +62,7 @@ impl Default for ViewSettings {
             stats: true,
             xray: false,
             xray_alpha: 0.5,
+            poles: false,
         }
     }
 }

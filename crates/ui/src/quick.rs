@@ -25,7 +25,8 @@ const HIDDEN: &[&str] = &["target", "select", "tool"];
 /// changed nothing) or a batch with warnings gets the same card without
 /// the form; a report's card can be closed.
 pub fn show(app: &mut PixelApp, ui: &egui::Ui, rect: Rect) {
-    if !rect.is_positive() || app.gizmo.dragging() {
+    // The run card of a long op takes this place while open.
+    if !rect.is_positive() || app.gizmo.dragging() || app.job_card.is_open() {
         return;
     }
     let revision = app.session.revision();

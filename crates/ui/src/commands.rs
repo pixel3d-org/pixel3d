@@ -59,16 +59,22 @@ fn app_aliases(label: &str) -> &'static [&'static str] {
         "Union" => &["boolean union", "merge meshes", "combine", "bool tool", "ctrl plus", "polycboolunion"],
         "Intersect" => &["boolean intersect", "intersection", "overlap", "bool tool", "ctrl asterisk", "polycboolintersection"],
         "SDF shape" => &["sdf", "sculpt", "metaballs", "blob", "clay", "implicit surface", "smooth union"],
+        "Quad remesh" => &["retopology", "retopo", "quadriflow", "instant meshes", "zremesher", "autoretopo", "remesh"],
+        "Voxel remesh" => &["dynamesh", "remesh voxel", "fuse parts", "make watertight", "remesh"],
+        "Poles" => &["valence", "pole overlay", "show poles", "retopology check", "mesh analysis"],
         _ => &[],
     }
 }
 
 /// What app commands do, by label, for those whose label alone may not say.
 fn app_desc(label: &str) -> &'static str {
-    if label == "SDF shape" {
-        return "Add an organic shape from blended spheres, capsules and boxes, edited in the Shapes tab";
+    match label {
+        "Quad remesh" => "Rebuild the selected closed mesh as even quads, in the background",
+        "Voxel remesh" => "Rebuild the selected closed mesh from its volume as even quads, in the background",
+        "Poles" => "Mark vertices of valence 3, 5 and 6 or more on the selected meshes",
+        "SDF shape" => "Add an organic shape from blended spheres, capsules and boxes, edited in the Shapes tab",
+        _ => crate::actions::BOOLEANS.iter().find(|v| v.label == label).map_or("", |v| v.desc),
     }
-    crate::actions::BOOLEANS.iter().find(|v| v.label == label).map_or("", |v| v.desc)
 }
 
 /// App commands that are not in the menus: tools and selection modes.
@@ -169,7 +175,9 @@ pub fn index(app: &PixelApp) -> Vec<Command> {
         let schema = op.params_schema();
         let required: Vec<&str> =
             schema.get("required").and_then(Value::as_array).map(|r| r.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
-        let on_selection = schema.pointer("/properties/target").is_some() && required.iter().all(|r| *r == "target");
+        let on_selection = schema.pointer("/properties/target").is_some()
+            && required.iter().all(|r| *r == "target")
+            && !crate::jobcard::runs_in_card(app.session.registry(), op.id());
         out.push(Command {
             id: op.id(),
             params: null,

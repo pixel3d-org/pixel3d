@@ -185,3 +185,15 @@ fn sdf_proxies_and_gizmo() {
     h.run_steps(10);
     snapshot(&mut h, "sdf_proxies_light");
 }
+
+#[test]
+fn remesh_run_card() {
+    let mut h = harness(app(ThemePref::Dark, &[("job.open", json!({ "op": "remesh.quad" }))]));
+    snapshot(&mut h, "remesh_card_dark");
+}
+
+#[test]
+fn pole_overlay() {
+    let mut h = harness(app(ThemePref::Light, &[("view.poles", json!({ "on": true })), ("view.frame", Value::Null)]));
+    snapshot(&mut h, "poles_light");
+}

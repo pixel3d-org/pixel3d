@@ -121,6 +121,10 @@ pub struct SdfEditor {
     pub hovered: Option<Path>,
     /// The row the panel found under the pointer this frame (shown next frame).
     pub hover_next: Option<Path>,
+    /// The pointer is over the Shapes tab (Delete then deletes the selected shape),
+    /// as of the last frame, and as the panel found it this frame.
+    pub panel_hovered: bool,
+    pub panel_hover_next: bool,
     /// Shapes changed by a drag still going on (not committed yet).
     pub live: bool,
     /// The shapes when a gizmo drag started.
@@ -283,6 +287,7 @@ impl PixelApp {
     /// Complexity: O(history length) when the object or revision changed.
     pub(crate) fn sdf_tick(&mut self, ctx: &egui::Context) {
         self.sdf.hovered = self.sdf.hover_next.take();
+        self.sdf.panel_hovered = std::mem::take(&mut self.sdf.panel_hover_next);
         // Finished runs first, so the history read below is current.
         if let Some(mut job) = self.sdf.commit.take() {
             match self.session.poll_job(&mut job) {
@@ -724,6 +729,36 @@ mod tests {
         a.run("subd.catmull_clark", json!({ "target": "blob" })).unwrap();
         let k = a.doc().resolve("blob").unwrap();
         assert_eq!(source_of(a.doc(), k).unwrap().later.len(), 1, "the move keeps the mesh, the subdivision does not");
+    }
+
+    #[test]
+    fn remesh_to_quads_and_delete_over_the_tab() {
+        let mut a = blob();
+        let k = a.doc().resolve("blob").unwrap();
+        // The Shapes tab's button opens the quad remesh card on the object.
+        a.open_job_card("remesh.quad").unwrap();
+        assert_eq!(a.job_card.target, Some(k));
+        a.run("job.run", json!({ "edge": 0.03 })).unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..4000 {
+            a.job_card_tick(&ctx);
+            if !a.job_card.busy() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        a.sdf_follow();
+        assert_eq!(a.sdf.later.len(), 1, "the editor warns that a rebuild replaces the remesh");
+        assert!(a.doc().object_mesh(k).unwrap().faces().all(|f| a.doc().object_mesh(k).unwrap().face_len(f) == 4));
+        // Delete with the pointer over the tab deletes the selected shape.
+        a.run("shapes.select", json!({ "name": "head" })).unwrap();
+        a.sdf.panel_hovered = true;
+        let ev = egui::Event::Key { key: egui::Key::Delete, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
+        ctx.begin_pass(egui::RawInput { events: vec![ev], ..Default::default() });
+        crate::chrome::shortcuts(&mut a, &ctx);
+        ctx.end_pass().textures_delta.clear();
+        settle(&mut a);
+        assert_eq!((a.doc().object_count(), a.sdf.shapes.len()), (1, 1), "the shape went, the object stayed");
     }
 
     #[test]

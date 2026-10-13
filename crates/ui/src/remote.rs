@@ -326,6 +326,7 @@ impl PixelApp {
             "scene": { "objects": doc.object_count(), "revision": doc.revision, "dirty": self.is_dirty(), "path": self.path.as_ref().map(|p| p.display().to_string()) },
             "allowedFolders": self.session.file_access().roots().iter().map(|r| r.display().to_string()).collect::<Vec<_>>(),
             "shapes": self.sdf_state(),
+            "jobCard": self.job_card_state(),
             "palette": self.palette.is_some(),
             "status": self.status_message(),
             "gizmoDragging": self.gizmo.dragging(),
