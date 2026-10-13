@@ -298,6 +298,17 @@ expression: tools
                 },
                 "variation": {
                   "description": "Seed, asymmetry and variants."
+                },
+                "vegetation": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/VegetationGene"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "The vegetation archetype: a species word (`broadleaf`, `conifer`,\n`palm`, `birch`, `stylized`) or ranges (crate::vegetation)."
                 }
               },
               "type": "object"
@@ -499,6 +510,122 @@ expression: tools
               "required": [
                 "on"
               ],
+              "type": "object"
+            },
+            "VegetationGene": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "$ref": "#/$defs/VegetationGenes"
+                }
+              ],
+              "description": "The `vegetation` gene: a preset word or ranges."
+            },
+            "VegetationGenes": {
+              "additionalProperties": false,
+              "description": "The vegetation archetype's genes (ADR 0011): proportions of a tree,\nmeasured back from its mesh. A preset word gives the reference ranges\nof a species; written ranges override them.",
+              "properties": {
+                "coverage": {
+                  "description": "Covered share of the crown silhouette.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "crown_base": {
+                  "description": "Height of the crown's lowest point over the tree's height.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "crown_ratio": {
+                  "description": "Crown width over the tree's height.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "fork": {
+                  "description": "Height of the first fork over the tree's height.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "limbs": {
+                  "description": "Scaffold limbs.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "preset": {
+                  "description": "`broadleaf`, `conifer`, `palm`, `birch` or `stylized`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "root_spread": {
+                  "description": "Root flare width over the trunk diameter.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "trunk": {
+                  "description": "Trunk diameter at breast height over the tree's height.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              },
               "type": "object"
             },
             "ViewDir": {

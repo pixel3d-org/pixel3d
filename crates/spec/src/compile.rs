@@ -1487,6 +1487,22 @@ fn grows_strands(spec: &ModelSpec, name: &str) -> bool {
     false
 }
 
+/// Whether a part is a vegetation feature (tree, flower, grass cards),
+/// directly or as a mirror of one.
+///
+/// Complexity: O(mirror chain), at most the part count.
+fn is_vegetation(spec: &ModelSpec, name: &str) -> bool {
+    let mut n = name;
+    for _ in 0..=spec.parts.len() {
+        match spec.parts.get(n) {
+            Some(Part { feature: Some(f), .. }) => return p3d_features::vegetation::is_vegetation(f),
+            Some(Part { mirror: Some(src), .. }) => n = src,
+            _ => return false,
+        }
+    }
+    false
+}
+
 /// Face group names of every prim of SDF items in leaf order, all with
 /// one spec path (an SDF feature's).
 ///
@@ -1773,6 +1789,9 @@ fn apply(tx: &mut Tx, root: ObjectKey, spec: &ModelSpec, record: &SpecRecord, pl
         }
         if grows_strands(spec, name) && !tags.iter().any(|t| t == "strands") {
             tags.push("strands".into());
+        }
+        if is_vegetation(spec, name) && !tags.iter().any(|t| t == p3d_features::vegetation::TAG) {
+            tags.push(p3d_features::vegetation::TAG.into());
         }
         o.tags = tags.into_iter().collect();
         let id = o.id();
