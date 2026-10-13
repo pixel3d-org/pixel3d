@@ -130,6 +130,8 @@ pub fn patch_fix(doc: &Document, root: ObjectKey, ops: Vec<Value>, summary: impl
 
 /// A fix running `op` on part `i` of a view: an edit layer of its spec
 /// part when it has one (`sp`), else the op on the object.
+///
+/// Complexity: as [`edit_fix`].
 pub fn part_fix(view: &View, i: usize, sp: Option<&SpecPart>, op: &str, args: Value, summary: &str) -> Fix {
     match sp {
         Some(sp) => edit_fix(view.doc, sp, op, args, format!("{summary} (an edit layer)")),
@@ -145,6 +147,8 @@ pub fn part_fix(view: &View, i: usize, sp: Option<&SpecPart>, op: &str, args: Va
 
 /// A fix appending an edit layer (an op run on the part's mesh after its
 /// shape) to a spec part, or to the part it mirrors or instances.
+///
+/// Complexity: [`shape_source`] plus O(size of the edit).
 pub fn edit_fix(doc: &Document, sp: &SpecPart, op: &str, args: Value, summary: impl Into<String>) -> Fix {
     let own = sp.name;
     let sp = &shape_source(doc, *sp);

@@ -228,6 +228,8 @@ fn expectations(ctx: &Ctx, out: &mut Vec<Draft>) {
 
 /// The part carrying a spec's category landmarks, else `head`, else the
 /// first part in view.
+///
+/// Complexity: O(parts x log parts).
 fn main_part(ctx: &Ctx, root: &Root) -> Option<usize> {
     let named = root
         .spec
@@ -399,6 +401,8 @@ fn brief_items(ctx: &Ctx, out: &mut Vec<Draft>) {
 }
 
 /// World bounds of a spec root's part objects in view.
+///
+/// Complexity: O(parts x log parts).
 fn root_bounds(ctx: &Ctx, root: &Root) -> (Vec3, Vec3) {
     let mut lo = Vec3::splat(f32::INFINITY);
     let mut hi = Vec3::splat(f32::NEG_INFINITY);
@@ -475,6 +479,8 @@ fn first_diff(a: &Value, b: &Value, path: &str) -> Option<(String, Value)> {
 }
 
 /// Size and place of a part in its root's space.
+///
+/// Complexity: O(V) over the part's vertices.
 fn root_box(ctx: &Ctx, root: ObjectKey, i: usize) -> Option<(Vec3, Vec3)> {
     let inv = ctx.doc().world_affine(root)?.inverse();
     let p = &ctx.view.parts[i];
@@ -774,6 +780,8 @@ pub fn diagnose(view: &View) -> Vec<Finding> {
 }
 
 /// The `diagnose` report of a view (fixes without predictions).
+///
+/// Complexity: [`diagnose`].
 pub fn report(view: &View) -> p3d_perceive::Report {
     let f = diagnose(view);
     p3d_perceive::Report::new("diagnose", p3d_perceive::diagnose::findings_text(&view.title(), &f), &f)

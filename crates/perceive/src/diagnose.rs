@@ -585,6 +585,8 @@ pub fn diagnose(view: &View) -> Vec<Finding> {
 }
 
 /// One finding as text, like a compiler's output.
+///
+/// Complexity: O(size of its fixes).
 fn finding_text(f: &Finding) -> String {
     let other = f.other.as_ref().map_or(String::new(), |o| format!(" -> {o}"));
     let mut t = format!("{} {} {} {}{other}: {}\n", f.id, f.severity.as_str(), f.code, f.part, f.message);
@@ -647,6 +649,8 @@ pub fn findings_text(title: &str, findings: &[Finding]) -> String {
 }
 
 /// The `diagnose` report of a view (fixes without predictions).
+///
+/// Complexity: [`diagnose`].
 pub fn report(view: &View) -> Report {
     let f = diagnose(view);
     Report::new("diagnose", findings_text(&view.title(), &f), &f)

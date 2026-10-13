@@ -38,6 +38,8 @@ fn growth(coverage: f32) -> f64 {
 
 /// The view index of the part strands grow on: the spec's `params.on`, else
 /// the object's parent (where `gen.strands` puts them).
+///
+/// Complexity: O(parts).
 fn grows_on(view: &View, i: usize, sp: Option<&SpecPart>) -> Option<usize> {
     let doc = view.doc;
     let key = view.parts[i].key;
@@ -142,6 +144,9 @@ fn dips(view: &View, i: usize, j: usize) -> (usize, f32, Vec3) {
     (n * stride, deepest, if n > 0 { sum / n as f32 } else { Vec3::ZERO })
 }
 
+/// `PENETRATING_STRANDS` of strands part `i`.
+///
+/// Complexity: [`grows_on`] plus [`dips`].
 fn penetrating(view: &View, i: usize, report: &Value, sp: Option<&SpecPart>, out: &mut Vec<Draft>) {
     let part = &view.parts[i];
     let Some(j) = grows_on(view, i, sp) else { return };

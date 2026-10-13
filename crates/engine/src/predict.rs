@@ -71,6 +71,8 @@ fn game_tris(view: &View) -> usize {
 }
 
 /// Strands coverage of a part, from its strands report.
+///
+/// Complexity: O(parts).
 fn coverage(view: &View, part: &str) -> Option<f64> {
     let p = view.parts.iter().find(|p| p.label == part)?;
     view.doc.object(p.key)?.metadata.get("strands")?.get("coverage")?.as_f64()
@@ -83,6 +85,7 @@ struct Before {
 }
 
 impl Before {
+    /// Complexity: O(findings x log findings + parts).
     fn of(view: &View, findings: &[Finding]) -> Before {
         Before { keys: findings.iter().map(key).collect(), tris: game_tris(view) }
     }

@@ -35,6 +35,8 @@ pub const RING_FLOW: f32 = 0.5;
 /// `remesh.quad` edit layer on a spec part (heads get eye and mouth loops by
 /// themselves), else the op itself. Open parts get a quad-dominant
 /// isotropic remesh instead.
+///
+/// Complexity: O(size of the part's edit list).
 pub fn remesh_fix(view: &View, i: usize, sp: Option<&SpecPart>, extra: serde_json::Value, summary: &str) -> Fix {
     let part = &view.parts[i];
     let closed = part.topology().is_closed();
