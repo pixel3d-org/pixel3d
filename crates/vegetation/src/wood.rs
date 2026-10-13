@@ -103,7 +103,7 @@ fn wood_share(spec: &TreeSpec) -> f32 {
             }
         }
         Foliage::Clumps => 0.4,
-        Foliage::Shell => 0.6,
+        Foliage::Shell => 0.3,
         Foliage::None => 1.0,
     }
 }
@@ -441,7 +441,8 @@ fn tube(
 }
 
 /// Thinnest branch radius built as wood (thinner twigs are left to the
-/// cards; low poly keeps only chunky limbs).
+/// cards; low poly and shell crowns keep only chunky limbs, which end
+/// inside the crown).
 fn min_radius(spec: &TreeSpec) -> f32 {
-    spec.trunk_radius * if spec.style == Style::LowPoly { 0.12 } else { 0.012 }
+    spec.trunk_radius * if spec.style == Style::LowPoly || spec.foliage == Foliage::Shell { 0.12 } else { 0.012 }
 }

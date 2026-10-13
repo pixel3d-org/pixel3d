@@ -200,7 +200,7 @@ pub fn flower(spec: &FlowerSpec) -> Result<Flower, VegError> {
     let outline_p = outline(spec.shape, spec.petal_length, spec.petal_width);
     let petal = shell(&ShellSpec {
         contours: vec![outline_p],
-        spacing: f64::from(spec.petal_width.min(spec.petal_length)) / 3.0,
+        spacing: f64::from((spec.petal_length / 6.0).max(spec.petal_width / 3.0)),
         thickness: f64::from(spec.thickness),
         cup: f64::from(spec.cup),
         bend: -0.1 * f64::from(spec.open),

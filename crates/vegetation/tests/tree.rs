@@ -52,3 +52,36 @@ fn foliage_modes_and_styles_build() {
         println!("{style:?}: {} tris, {} cards, coverage {:.2}", t.mesh.triangle_count(), t.report.cards, t.report.coverage);
     }
 }
+
+#[test]
+fn cards_run_inner_to_outer_and_darken_inside() {
+    let t = tree(&TreeSpec::preset(Species::Broadleaf)).unwrap();
+    let m = &t.mesh;
+    let colors = m.corner_color.as_ref().unwrap();
+    let foliage: Vec<u32> = m.group(groups::FOLIAGE).unwrap().iter().collect();
+    let center = t.hull.center();
+    let mean = |faces: &[u32]| {
+        let (mut lum, mut dist, mut n) = (0.0f32, 0.0f32, 0.0f32);
+        for &f in faces {
+            for h in m.face_halfedges(f) {
+                let c = colors[h as usize];
+                lum += (c.x + c.y + c.z) / 3.0;
+                dist += m.positions[m.origin(h) as usize].distance(center);
+                n += 1.0;
+            }
+        }
+        (lum / n, dist / n)
+    };
+    let k = foliage.len() / 5;
+    let (inner_lum, inner_dist) = mean(&foliage[..k]);
+    let (outer_lum, outer_dist) = mean(&foliage[foliage.len() - k..]);
+    assert!(inner_dist < outer_dist, "emitted inner first: {inner_dist} vs {outer_dist}");
+    assert!(inner_lum < outer_lum, "darker inside: {inner_lum} vs {outer_lum}");
+    // Card normals lean toward the crown hull's.
+    let normals = m.corner_normal.as_ref().unwrap();
+    let outward = foliage.iter().filter(|&&f| {
+        let h = m.face_he(f);
+        normals[h as usize].dot(t.hull.normal(m.positions[m.origin(h) as usize])) > 0.0
+    });
+    assert!(outward.count() * 10 > foliage.len() * 7, "most card normals face out of the crown");
+}
