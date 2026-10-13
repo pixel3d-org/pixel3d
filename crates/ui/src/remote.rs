@@ -339,6 +339,7 @@ impl PixelApp {
             "bisect": self.bisect_state(),
             "features": self.features_state(),
             "strands": self.strands_state(),
+            "health": self.health_state(),
             "jobCard": self.job_card_state(),
             "palette": self.palette.is_some(),
             "status": self.status_message(),
