@@ -75,3 +75,32 @@ fn elf_head_from_brief_to_passing_spec() {
     let t = call(&mut a, "spec", json!({ "target": "elf_head" }));
     assert!(t.contains("ear_l: blended into its parent") && t.contains("eye_l: o:"), "{t}");
 }
+
+#[test]
+fn a_spec_with_dna_reports_its_genes() {
+    let mut a = Agent::new(Session::new());
+    let axe = json!({
+        "dna": { "culture": "dwarven", "style": "stylized_painterly", "proportions": { "head_to_haft": [0.3, 0.5] } },
+        "parts": {
+            "haft": { "primitive": { "cylinder": { "radius": 0.02, "height": 0.8 } } },
+            "head": {
+                "primitive": { "box": { "width": 0.3, "height": 0.16, "depth": 0.05, "bevel": { "width": "6mm", "segments": 1 }, "origin": "center" } },
+                "anchor": { "on": "haft", "landmark": "top", "offset": [0.05, -0.08, 0] }
+            },
+            "pommel": {
+                "primitive": { "box": { "width": 0.05, "height": 0.05, "depth": 0.05, "bevel": { "width": "6mm", "segments": 1 }, "origin": "center" } },
+                "anchor": { "on": "haft", "landmark": "bottom" }
+            }
+        }
+    });
+    let t = call(&mut a, "spec", json!({ "action": "set", "target": "axe", "spec": axe }));
+    assert!(t.contains("\ndna ") && t.contains("genes on target"), "{t}");
+    let t = call(&mut a, "perceive", json!({ "target": "axe", "aspect": "dna" }));
+    assert!(t.starts_with("dna (dwarven, stylized_painterly): "), "{t}");
+    for gene in ["hierarchy", "lines:", "taper:", "silhouette:", "edges:", "head_to_haft"] {
+        assert!(t.contains(gene), "{gene} in {t}");
+    }
+    // Bad genes point at their path.
+    let out = a.call("spec", json!({ "action": "patch", "target": "axe", "merge": { "dna": { "culture": "gnomish" } } }));
+    assert!(out.is_error && out.text.contains("/spec/dna/culture"), "{}", out.text);
+}

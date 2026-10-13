@@ -29,7 +29,7 @@ pub struct ModelSpec {
     pub style: Option<Value>,
     /// Visual DNA genes (ADR 0011).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dna: Option<Value>,
+    pub dna: Option<p3d_perceive::dna::DnaSpec>,
     /// Seed of every random choice in the spec (noise, scatter).
     #[serde(default)]
     pub seed: u64,
@@ -316,6 +316,9 @@ pub fn parse(source: &Value) -> Result<ModelSpec, SpecError> {
     })?;
     if spec.parts.is_empty() {
         return Err(SpecError::new("/parts", "give at least one part"));
+    }
+    if let Some(d) = &spec.dna {
+        p3d_perceive::dna::targets(d).map_err(|(path, message)| SpecError::new(&format!("/dna{path}"), message))?;
     }
     for name in spec.parts.keys() {
         p3d_scene::name::check_name(name)

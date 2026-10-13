@@ -12,6 +12,7 @@
 
 pub mod diagnose;
 pub mod diff;
+pub mod dna;
 pub mod error;
 pub mod expect;
 pub mod fmt;

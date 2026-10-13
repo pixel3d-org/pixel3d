@@ -145,7 +145,7 @@ expression: tools
           "openWorldHint": false,
           "readOnlyHint": true
         },
-        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions or brief, as compact text.",
+        "description": "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief or dna, as compact text.",
         "inputSchema": {
           "$defs": {
             "Aspect": {
@@ -199,8 +199,130 @@ expression: tools
                   "const": "brief",
                   "description": "Coverage of the brief the target's spec answers (or the only brief).",
                   "type": "string"
+                },
+                {
+                  "const": "dna",
+                  "description": "Visual DNA: form genes measured against the spec's `dna` (or `dna` given here) and the art-direction critique.",
+                  "type": "string"
                 }
               ]
+            },
+            "DnaSpec": {
+              "additionalProperties": false,
+              "description": "The genes as written (a spec's or brief's `dna` block).",
+              "properties": {
+                "culture": {
+                  "description": "`dwarven`, `elven`, `orcish` or `human_medieval`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "edges": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/EdgesGene"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hierarchy": {
+                  "description": "Primary, secondary and tertiary volume shares, for example `[0.6, 0.3, 0.1]`.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 3,
+                  "minItems": 3,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                },
+                "lines": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/LinesGene"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "proportions": {
+                  "additionalProperties": {
+                    "items": {
+                      "format": "float",
+                      "type": "number"
+                    },
+                    "maxItems": 2,
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "description": "Height ratios between parts: `{\"blade_to_haft\": [0.3, 0.45]}`.",
+                  "type": "object"
+                },
+                "rhythm": {
+                  "description": "`varied` (repeated parts must vary) or `regular`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "silhouette": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/SilhouetteGene"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "style": {
+                  "description": "`realistic` or `stylized_painterly`.",
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "surface": {
+                  "description": "Surface genes (wear, damage, ornament), built in Phase 6."
+                },
+                "variation": {
+                  "description": "Seed, asymmetry and variants."
+                }
+              },
+              "type": "object"
+            },
+            "EdgesGene": {
+              "anyOf": [
+                {
+                  "description": "`varied`, `uniform`, `sharp` or `soft`.",
+                  "type": "string"
+                },
+                {
+                  "description": "Coefficient of variation of bevel widths.",
+                  "properties": {
+                    "bevel_variation": {
+                      "items": {
+                        "format": "float",
+                        "type": "number"
+                      },
+                      "maxItems": 2,
+                      "minItems": 2,
+                      "type": "array"
+                    }
+                  },
+                  "required": [
+                    "bevel_variation"
+                  ],
+                  "type": "object"
+                }
+              ],
+              "description": "The `edges` gene."
             },
             "Length": {
               "anyOf": [
@@ -213,6 +335,46 @@ expression: tools
                 }
               ],
               "description": "Length: meters as a number, or a string with a unit (mm, cm, dm, m, km, in, ft), e.g. \"30cm\"."
+            },
+            "LinesGene": {
+              "anyOf": [
+                {
+                  "description": "`angular`, `flowing`, `heavy` or `balanced`.",
+                  "type": "string"
+                },
+                {
+                  "properties": {
+                    "curved": {
+                      "default": null,
+                      "items": {
+                        "format": "float",
+                        "type": "number"
+                      },
+                      "maxItems": 2,
+                      "minItems": 2,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "taper": {
+                      "default": null,
+                      "items": {
+                        "format": "float",
+                        "type": "number"
+                      },
+                      "maxItems": 2,
+                      "minItems": 2,
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    }
+                  },
+                  "type": "object"
+                }
+              ],
+              "description": "The `lines` gene: a preset word or explicit ranges."
             },
             "RayFrom": {
               "additionalProperties": false,
@@ -239,6 +401,27 @@ expression: tools
               "required": [
                 "from"
               ],
+              "type": "object"
+            },
+            "SilhouetteGene": {
+              "additionalProperties": false,
+              "description": "The `silhouette` gene.",
+              "properties": {
+                "solidity": {
+                  "default": null,
+                  "description": "Filled share of the outline's convex hull, front and side.",
+                  "items": {
+                    "format": "float",
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": [
+                    "array",
+                    "null"
+                  ]
+                }
+              },
               "type": "object"
             },
             "SliceAxis": {
@@ -378,6 +561,17 @@ expression: tools
                 }
               ],
               "description": "`section`: slice across x, y (default, horizontal) or z."
+            },
+            "dna": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/DnaSpec"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "`dna`: genes to measure against, for example `{\"culture\": \"dwarven\"}` (the target spec's own when omitted)."
             },
             "from": {
               "description": "`diff`: base revision number or checkpoint name.",

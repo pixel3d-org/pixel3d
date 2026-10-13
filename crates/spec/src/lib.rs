@@ -16,6 +16,18 @@ pub mod patch;
 pub mod surface;
 
 pub use brief::{Brief, Coverage, coverage, parse_brief, proportions};
+
+/// The DNA a spec root should have: its own `dna`, else its brief's.
+///
+/// Complexity: O(size of the spec).
+pub fn dna_of(doc: &p3d_scene::Document, root: p3d_scene::ObjectKey) -> Option<p3d_perceive::dna::DnaSpec> {
+    let spec = parse(&doc.spec(root)?.source).ok()?;
+    if spec.dna.is_some() {
+        return spec.dna;
+    }
+    let brief = doc.brief(spec.brief.as_deref()?)?;
+    parse_brief(brief).ok()?.dna
+}
 pub use compile::{CompileReport, LandmarkPoint, PartReport, PartStatus, compile, face_provenance, fingerprint, part_landmarks};
 pub use model::{ModelSpec, Part, parse};
 

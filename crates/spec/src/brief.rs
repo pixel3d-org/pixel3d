@@ -58,7 +58,7 @@ pub struct Brief {
     pub references: Vec<Value>,
     /// Visual DNA the asset should have (ADR 0011).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dna: Option<Value>,
+    pub dna: Option<p3d_perceive::dna::DnaSpec>,
 }
 
 /// A size: one value (within 10%) or `[min, max]`.

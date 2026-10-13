@@ -107,7 +107,7 @@ Acceptance:
 - [x] Expectations from briefs and categories (brief items checked through the expectation engine; every MCP answer carries `brief <name> x/y` lines)
 - [ ] `history bisect`
 - [ ] MCP tools `brief`, `spec`, `perceive`, `expect`, `deform` (`brief` set, get and coverage, `spec` get, set, patch and compile with timing; the elf session runs through them in `crates/mcp/tests/spec_session.rs`. `deform` open)
-- [ ] Visual DNA v0 (ADR 0011): `dna` block in the spec schema, style and culture presets (`dwarven`, `elven`, `stylized_painterly`, ...) as defaults, `perceive dna` for proportions, silhouette, curve share, taper, form hierarchy and bevel uniformity, first art-direction codes (`tangent`, `twinning`, `uniform_bevel`, `weak_silhouette`)
+- [x] Visual DNA v0 (ADR 0011): `dna` block in the spec schema, style and culture presets (`dwarven`, `elven`, `stylized_painterly`, ...) as defaults, `perceive dna` for proportions, silhouette, curve share, taper, form hierarchy and bevel uniformity, first art-direction codes (`tangent`, `twinning`, `uniform_bevel`, `weak_silhouette`) (`crates/perceive/src/dna.rs`; typed and validated in specs and briefs at `/spec/dna/...`; every `spec` answer carries the `dna x/y genes on target` line)
 
 Acceptance:
 

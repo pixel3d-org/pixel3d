@@ -169,6 +169,8 @@ pub enum Aspect {
     Proportions,
     /// Coverage of the brief the target's spec answers (or the only brief).
     Brief,
+    /// Visual DNA: form genes measured against the spec's `dna` (or `dna` given here) and the art-direction critique.
+    Dna,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -198,6 +200,9 @@ pub struct PerceiveArgs {
     /// `diff`: base revision number or checkpoint name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub from: Option<String>,
+    /// `dna`: genes to measure against, for example `{"culture": "dwarven"}` (the target spec's own when omitted).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dna: Option<p3d_perceive::dna::DnaSpec>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]

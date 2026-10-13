@@ -100,7 +100,7 @@ pub fn tools() -> Vec<ToolInfo> {
         },
         ToolInfo {
             name: "perceive",
-            description: "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions or brief, as compact text.",
+            description: "Understand the model without images: structure, shape, silhouette, section, relations, probe, diff, visibility, proportions, brief or dna, as compact text.",
             schema: schema::<PerceiveArgs>(),
         },
         ToolInfo {
@@ -421,6 +421,14 @@ impl Agent {
                         })?
                     }
                     Aspect::Visibility => p3d_perceive::visibility::report(&view),
+                    Aspect::Dna => {
+                        let genes = a
+                            .dna
+                            .clone()
+                            .or_else(|| target.and_then(|t| doc.resolve(t).ok()).and_then(|k| p3d_spec::dna_of(&doc, k)))
+                            .unwrap_or_default();
+                        p3d_perceive::dna::report(&view, &genes).map_err(|(path, message)| OpError::invalid(&format!("/dna{path}"), message))?
+                    }
                     Aspect::Diff | Aspect::Proportions | Aspect::Brief => return Err(OpError::internal("unreachable")),
                 }
             }
@@ -608,6 +616,16 @@ impl Agent {
         let mut t = format!("{head}: {}\n", out.summary);
         for w in &out.warnings {
             t.push_str(&format!("  warning: {}\n", w.message));
+        }
+        // A spec with DNA reports its genes on every change.
+        let doc = self.doc();
+        if let Ok(root) = doc.resolve(&a.target)
+            && let Some(genes) = p3d_spec::dna_of(&doc, root)
+            && let Ok(view) = View::new(&doc, Some(&a.target))
+            && let Some(line) = p3d_perceive::dna::line(&view, &genes)
+        {
+            t.push_str(&line);
+            t.push('\n');
         }
         Ok(ToolOutput::ok(self.finish(t), json!({ "revision": r.revision, "summary": out.summary })))
     }
