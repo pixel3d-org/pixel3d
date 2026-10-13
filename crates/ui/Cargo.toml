@@ -9,3 +9,26 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+craft-ui = { workspace = true }
+egui = { workspace = true, features = ["default_fonts"] }
+egui-wgpu = { workspace = true }
+glam = { workspace = true }
+p3d-control = { workspace = true }
+p3d-engine = { workspace = true }
+p3d-geo = { workspace = true }
+p3d-io = { workspace = true }
+p3d-math = { workspace = true }
+p3d-mesh = { workspace = true }
+p3d-ops = { workspace = true }
+p3d-perceive = { workspace = true }
+p3d-render = { workspace = true }
+p3d-scene = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+
+[dev-dependencies]
+egui_kittest = { workspace = true, features = ["snapshot", "wgpu"] }

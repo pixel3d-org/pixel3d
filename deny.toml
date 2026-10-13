@@ -24,10 +24,17 @@ allow = [
     "Unlicense",
     "CC0-1.0",
     "MPL-2.0",
+    # Boost Software License (permissive): the Windows clipboard backend of
+    # arboard (clipboard-win, error-code), required by eframe. ADR 0004.
+    "BSL-1.0",
 ]
 confidence-threshold = 0.93
 unused-allowed-license = "allow"
-exceptions = []
+# Font licenses for egui's bundled font data only (Ubuntu-Light, Noto Emoji).
+# ADR 0004; listed in NOTICE and ATTRIBUTION.md.
+exceptions = [
+    { crate = "epaint_default_fonts", allow = ["OFL-1.1", "Ubuntu-font-1.0"] },
+]
 
 [bans]
 multiple-versions = "warn"
@@ -48,4 +55,7 @@ unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # Git sources must be listed here with a pinned rev in Cargo.toml.
-allow-git = []
+allow-git = [
+    # craft-ui (MIT OR Apache-2.0), the shared egui components of the GUI shell.
+    "https://github.com/storytold/craft-libs",
+]

@@ -189,18 +189,18 @@ Acceptance:
 
 ## Phase 8: GUI shell
 
-- [ ] Title bar, toolbar, docking, theme, code-painted icons, status bar
-- [ ] Start page, command line and palette, shortcuts, menus (native on macOS)
-- [ ] Viewport (offscreen render plus composite), camera navigation, grid, view cube
-- [ ] Picking, object and element selection, gizmo
-- [ ] Outliner, schema-driven Properties, History panel
-- [ ] Control server
-- [ ] kittest snapshots
+- [x] Title bar, toolbar, docking, theme, code-painted icons, status bar (`crates/ui`: `chrome.rs` Blender-style top bar with the menus (integrated macOS title band), tool settings row with the contextual object actions, vertical tool column, viewport header; `docking.rs` craft-ui dock with a protected viewport; `theme.rs` dark and light tokens of project spec 20.3; `icons.rs` icons painted in code; `apps/pixel3d`, run `cargo run -p pixel3d -- --sample`; `--screenshot <png>` saves the window)
+- [x] Start page, command line and palette, shortcuts, menus (native on macOS) (`chrome.rs` Start page and the shortcut table; `commands.rs` one index of menu commands, tools, modes and every registered op, searched by label, alias (Blender, Maya, 3ds Max names) and description, tested in `commands::tests`; `palette.rs` Cmd+K or Ctrl+K and F3; `cmdline.rs` the Console's command line with suggestions, Tab completion, history and `name=value` or JSON parameters, tested in `cmdline::tests::lines_run_and_log`; `menus.rs` one menu tree for the in-window menus and the native macOS menu, `apps/pixel3d/src/native_menu.rs` via muda)
+- [x] Viewport (offscreen render plus composite), camera navigation, grid, view cube (`crates/render/src/viewport.rs` and `viewport.wgsl`: 4x MSAA HDR offscreen pass with reverse-Z depth, id pass, composite into the window, x-ray and the element overlay, tested headless in `crates/render/tests/viewport.rs`; `crates/ui/src/viewport.rs` orbit, pan and zoom from mouse, wheel and trackpad, smooth view changes; the view cube is the clickable navigation gizmo of ADR 0005, `navgizmo.rs`)
+- [x] Picking, object and element selection, gizmo (GPU id picks for objects and a distance pick for curves; `elements.rs` vertex, edge and face picking with a CPU ray cast and box selection that skips hidden elements unless x-ray, tested in `elements::tests`; `gizmo.rs` Move, Rotate and Scale handles following the header's orientation, pivot and snapping, one undo step per drag through `scene.set_transform` or `edit.transform` (previewed on a working copy), tested in `gizmo::tests`)
+- [x] Outliner, schema-driven Properties, History panel (`outliner.rs`: search, tree, eye toggles, rename in place, context menu; `inspector.rs`: Tool, Scene, Object and Mesh tabs, the transform edited through `scene.set_transform` with one undo step per drag, "adjust last operation" re-running the op; `schema_form.rs`: one schema-to-widget mapping, tested on every built-in op in `schema_form::tests::forms_lay_out_every_builtin_op`; `panels.rs` History: the undo list, click to step back)
+- [x] Control server (`crates/control`: loopback JSON-lines server and client, at most 16 clients, 60 s timeout answering `not-run` or `may-have-run`, tested in `p3d_control::tests`; `crates/ui/src/remote.rs`: `ui.inspect`/`ui.state`, `ui.elements`, `ui.click`, `ui.drag`, `ui.key`, `ui.text` as real input events, `ui.screenshot`, `ui.render`, `ui.command`; `pixel3d --control PORT` and File > Allow agents to connect; tested in `remote::tests::agents_drive_the_app_through_the_server`)
+- [x] kittest snapshots (`crates/ui/tests/snapshots.rs`: the main window in dark and light, Edit Mode with faces selected and the command palette, drawn headless with egui_kittest on wgpu and compared with `crates/ui/tests/snapshots/*.png` within a small tolerance; `UPDATE_SNAPSHOTS=1` rewrites them; green on macOS, other OSes not run yet)
 
 Acceptance:
 
-- [ ] Open, edit and save a `.p3d` with gizmo and undo
-- [ ] 60 fps at 10M triangles
+- [x] Open, edit and save a `.p3d` with gizmo and undo (`apps/pixel3d/tests/control.rs`, run with `cargo test -p pixel3d --test control -- --ignored`: the app saves and reopens a `.p3d`, the gizmo's X arrow is dragged with real pointer events through the control server, Cmd+Z undoes, the file is saved and a screenshot taken; passed on macOS)
+- [x] 60 fps at 10M triangles (93 fps orbiting 10,485,760 triangles in 8 objects, release build, vsync off, `view.benchmark` driven over the control server, 1.6k x 1k window on an Apple Silicon Mac; UI frame time 0.24 ms because counts are cached per document state; other GPUs not measured yet)
 - [ ] UI snapshot tests green on all OSes
 
 ## Phase 9: GUI tools

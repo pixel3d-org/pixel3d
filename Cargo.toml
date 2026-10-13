@@ -46,11 +46,15 @@ p3d-testdata = { path = "crates/testdata" }
 # patch releases freely, verify compatibility before any minor or major bump.
 # Crates are added to a member's [dependencies] when a phase first uses them.
 
-# GUI (L5 only). winit and accesskit come from eframe. craft-ui (git, pinned
-# rev) is added with the GUI shell.
-egui = "0.36.2"
+# GUI (L5 only). winit and accesskit come from eframe. craft-ui is pinned by
+# rev (MIT OR Apache-2.0; listed in deny.toml `allow-git`).
+craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "3c9702725d880e4e1eb9f711fc45f29dc82cf427", features = ["serde"] }
+# No default features here: the app enables egui's bundled fonts through
+# eframe's `default_fonts` (ADR 0004), and egui-wgpu's defaults come in
+# through eframe's `wgpu` feature.
+egui = { version = "0.36.2", default-features = false }
 eframe = { version = "0.36.2", default-features = false }
-egui-wgpu = "0.36.2"
+egui-wgpu = { version = "0.36.2", default-features = false }
 egui-winit = "0.36.2"
 epaint = "0.36.2"
 egui_kittest = "0.36.2"
@@ -58,7 +62,7 @@ egui_kittest = "0.36.2"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "dx12", "metal", "gles", "vulkan", "wgsl"] }
 rfd = "0.17.2"
 arboard = { version = "3.6.1", default-features = false }
-muda = "0.21.2"
+muda = { version = "0.21.2", default-features = false }
 transform-gizmo-egui = "0.11.0"
 egui-snarl = "0.12.0"
 
