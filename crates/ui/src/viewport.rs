@@ -324,7 +324,10 @@ impl ViewportState {
             Some(c) if c.view.same_meshes(&list) => (Arc::clone(&c.view), c.geometry),
             _ => {
                 self.geometry_counter += 1;
-                (Arc::new(p3d_render::prepare_view(&list)), self.geometry_counter)
+                // Strands objects shade from root to tip.
+                let strands: std::collections::BTreeSet<ObjectKey> =
+                    list.iter().filter(|(k, _)| doc.object(*k).is_some_and(|o| o.tags.iter().any(|t| t == "strands"))).map(|(k, _)| *k).collect();
+                (Arc::new(p3d_render::prepare_view(&list, &strands)), self.geometry_counter)
             }
         };
         let models = Arc::new(p3d_render::part_matrices(doc, &view.parts));
