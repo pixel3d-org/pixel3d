@@ -171,6 +171,7 @@ pub fn menus() -> Vec<Menu> {
                 header("Overlays"),
                 checked(|a| a.ui.view.stats, icon(Icon::Info, item("Statistics", "view.stats"))),
                 checked(|a| a.ui.view.poles, icon(Icon::Poles, item("Poles", "view.poles"))),
+                checked(|a| a.ui.view.landmarks, icon(Icon::Landmark, item("Landmarks", "view.landmarks"))),
                 None,
                 header("3D Cursor"),
                 icon(Icon::Cursor, with("Cursor to World Origin", "view.cursor", || json!({ "to": "origin" }))),
@@ -251,6 +252,10 @@ pub fn menus() -> Vec<Menu> {
                 ),
                 // Blended shapes to sculpt in the Shapes tab.
                 icon(Icon::Shapes, with("SDF shape", "shapes.new", crate::sdf::starter)),
+                None,
+                header("Model Spec"),
+                icon(Icon::Spec, with("Lamp spec", "spec.starter", || json!({ "name": "lamp" }))),
+                icon(Icon::Spec, with("Elf head spec", "spec.starter", || json!({ "name": "elf_head" }))),
                 None,
                 header("Generate (lathe)"),
                 icon(Icon::Tube, with("Barrel", "gen.lathe", || json!({ "profile": "barrel" }))),

@@ -6,8 +6,8 @@
 //! would type and click.
 //!
 //! Methods: `ui.inspect` (alias `ui.state`), `ui.elements`, `ui.click`,
-//! `ui.drag`, `ui.key`, `ui.text`, `ui.screenshot`, `ui.render` (the
-//! viewport only), `ui.command` (any command or op), `ui.commands` (the
+//! `ui.hover`, `ui.drag`, `ui.key`, `ui.text`, `ui.screenshot`, `ui.render`
+//! (the viewport only), `ui.command` (any command or op), `ui.commands` (the
 //! list) and `mcp.call` (an MCP tool on this app's scene, for
 //! `pixel3d-cli mcp --connect`).
 
@@ -204,6 +204,13 @@ impl PixelApp {
                 }
                 Ok(json!({ "at": [at.x, at.y] }))
             }
+            "ui.hover" => {
+                // Moves the pointer there and leaves it (tooltips, hover
+                // highlights, the provenance of a face).
+                let at = point(params, "target", elements)?;
+                self.remote.input.push_back(vec![Event::PointerMoved(at)]);
+                Ok(json!({ "at": [at.x, at.y] }))
+            }
             "ui.drag" => {
                 let (from, to) = (point(params, "from", elements)?, point(params, "to", elements)?);
                 let (b, m) = (button(params), modifiers(params));
@@ -326,6 +333,7 @@ impl PixelApp {
             "scene": { "objects": doc.object_count(), "revision": doc.revision, "dirty": self.is_dirty(), "path": self.path.as_ref().map(|p| p.display().to_string()) },
             "allowedFolders": self.session.file_access().roots().iter().map(|r| r.display().to_string()).collect::<Vec<_>>(),
             "shapes": self.sdf_state(),
+            "spec": self.spec_state(),
             "jobCard": self.job_card_state(),
             "palette": self.palette.is_some(),
             "status": self.status_message(),

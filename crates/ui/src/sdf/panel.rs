@@ -94,7 +94,7 @@ struct Out {
 /// The Shapes tab body.
 pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
     let tk = Tokens::get();
-    if app.sdf.object.is_none() {
+    if !app.sdf.is_open() {
         ui.label(RichText::new(t("Select an object made from SDF shapes (Add > SDF Shape).")).color(tk.text_dim));
         return;
     }
@@ -424,7 +424,11 @@ fn mesh_fields(app: &PixelApp, ui: &mut egui::Ui, out: &mut Out) {
         ui.with_layout(Layout::top_down(Align::Min), |ui| {
             ui.add(egui::Label::new(RichText::new(note).font(theme::small()).color(tk.text_faint)).wrap());
         });
-        // Clean quads for UVs and rigging: a quad remesh of the result.
+        // Clean quads for UVs and rigging: a quad remesh of the result (not
+        // for spec parts, which rebuild from their spec).
+        if app.sdf.part.is_some() {
+            return;
+        }
         ui.add_space(4.0);
         let b = ui.add_enabled(!app.job_card.busy(), egui::Button::new(t("Remesh to quads")));
         crate::control::record_widget(ui, &b, t("Remesh to quads"), "button", None);

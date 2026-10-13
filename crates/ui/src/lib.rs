@@ -37,6 +37,7 @@ pub mod schema_form;
 pub mod screenshot;
 pub mod sdf;
 pub mod snap;
+pub mod spec;
 pub mod stats;
 pub mod theme;
 pub mod transform;
@@ -289,6 +290,8 @@ pub struct PixelApp {
     jobs: Vec<RunningJob>,
     /// The SDF shape editor (the Shapes tab and the viewport proxies).
     pub sdf: sdf::SdfEditor,
+    /// The Model Spec editor (the Spec tab, landmarks and provenance).
+    pub spec: spec::SpecEditor,
     /// The run card of a long op (remesh) and its background run.
     pub job_card: jobcard::JobCard,
     /// Poles of the shown meshes, for the pole overlay.
@@ -361,6 +364,7 @@ impl PixelApp {
             result: None,
             jobs: Vec::new(),
             sdf: sdf::SdfEditor::default(),
+            spec: spec::SpecEditor::default(),
             job_card: jobcard::JobCard::default(),
             poles: poles::PoleCache::default(),
             coalesce: None,
@@ -405,7 +409,11 @@ impl PixelApp {
 
     /// Background work still running (shown in the status bar).
     pub fn running_jobs(&self) -> usize {
-        usize::from(self.health.busy()) + self.jobs.len() + usize::from(self.sdf.busy()) + usize::from(self.job_card.busy())
+        usize::from(self.health.busy())
+            + self.jobs.len()
+            + usize::from(self.sdf.busy())
+            + usize::from(self.spec.busy())
+            + usize::from(self.job_card.busy())
     }
 
     /// Whether the History or Console panel is open.
@@ -850,6 +858,7 @@ impl PixelApp {
         // Jobs started on the old document must not land in the new one.
         self.jobs.clear();
         self.sdf = sdf::SdfEditor::default();
+        self.spec = spec::SpecEditor::default();
         self.job_card = jobcard::JobCard::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
@@ -1001,6 +1010,23 @@ impl PixelApp {
             }
             "mesh.poles" => self.pole_counts(params.get("target").and_then(Value::as_str)),
             shapes_cmd if shapes_cmd.starts_with("shapes.") => self.sdf_command(shapes_cmd, params),
+            // The Spec tab: starters, parts, the raw source, landmarks.
+            "spec.starter" | "spec.select_part" | "spec.json" | "spec.pick_landmark" | "spec.set_landmark" | "landmarks.toggle"
+            | "view.landmarks" => self.spec_command(id, params),
+            // A patch of the edited spec (the op itself when a target is given).
+            "spec.patch" if params.get("target").is_none() => match (params.get("merge"), params.get("ops")) {
+                (Some(m), _) => self.spec_patch(m.clone(), t("Edit spec")),
+                (None, Some(ops)) => {
+                    let target = self
+                        .spec
+                        .root
+                        .and_then(|k| self.doc().object(k))
+                        .map(|o| o.public_id())
+                        .ok_or(t("select a spec root or one of its parts"))?;
+                    self.execute(&[OpCall::new("spec.patch", json!({ "target": target, "ops": ops }))])
+                }
+                _ => Err(t("merge or ops is required").to_owned()),
+            },
             "edit.undo" => {
                 let label = self.session.undo().map_err(|e| e.message)?;
                 self.prune_selection();
@@ -1681,6 +1707,7 @@ impl PixelApp {
         if self.poll_jobs() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
+        self.spec_tick(ctx);
         self.sdf_tick(ctx);
         self.job_card_tick(ctx);
         if let Some((_, at)) = &self.status {
@@ -1759,7 +1786,7 @@ impl PixelApp {
                 self.viewport.edit_overlay = match (&part, element_mode) {
                     (Some((i, mesh, _)), true) => self.edit.overlay(*i, self.ui.mode, previewing.then_some(mesh)).map(|(o, k, _)| (o, k)),
                     // Object Mode: the faces of the shape row under the pointer.
-                    (_, false) => self.sdf_highlight(),
+                    (_, false) => self.spec_highlight().or_else(|| self.sdf_highlight()),
                     _ => None,
                 };
                 self.viewport.pick_elements = element_mode && self.edit.object.is_some();
@@ -1773,6 +1800,8 @@ impl PixelApp {
                     .inner;
                 chrome::viewport_overlay(self, ui);
                 sdf::overlay(self, ui, &mut viewport_events);
+                spec::overlay(self, ui, &mut viewport_events);
+                spec::provenance_tip(self, ui);
                 poles::overlay(self, ui);
                 let gizmo_rect = self.viewport.rect;
                 gizmo::show(self, ui, gizmo_rect);

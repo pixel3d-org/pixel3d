@@ -14,7 +14,8 @@ use crate::theme::Tokens;
 use crate::widgets;
 
 /// Ops whose panel would only repeat what the gizmo or Properties show.
-const SKIP: &[&str] = &["scene.set_transform", "scene.rename", "edit.transform", "gen.sdf", "sdf.mesh"];
+/// Ops with an editor of their own (the Shapes and Spec tabs) are left out too.
+const SKIP: &[&str] = &["scene.set_transform", "scene.rename", "edit.transform", "gen.sdf", "sdf.mesh", "spec.set", "spec.patch", "spec.compile"];
 
 /// Parameters the panel leaves out: what the op works on comes from the
 /// selection (the target, the picked elements, a boolean's tool objects).
