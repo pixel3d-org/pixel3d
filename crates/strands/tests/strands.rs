@@ -141,3 +141,16 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn coverage_counts_how_much_of_a_large_face_is_reached() {
+    // One 1 m quad: a few grass cards cover part of it, not all or nothing.
+    let plane = p3d_geo::prim::plane(&p3d_geo::prim::PlaneSpec { size_x: 1.0, size_z: 1.0, segments_x: 1, segments_z: 1 }).unwrap();
+    assert_eq!(plane.face_count(), 1);
+    let few = StrandSpec { region: Region::All, clumps: 20, ..StrandSpec::preset(Kind::Grass) };
+    let c = generate(&plane, &few).unwrap().report.coverage.unwrap();
+    assert!(c > 0.05 && c < 0.6, "{c}");
+    let many = StrandSpec { clumps: 600, ..few };
+    let d = generate(&plane, &many).unwrap().report.coverage.unwrap();
+    assert!(d > c && d > 0.9, "{c} -> {d}");
+}

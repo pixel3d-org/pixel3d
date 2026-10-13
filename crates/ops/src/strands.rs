@@ -26,13 +26,20 @@ pub enum KindParam {
     Grass,
 }
 
+/// The word `all`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AllWord {
+    #[default]
+    All,
+}
+
 /// Where strands grow.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
 pub enum RegionParam {
     /// `"all"`: the whole surface.
-    #[default]
-    All,
+    All(AllWord),
     /// `{"groups": ["cranium"]}`: these face groups.
     Groups { groups: Vec<String> },
     /// A closed loop of points around the patch, in order: landmark or
@@ -40,9 +47,15 @@ pub enum RegionParam {
     Loop(Vec<PointParam>),
 }
 
+impl Default for RegionParam {
+    fn default() -> Self {
+        RegionParam::All(AllWord::All)
+    }
+}
+
 impl RegionParam {
     fn is_all(&self) -> bool {
-        matches!(self, RegionParam::All)
+        matches!(self, RegionParam::All(_))
     }
 }
 
@@ -181,7 +194,7 @@ pub fn strand_spec(p: &StrandsParams, seed: u64, point: &mut dyn FnMut(&PointPar
     let mut s = StrandSpec::preset(kind);
     s.seed = seed;
     s.region = match &p.region {
-        RegionParam::All => Region::All,
+        RegionParam::All(_) => Region::All,
         RegionParam::Groups { groups } => Region::Groups(groups.clone()),
         RegionParam::Loop(points) => {
             let mut pts = Vec::with_capacity(points.len());
@@ -245,6 +258,32 @@ pub fn strand_spec(p: &StrandsParams, seed: u64, point: &mut dyn FnMut(&PointPar
     Ok(s)
 }
 
+/// The report of grown strands as JSON, kept on the strands object as
+/// metadata `strands` (points in its space): kind, output, guides, faces,
+/// triangles, region area (m2), width, coverage, bald spot, card area over
+/// region area and penetrating points.
+pub fn report_json(kind: &str, s: &p3d_strands::Strands, spec: &StrandSpec) -> serde_json::Value {
+    let r = &s.report;
+    let q = |x: f32| (f64::from(x) * 1e5).round() / 1e5;
+    serde_json::json!({
+        "kind": kind,
+        "output": match spec.output {
+            Output::Cards => "cards",
+            Output::Clumps => "clumps",
+            Output::Shells => "shells",
+        },
+        "guides": r.guides,
+        "faces": r.faces,
+        "triangles": r.triangles,
+        "region_area": q(r.region_area),
+        "width": q(r.width),
+        "coverage": r.coverage.map(q),
+        "bald_spot": r.bald_spot.map(|(p, a)| serde_json::json!({ "at": [q(p.x), q(p.y), q(p.z)], "area": q(a) })),
+        "overdraw": r.overdraw.map(q),
+        "penetrating": r.penetrating,
+    })
+}
+
 /// One line about grown strands.
 pub fn strands_summary(s: &p3d_strands::Strands, spec: &StrandSpec) -> String {
     let r = &s.report;
@@ -283,11 +322,11 @@ impl Op for GenStrands {
                    `spiky`, `straight`, `combed`, `upright`, `wind_blown`, `ponytail` with an `anchor`), `length`, `clumps`, `gravity`, `curl`, `volume`. Strands \
                    are pushed out of the surface at every step, so they never penetrate it. `cards` come with a scalp cap, inner to outer layers and \
                    flyaways, UVs into a 4-column hair atlas (v from root to tip); `clumps` are closed tapered tubes; `shells` are offset copies for fur. \
-                   The summary reports coverage and the largest bald spot. The object is a child of `on`, tagged `strands`.\n\n\
+                   The summary reports coverage and the largest bald spot; the full report stays on the object as metadata `strands`. The object is a child of `on`, tagged `strands`.\n\n\
                    **Use for** hair, eyebrows, beards, fur, grass patches and other strand details.",
             examples: &[OpExample {
-                args: r#"{"on": "crate", "kind": "grass", "region": {"groups": ["top"]}, "clumps": 30}"#,
-                result: "created crate/grass (o:4) grass 0.6118 x 0.2489 x 0.6079 m: 120 faces (240 tris; budget 6,000); 30 cards, 240 tris, region 3600 cm2, coverage 100%",
+                args: r#"{"on": "crate", "kind": "grass", "region": {"groups": ["top"]}}"#,
+                result: "created crate/grass (o:4) grass 0.6366 x 0.2489 x 0.6495 m: 480 faces (960 tris; budget 6,000); 120 cards, 960 tris, region 3600 cm2, coverage 98%",
             }],
             aliases: &["hair", "fur", "grass", "beard", "eyebrows", "hair cards", "particle hair", "hair curves", "groom"],
             complexity: "O(guides x segments x log F) to grow, plus O(F) for the region and coverage",
@@ -322,10 +361,12 @@ impl Op for GenStrands {
         let grown = p3d_strands::generate(mesh, &spec).map_err(strands_error)?;
         let summary = strands_summary(&grown, &spec);
         let kind = serde_json::to_value(p.kind).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_else(|| "strands".into());
+        let report = report_json(&kind, &grown, &spec);
         let parent = tx.doc().path(on).unwrap_or_default();
         let key = create_mesh_object(tx, p.name.as_deref(), &kind, Some(&parent), &Default::default(), grown.mesh)?;
         if let Some(o) = tx.doc_mut().object_mut(key) {
             o.tags.push("strands".into());
+            o.metadata.insert("strands".into(), report);
         }
         let mut out = crate::prim::created_summary(tx, key, &kind);
         out.summary = format!("{}; {summary}", out.summary);

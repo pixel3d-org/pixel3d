@@ -223,9 +223,12 @@ pub(crate) fn card_area(guides: &[Guide], width: f32, spec: &StrandSpec) -> f32 
 /// Share of the region within reach of a card or clump, and the center and
 /// area of the largest uncovered patch. Reach is half the width plus the
 /// distance off the surface and half a step, on a hash grid of guide
-/// points (no pairwise loops).
+/// points (no pairwise loops). The region is sampled evenly (about four
+/// samples per reach disk, at most [`p3d_geo::generate::MAX_SCATTER`]), so
+/// large faces count by how much of them is covered; faces too small to
+/// get a sample count by their centroid.
 ///
-/// Complexity: O(F + guide points) expected.
+/// Complexity: O(F + samples + guide points) expected.
 pub(crate) fn coverage(parent: &Mesh, faces: &[u32], guides: &[Guide], width: f32, spec: &StrandSpec) -> (f32, Option<(Vec3, f32)>) {
     let mut pts: Vec<(Vec3, f32)> = Vec::new();
     for g in guides.iter().filter(|g| !g.flyaway) {
@@ -242,52 +245,65 @@ pub(crate) fn coverage(parent: &Mesh, faces: &[u32], guides: &[Guide], width: f3
     for (i, (p, _)) in pts.iter().enumerate() {
         grid.entry(key(*p)).or_default().push(i as u32);
     }
-    let mut in_region = vec![false; parent.face_slots()];
-    let mut covered = vec![false; parent.face_slots()];
-    let (mut total, mut hit) = (0.0f32, 0.0f32);
-    for &f in faces {
-        in_region[f as usize] = true;
-        let c = parent.face_centroid(f);
+    let reached = |c: Vec3| {
         let k = key(c);
-        let mut ok = false;
-        'cells: for dx in -1..=1 {
+        for dx in -1..=1 {
             for dy in -1..=1 {
                 for dz in -1..=1 {
                     if let Some(list) = grid.get(&(k + IVec3::new(dx, dy, dz)))
                         && list.iter().any(|&i| pts[i as usize].0.distance(c) <= pts[i as usize].1)
                     {
-                        ok = true;
-                        break 'cells;
+                        return true;
                     }
                 }
             }
         }
-        let a = parent.face_area(f);
-        total += a;
-        if ok {
-            hit += a;
-            covered[f as usize] = true;
+        false
+    };
+    let total: f32 = faces.iter().map(|&f| parent.face_area(f)).sum();
+    let mean_reach = if pts.is_empty() { cell } else { pts.iter().map(|p| p.1).sum::<f32>() / pts.len() as f32 };
+    let want = (4.0 * total / (std::f32::consts::PI * mean_reach * mean_reach)).ceil();
+    let count = (want.min(p3d_geo::generate::MAX_SCATTER as f32) as u32).max(64);
+    let samples = p3d_geo::generate::scatter(parent, faces, &p3d_geo::generate::ScatterSpec { count, min_distance: 0.0, seed: spec.seed ^ 0xC0FE })
+        .unwrap_or_default();
+    let mut seen_n = vec![0u32; parent.face_slots()];
+    let mut hit_n = vec![0u32; parent.face_slots()];
+    for s in &samples {
+        seen_n[s.face as usize] += 1;
+        if reached(s.position) {
+            hit_n[s.face as usize] += 1;
         }
     }
-    // The largest uncovered patch, by flood fill across region faces.
+    // Covered share of each region face.
+    let mut share = vec![-1.0f32; parent.face_slots()];
+    let mut hit = 0.0f32;
+    for &f in faces {
+        let s = match seen_n[f as usize] {
+            0 => f32::from(u8::from(reached(parent.face_centroid(f)))),
+            n => hit_n[f as usize] as f32 / n as f32,
+        };
+        share[f as usize] = s;
+        hit += parent.face_area(f) * s;
+    }
+    // The largest mostly uncovered patch, by flood fill across region faces.
+    let open = |f: u32| share[f as usize] >= 0.0 && share[f as usize] < 0.5;
     let mut seen = vec![false; parent.face_slots()];
     let mut best: Option<(Vec3, f32)> = None;
     let mut stack = Vec::new();
     for &f in faces {
-        if covered[f as usize] || seen[f as usize] {
+        if !open(f) || seen[f as usize] {
             continue;
         }
         let (mut area, mut sum) = (0.0f32, Vec3::ZERO);
         seen[f as usize] = true;
         stack.push(f);
         while let Some(g) = stack.pop() {
-            let a = parent.face_area(g);
+            let a = parent.face_area(g) * (1.0 - share[g as usize]);
             area += a;
             sum += parent.face_centroid(g) * a;
             for h in parent.face_halfedges(g) {
                 if let Some(nf) = parent.face(parent.twin(h))
-                    && in_region[nf as usize]
-                    && !covered[nf as usize]
+                    && open(nf)
                     && !seen[nf as usize]
                 {
                     seen[nf as usize] = true;

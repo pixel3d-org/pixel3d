@@ -9,7 +9,7 @@ Grows hair, fur, eyebrows, beards or grass on an object's surface as alpha cards
 - Flags: undoable, creates_groups, creates_objects
 - Also known as: hair, fur, grass, beard, eyebrows, hair cards, particle hair, hair curves, groom
 
-Strands are described, not drawn. Pick a `kind` (its preset sets everything), a `region` (the whole surface, face groups, or a loop of landmarks such as `["hairline_front", "temple_l", "nape", "temple_r"]`), and change what differs: `style` (`swept_back`, `parted`, `spiky`, `straight`, `combed`, `upright`, `wind_blown`, `ponytail` with an `anchor`), `length`, `clumps`, `gravity`, `curl`, `volume`. Strands are pushed out of the surface at every step, so they never penetrate it. `cards` come with a scalp cap, inner to outer layers and flyaways, UVs into a 4-column hair atlas (v from root to tip); `clumps` are closed tapered tubes; `shells` are offset copies for fur. The summary reports coverage and the largest bald spot. The object is a child of `on`, tagged `strands`.
+Strands are described, not drawn. Pick a `kind` (its preset sets everything), a `region` (the whole surface, face groups, or a loop of landmarks such as `["hairline_front", "temple_l", "nape", "temple_r"]`), and change what differs: `style` (`swept_back`, `parted`, `spiky`, `straight`, `combed`, `upright`, `wind_blown`, `ponytail` with an `anchor`), `length`, `clumps`, `gravity`, `curl`, `volume`. Strands are pushed out of the surface at every step, so they never penetrate it. `cards` come with a scalp cap, inner to outer layers and flyaways, UVs into a 4-column hair atlas (v from root to tip); `clumps` are closed tapered tubes; `shells` are offset copies for fur. The summary reports coverage and the largest bald spot; the full report stays on the object as metadata `strands`. The object is a child of `on`, tagged `strands`.
 
 **Use for** hair, eyebrows, beards, fur, grass patches and other strand details.
 
@@ -49,7 +49,7 @@ Strands are described, not drawn. Pick a `kind` (its preset sets everything), a 
 ## Examples
 
 ```json
-{"clumps":30,"kind":"grass","on":"crate","region":{"groups":["top"]}}
+{"kind":"grass","on":"crate","region":{"groups":["top"]}}
 ```
 
-Result: `created crate/grass (o:4) grass 0.6118 x 0.2489 x 0.6079 m: 120 faces (240 tris; budget 6,000); 30 cards, 240 tris, region 3600 cm2, coverage 100%`
+Result: `created crate/grass (o:4) grass 0.6366 x 0.2489 x 0.6495 m: 480 faces (960 tris; budget 6,000); 120 cards, 960 tris, region 3600 cm2, coverage 98%`

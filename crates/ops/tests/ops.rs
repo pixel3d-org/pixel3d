@@ -1264,4 +1264,12 @@ fn gen_strands_grows_hair_between_landmarks() {
     assert_eq!(e.path.as_deref(), Some("/clumps"));
     let s = ok(&mut tx, "gen.strands", json!({ "on": "head", "kind": "beard", "region": ["jaw_l", "chin", "jaw_r", "mouth"], "inside": "chin" }));
     assert!(s.contains("clumps"), "{s}");
+    // The whole surface by word, and the report kept on the object.
+    ok(&mut tx, "gen.strands", json!({ "name": "fuzz", "on": "head", "kind": "fur", "region": "all" }));
+    let fuzz = tx.doc().object(tx.resolve("head/fuzz", "/t").unwrap()).unwrap();
+    assert_eq!(fuzz.metadata["strands"]["output"], json!("shells"));
+    let hair = tx.doc().object(k).unwrap();
+    let report = &hair.metadata["strands"];
+    assert_eq!(report["kind"], json!("hair"));
+    assert!(report["coverage"].as_f64().is_some_and(|c| c > 0.5) && report["penetrating"] == json!(0), "{report}");
 }

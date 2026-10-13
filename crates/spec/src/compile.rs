@@ -240,6 +240,8 @@ struct Compiler<'a> {
     items: BTreeMap<String, Arc<Vec<Item>>>,
     /// Feature template outputs of feature parts.
     features: BTreeMap<String, Arc<p3d_features::Built>>,
+    /// Reports of strands parts grown in this compile.
+    reports: BTreeMap<String, Value>,
     surfaces: BTreeMap<String, Arc<Surface>>,
     /// Surfaces at the identity placement, moved by [`Surface::placed`].
     bases: BTreeMap<String, Surface>,
@@ -834,6 +836,7 @@ impl<'a> Compiler<'a> {
             o.path = Some(format!("/spec{ppath}{}", o.path.as_deref().unwrap_or("")));
             o
         })?;
+        self.reports.insert(name.to_owned(), p3d_ops::strands::report_json(kind, &grown, &spec));
         if let Some(c) = grown.report.coverage.filter(|c| *c < 0.9) {
             self.warnings.push(format!("{name}: the strands cover {:.0}% of their region; raise clumps or width", c * 100.0));
         }
@@ -1589,6 +1592,7 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
             trs: BTreeMap::new(),
             items: BTreeMap::new(),
             features: BTreeMap::new(),
+            reports: BTreeMap::new(),
             surfaces: BTreeMap::new(),
             bases: BTreeMap::new(),
             built: BTreeMap::new(),
@@ -1633,6 +1637,7 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
             anchors: c.anchors,
             into: spec.parts.keys().filter(|n| into.contains_key(*n)).map(|n| (n.clone(), owner(n.clone()))).collect(),
             warnings: c.warnings,
+            reports: c.reports,
         }
     };
     apply(tx, root, &spec, &record, report)
@@ -1647,6 +1652,8 @@ struct Plan {
     built: BTreeMap<String, Arc<Built>>,
     into: BTreeMap<String, String>,
     warnings: Vec<String>,
+    /// Strands reports, kept on their objects as metadata.
+    reports: BTreeMap<String, Value>,
 }
 
 fn kind_name(part: &Part) -> String {
@@ -1752,6 +1759,9 @@ fn apply(tx: &mut Tx, root: ObjectKey, spec: &ModelSpec, record: &SpecRecord, pl
         } else {
             o.metadata.remove("max_penetration");
         }
+        if let Some(r) = plan.reports.get(name) {
+            o.metadata.insert("strands".into(), r.clone());
+        }
         if o.transform != trs && !report.changed.contains(&key) && !report.created.contains(&key) {
             report.changed.push(key);
         }
@@ -1823,6 +1833,7 @@ fn query<'a>(doc: &'a Document, root: ObjectKey, spec: &'a ModelSpec, record: &'
         trs: BTreeMap::new(),
         items: BTreeMap::new(),
         features: BTreeMap::new(),
+        reports: BTreeMap::new(),
         surfaces: BTreeMap::new(),
         bases: BTreeMap::new(),
         built: BTreeMap::new(),

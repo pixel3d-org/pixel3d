@@ -512,6 +512,7 @@ fn strands_parts_grow_on_their_surface_between_landmarks() {
     let hair = key(&tx, "elf/hair");
     let o = tx.doc().object(hair).unwrap();
     assert!(o.tags.iter().any(|t| t == "strands"), "tagged");
+    assert!(o.metadata["strands"]["coverage"].as_f64().is_some_and(|c| c > 0.8), "{:?}", o.metadata.get("strands"));
     assert_eq!(o.transform, tx.doc().object(key(&tx, "elf/head")).unwrap().transform, "placed with the head");
     assert!(tx.doc().object(key(&tx, "elf/brow_r")).unwrap().tags.iter().any(|t| t == "strands"), "mirrors are strands too");
     let rec = tx.doc().spec(key(&tx, "elf")).unwrap().clone();
