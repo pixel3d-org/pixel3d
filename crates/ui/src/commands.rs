@@ -62,6 +62,8 @@ fn app_aliases(label: &str) -> &'static [&'static str] {
         "Quad remesh" => &["retopology", "retopo", "quadriflow", "instant meshes", "zremesher", "autoretopo", "remesh"],
         "Voxel remesh" => &["dynamesh", "remesh voxel", "fuse parts", "make watertight", "remesh"],
         "Poles" => &["valence", "pole overlay", "show poles", "retopology check", "mesh analysis"],
+        "Lamp spec" | "Elf head spec" => &["model spec", "spec", "starter", "blockout", "parts", "spec first", "declarative model"],
+        "Landmarks" => &["landmark overlay", "anchors", "show landmarks", "spec points", "attachment points"],
         _ => &[],
     }
 }
@@ -72,6 +74,9 @@ fn app_desc(label: &str) -> &'static str {
         "Quad remesh" => "Rebuild the selected closed mesh as even quads, in the background",
         "Voxel remesh" => "Rebuild the selected closed mesh from its volume as even quads, in the background",
         "Poles" => "Mark vertices of valence 3, 5 and 6 or more on the selected meshes",
+        "Lamp spec" => "Add a lamp Model Spec: a base, a pole and a shade anchored on each other, edited in the Spec tab",
+        "Elf head spec" => "Add an elf head Model Spec: a head with a blended nose and ears and separate eyes, edited in the Spec tab",
+        "Landmarks" => "Show the landmarks of the selected spec part, with short ticks along their normals",
         "SDF shape" => "Add an organic shape from blended spheres, capsules and boxes, edited in the Shapes tab",
         _ => crate::actions::BOOLEANS.iter().find(|v| v.label == label).map_or("", |v| v.desc),
     }
@@ -131,6 +136,14 @@ fn extra_commands() -> Vec<Command> {
             Icon::Scale,
         ),
         mk("view.snap", null, "Snap", "Snap transform drags to the grid and 15 degree steps", &["snapping", "magnet", "shift tab"], Icon::Grid),
+        mk(
+            "spec.pick_landmark",
+            null,
+            "Pick a landmark",
+            "Anchor the selected spec part by clicking a landmark of its parent in the viewport",
+            &["anchor", "attach", "landmark", "snap part", "spec"],
+            Icon::Landmark,
+        ),
     ]
 }
 
