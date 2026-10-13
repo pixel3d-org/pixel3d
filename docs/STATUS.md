@@ -119,7 +119,7 @@ Acceptance:
 
 - [ ] `features` v1: `ear`, `nose`, `eye`, `head_base`, `hand`, `horn`, `bolt`, `rivet`, `vent_grille`, `panel_inset`, `molding`
 - [ ] `strands`: hair, fur, eyebrows, grass, cables as cards, clumps and shells
-- [ ] Vegetation (ADR 0009): `tree` feature and `gen.tree` (species presets, crown hull, branch levels, roots), foliage as `clumps`, `cards` or `shell`, crown normal transfer, wind data per engine, `flower` and `grass_cards`, `vegetation` perception aspect and expectations
+- [ ] Vegetation (ADR 0009): `tree` feature and `gen.tree` (species presets, crown hull, branch levels, roots), styles realistic, stylized painted and solid low poly; foliage as `clumps`, `cards` (cluster and single-leaf cards with leaf angle, repetition and coverage parameters) or `shell`, crown normal transfer, wind data per engine, `flower` and `grass_cards`, `vegetation` perception aspect and expectations
 - [ ] Full diagnostics: intent, edge flow, shading, detail scale, with predicted fixes
 - [ ] MCP tool `features`
 
