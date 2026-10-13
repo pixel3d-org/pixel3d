@@ -333,3 +333,39 @@ fn edit_a_model_spec_in_the_spec_tab() {
     assert_eq!(s["spec"]["jsonError"]["path"], json!("/parts/pole/join"));
     let _ = c.call("ui.command", json!({ "id": "app.quit" }));
 }
+
+#[test]
+#[ignore = "needs a display and a GPU"]
+fn drag_an_outline_point_and_rebuild() {
+    let dir = temp_dir("outline");
+    let (_app, mut c) = start(&["--command".to_owned(), "ui.start on=false".to_owned()]);
+    // Add > Outline > Leaf shell: the Outline tab opens on its canvas.
+    c.call("ui.command", json!({ "id": "outline.new", "params": { "starter": "leaf" } })).unwrap();
+    c.call("ui.command", json!({ "id": "ui.dock", "params": { "operation": "close", "panel": "health" } })).unwrap();
+    c.call("ui.command", json!({ "id": "view.frame" })).unwrap();
+    settle_camera(&mut c);
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["outline"]["points"].as_array().is_some_and(|p| p.len() == 2)));
+    let height = |s: &Value| {
+        let b = &s["outline"]["mesh"]["bounds"];
+        b[1][1].as_f64().unwrap_or(0.0) - b[0][1].as_f64().unwrap_or(0.0)
+    };
+    let (before, revision, path) = (height(&s), s["scene"]["revision"].clone(), s["outline"]["layers"][0]["value"].clone());
+    // Drag the tip up: a preview while dragging, one rebuild on release.
+    let tip = s["outline"]["points"].as_array().unwrap().iter().find(|p| p["index"] == json!(1)).cloned().unwrap();
+    let (x, y) = (tip["at"][0].as_f64().unwrap(), tip["at"][1].as_f64().unwrap());
+    c.call("ui.drag", json!({ "from": [x, y], "to": [x, y - 40.0], "steps": 12 })).unwrap();
+    let s = wait_for(60, || {
+        Some(inspect(&mut c))
+            .filter(|s| s["scene"]["revision"] != revision && s["outline"]["busy"] == json!(false) && s["outline"]["dragging"] == json!(false))
+    });
+    assert_ne!(s["outline"]["layers"][0]["value"], path, "the outline changed");
+    assert!(height(&s) > before + 0.005, "the rebuilt leaf is longer: {before} -> {}", height(&s));
+    assert_eq!(s["scene"]["objects"], json!(1), "rebuilt in place");
+    let shot = dir.join("outline.png");
+    c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
+    assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    // Undo brings the old outline back.
+    c.call("ui.command", json!({ "id": "edit.undo" })).unwrap();
+    wait_for(30, || Some(inspect(&mut c)).filter(|s| s["outline"]["layers"][0]["value"] == path));
+    let _ = c.call("ui.command", json!({ "id": "app.quit" }));
+}
