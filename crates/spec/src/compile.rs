@@ -39,6 +39,8 @@ pub enum PartStatus {
     Unchanged,
     /// Merged into the named part's mesh.
     Blended(String),
+    /// Stitched into the named part's mesh by a boolean union.
+    Welded(String),
 }
 
 /// One part of a compile report.
@@ -200,6 +202,9 @@ fn param_dir(u: f64, v: f64) -> Vec3 {
     Vec3::new(r * a.sin(), y, r * a.cos())
 }
 
+/// Child parts by the part they join.
+type Children = BTreeMap<String, Vec<String>>;
+
 /// Face group names of SDF prims with the spec paths of their shapes.
 type LeafGroups = Vec<(String, String)>;
 
@@ -227,6 +232,10 @@ struct Compiler<'a> {
     force: bool,
     /// Blend children by parent, sorted.
     blends: BTreeMap<String, Vec<String>>,
+    /// Weld children by parent, sorted.
+    welds: BTreeMap<String, Vec<String>>,
+    /// Meshes before their weld children join (what anchors see).
+    pre: BTreeMap<String, Arc<Built>>,
     trs: BTreeMap<String, Trs>,
     items: BTreeMap<String, Arc<Vec<Item>>>,
     surfaces: BTreeMap<String, Arc<Surface>>,
@@ -500,7 +509,7 @@ impl<'a> Compiler<'a> {
                         Surface::of_sdf(Arc::new(sdf), Affine3A::IDENTITY)
                     }
                     _ => {
-                        let b = self.mesh(name)?;
+                        let b = self.base_mesh(name)?;
                         Surface::of_mesh(&b.mesh, Affine3A::IDENTITY).ok_or_else(|| err(&path, "the part has no faces to anchor on"))?
                     }
                 };
@@ -531,8 +540,9 @@ impl<'a> Compiler<'a> {
 
     // ---- meshes --------------------------------------------------------------
 
-    fn mesh(&mut self, name: &str) -> Result<Arc<Built>, OpError> {
-        if let Some(b) = self.built.get(name) {
+    /// The part's mesh before its weld children join.
+    fn base_mesh(&mut self, name: &str) -> Result<Arc<Built>, OpError> {
+        if let Some(b) = self.pre.get(name) {
             return Ok(Arc::clone(b));
         }
         let path = format!("/parts/{name}");
@@ -541,8 +551,106 @@ impl<'a> Compiler<'a> {
         let r = self.build(name, part, &path);
         self.leave();
         let b = r?;
+        self.pre.insert(name.to_owned(), Arc::clone(&b));
+        Ok(b)
+    }
+
+    /// The part's final mesh: its base mesh with weld children unioned in.
+    fn mesh(&mut self, name: &str) -> Result<Arc<Built>, OpError> {
+        if let Some(b) = self.built.get(name) {
+            return Ok(Arc::clone(b));
+        }
+        let kids = self.welds.get(name).cloned().unwrap_or_default();
+        let b = if kids.is_empty() { self.base_mesh(name)? } else { self.weld(name, &kids)? };
         self.built.insert(name.to_owned(), Arc::clone(&b));
         Ok(b)
+    }
+
+    /// Unions weld children into a part (exact booleans): one closed mesh
+    /// stitched along the intersection. Provenance rides along as
+    /// temporary face groups, which booleans carry.
+    ///
+    /// Complexity: the boolean's, about O(n log n) in triangles.
+    fn weld(&mut self, name: &str, kids: &[String]) -> Result<Arc<Built>, OpError> {
+        let path = format!("/parts/{name}");
+        self.enter(format!("weld {name}"), &path)?;
+        let r = (|| {
+            let base = self.base_mesh(name)?;
+            let place = self.placement(name)?.to_affine().inverse();
+            let mut h = Hasher::new();
+            h.bytes(b"weld");
+            h.u64(base.hash);
+            let mut tools = Vec::with_capacity(kids.len());
+            for k in kids {
+                let b = self.mesh(k)?;
+                let rel = place * self.placement(k)?.to_affine();
+                h.u64(b.hash);
+                h.floats(&rel.to_cols_array());
+                tools.push((k.clone(), b, rel));
+            }
+            let hash = h.0;
+            if let Some(c) = self.cached(name, hash) {
+                return Ok(c);
+            }
+            const TAG: &str = "@prov.";
+            let mut entries = base.provenance.entries.clone();
+            let mut target = (*base.mesh).clone();
+            tag(&mut target, &base.provenance.per_face(), 0)?;
+            let mut meshes = Vec::with_capacity(tools.len());
+            for (k, b, rel) in &tools {
+                let mut m = (*b.mesh).clone();
+                m.transform(*rel);
+                // The child's groups keep their names under the child's.
+                let names: Vec<String> = m.groups().filter(|(n, _)| !n.starts_with(TAG)).map(|(n, _)| n.to_owned()).collect();
+                for n in names {
+                    if let Some(g) = m.group(&n).cloned() {
+                        let list: Vec<u32> = g.iter().collect();
+                        let _ = m.remove_group(&n);
+                        m.set_group(&format!("{k}.{n}"), g.kind(), list).map_err(|e| OpError::internal(e.to_string()))?;
+                    }
+                }
+                let all: Vec<u32> = m.faces().collect();
+                m.set_group(k, ElementKind::Face, all).map_err(|e| OpError::internal(e.to_string()))?;
+                tag(&mut m, &b.provenance.per_face(), entries.len() as u32)?;
+                entries.extend(b.provenance.entries.iter().cloned());
+                meshes.push(m);
+            }
+            let refs: Vec<&Mesh> = meshes.iter().collect();
+            let r = p3d_geo::boolean::boolean(
+                &target,
+                &refs,
+                &p3d_geo::boolean::BooleanSpec { keep_tool_groups: true, ..p3d_geo::boolean::BooleanSpec::default() },
+                &p3d_geo::boolean::ManifoldEngine,
+            )
+            .map_err(|e| {
+                err(&format!("/parts/{}/join", kids[0]), format!("the weld into `{name}` failed: {e}"))
+                    .with_hint("both parts must be closed and overlap where they join")
+            })?;
+            let mut mesh = r.mesh;
+            // Read provenance back from the tags, then drop them.
+            let mut slot = vec![u32::MAX; mesh.face_slots()];
+            for (i, f) in mesh.faces().enumerate() {
+                slot[f as usize] = i as u32;
+            }
+            let mut per_face = vec![0u32; mesh.face_count()];
+            let tags: Vec<String> = mesh.groups().filter(|(n, _)| n.starts_with(TAG)).map(|(n, _)| n.to_owned()).collect();
+            for t in &tags {
+                let e: u32 = t[TAG.len()..].parse().unwrap_or(0);
+                if let Some(g) = mesh.group(t) {
+                    for f in g.iter() {
+                        if let Some(&i) = slot.get(f as usize)
+                            && i != u32::MAX
+                        {
+                            per_face[i as usize] = e;
+                        }
+                    }
+                }
+                let _ = mesh.remove_group(t);
+            }
+            Ok(Arc::new(Built { mesh: Arc::new(mesh), provenance: Provenance::from_faces(entries, &per_face), hash, cached: false }))
+        })();
+        self.leave();
+        r
     }
 
     fn build(&mut self, name: &str, part: &'a Part, path: &str) -> Result<Arc<Built>, OpError> {
@@ -1096,6 +1204,21 @@ fn spec_err(e: crate::SpecError) -> OpError {
     err(&e.path, e.message)
 }
 
+/// Puts every face in a temporary group named after its provenance entry
+/// (offset by `base`), so booleans carry provenance with groups.
+///
+/// Complexity: O(faces).
+fn tag(mesh: &mut Mesh, per_face: &[u32], base: u32) -> Result<(), OpError> {
+    let mut by: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for (f, &e) in mesh.faces().zip(per_face) {
+        by.entry(e + base).or_default().push(f);
+    }
+    for (e, list) in by {
+        mesh.set_group(&format!("@prov.{e}"), ElementKind::Face, list).map_err(|e| OpError::internal(e.to_string()))?;
+    }
+    Ok(())
+}
+
 /// Prefixes the names of every prim (`item_<n>` becomes `shape_<n>`).
 ///
 /// Complexity: O(items).
@@ -1133,8 +1256,9 @@ fn leaf_groups(shapes: &[SdfShapeParam], path: &str, prefix: &str, leaf: &mut us
 /// (a mirror joins like its source); checks every join.
 ///
 /// Complexity: O(parts x mirror chain length).
-fn blend_targets(spec: &ModelSpec) -> Result<BTreeMap<String, Vec<String>>, OpError> {
+fn blend_targets(spec: &ModelSpec) -> Result<(Children, Children), OpError> {
     let mut blends: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut welds: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for (name, part) in &spec.parts {
         let path = format!("/parts/{name}");
         part.kind(&path).map_err(spec_err)?;
@@ -1150,7 +1274,14 @@ fn blend_targets(spec: &ModelSpec) -> Result<BTreeMap<String, Vec<String>>, OpEr
             target_of_mirror = source.anchor.as_ref().and_then(|a| a.on.clone());
         }
         match source.join() {
-            Join::Weld => return Err(err(&format!("{path}/join"), "weld joins are not built yet; use blend (SDF parts) or separate")),
+            Join::Weld => {
+                let on = match &part.mirror {
+                    Some(_) => target_of_mirror,
+                    None => part.anchor.as_ref().and_then(|a| a.on.clone()),
+                }
+                .ok_or_else(|| err(&format!("{path}/join"), "a weld joins the part it is anchored on: give an anchor"))?;
+                welds.entry(on).or_default().push(name.clone());
+            }
             Join::Blend => {
                 let on = match &part.mirror {
                     Some(_) => target_of_mirror,
@@ -1173,7 +1304,7 @@ fn blend_targets(spec: &ModelSpec) -> Result<BTreeMap<String, Vec<String>>, OpEr
             Join::Separate | Join::Decal => {}
         }
     }
-    Ok(blends)
+    Ok((blends, welds))
 }
 
 /// Compiles the spec on `root` into part objects under it, reusing parts
@@ -1189,7 +1320,7 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
         Some(r) => r,
         None => fallback(),
     };
-    let blends = blend_targets(&spec)?;
+    let (blends, welds) = blend_targets(&spec)?;
     let report = {
         let doc = tx.doc();
         let mut c = Compiler {
@@ -1201,6 +1332,8 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
             cancel: ctx.cancel,
             force,
             blends,
+            welds,
+            pre: BTreeMap::new(),
             trs: BTreeMap::new(),
             items: BTreeMap::new(),
             surfaces: BTreeMap::new(),
@@ -1222,7 +1355,7 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
         }
         // Blend targets first need their children's placements (done).
         let mut into: BTreeMap<String, String> = BTreeMap::new();
-        for (parent, kids) in &c.blends {
+        for (parent, kids) in c.blends.iter().chain(&c.welds) {
             for k in kids {
                 into.insert(k.clone(), parent.clone());
             }
@@ -1241,6 +1374,7 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
             n
         };
         Plan {
+            welded: c.welds.values().flatten().cloned().collect(),
             trs: c.trs,
             built: c.built,
             anchors: c.anchors,
@@ -1253,6 +1387,8 @@ pub fn compile(tx: &mut Tx, root: ObjectKey, ctx: &OpCtx, force: bool) -> Result
 
 /// What the compiler decided, before it touches the document.
 struct Plan {
+    /// Parts stitched (not blended) into their owner.
+    welded: BTreeSet<String>,
     trs: BTreeMap<String, Trs>,
     anchors: BTreeMap<String, Hit>,
     built: BTreeMap<String, Arc<Built>>,
@@ -1305,7 +1441,7 @@ fn apply(tx: &mut Tx, root: ObjectKey, spec: &ModelSpec, record: &SpecRecord, pl
             parts.insert(name.clone(), PartRecord::default());
             report.parts.push(PartReport {
                 name: name.clone(),
-                status: PartStatus::Blended(owner.clone()),
+                status: if plan.welded.contains(name) { PartStatus::Welded(owner.clone()) } else { PartStatus::Blended(owner.clone()) },
                 kind: kind_name(part),
                 faces: 0,
                 size: Vec3::ZERO,
@@ -1423,7 +1559,9 @@ fn query<'a>(doc: &'a Document, root: ObjectKey, spec: &'a ModelSpec, record: &'
         registry: fallback(),
         cancel: None,
         force: false,
-        blends: blend_targets(spec)?,
+        blends: blend_targets(spec)?.0,
+        welds: blend_targets(spec)?.1,
+        pre: BTreeMap::new(),
         trs: BTreeMap::new(),
         items: BTreeMap::new(),
         surfaces: BTreeMap::new(),

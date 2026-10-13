@@ -347,3 +347,31 @@ fn deform_handles_reshape_a_part_and_survive_recompiles() {
     assert_eq!(e.path.as_deref(), Some("/spec/parts/ear/deform/handles/0/move"), "{e:?}");
     assert!(e.suggestions.iter().any(|s| s == "top" || s == "lobe"), "{e:?}");
 }
+
+#[test]
+fn weld_joins_stitch_a_part_into_its_parent() {
+    let mut tx = Tx::new(Document::new());
+    let s = ok(
+        &mut tx,
+        "spec.set",
+        json!({ "name": "beast", "spec": { "parts": {
+            "body": { "primitive": { "box": { "width": 0.4, "height": 0.3, "depth": 0.3, "origin": "center" } } },
+            "horn": {
+                "primitive": { "cone": { "radius_bottom": 0.05, "radius_top": 0.005, "height": 0.2 } },
+                "anchor": { "on": "body", "landmark": "top", "offset": [0, -0.03, 0] },
+                "join": "weld"
+            }
+        } } }),
+    );
+    assert!(s.contains("1 welded") && s.contains("horn (cone) welded into body"), "{s}");
+    assert!(tx.doc().resolve("beast/horn").is_err(), "no object of its own");
+    let m = tx.doc().object_mesh(key(&tx, "beast/body")).unwrap();
+    assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "one closed mesh");
+    assert!(m.group("horn").is_some_and(|g| g.count() > 0), "the horn's faces are named");
+    assert!(m.groups().all(|(n, _)| !n.starts_with("@prov")), "no temporary groups left");
+    let (lo, hi) = m.bounds().unwrap();
+    assert!(hi.y > 0.3 && lo.y < -0.14, "{lo} {hi}");
+    let rec = tx.doc().spec(key(&tx, "beast")).unwrap().parts["body"].clone();
+    assert!(rec.provenance.entries.iter().any(|e| e.path == "/parts/horn/primitive"), "{:?}", rec.provenance.entries);
+    assert_eq!(rec.provenance.face_count(), m.face_count());
+}

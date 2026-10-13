@@ -46,6 +46,10 @@ fn summarize(doc: &Document, root: ObjectKey, r: &CompileReport) -> OpOutput {
     if blended > 0 {
         let _ = write!(s, ", {blended} blended");
     }
+    let welded = r.parts.iter().filter(|p| matches!(p.status, PartStatus::Welded(_))).count();
+    if welded > 0 {
+        let _ = write!(s, ", {welded} welded");
+    }
     if !r.removed.is_empty() {
         let _ = write!(s, "; removed {}", r.removed.join(", "));
     }
@@ -53,6 +57,9 @@ fn summarize(doc: &Document, root: ObjectKey, r: &CompileReport) -> OpOutput {
         match &p.status {
             PartStatus::Blended(into) => {
                 let _ = write!(s, "\n  {} ({}) blended into {}", p.name, p.kind, into);
+            }
+            PartStatus::Welded(into) => {
+                let _ = write!(s, "\n  {} ({}) welded into {}", p.name, p.kind, into);
             }
             _ => {
                 let c = p.center;

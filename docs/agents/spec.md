@@ -29,7 +29,7 @@ Optional keys:
 - `detail`: the voxel size of an `sdf` part.
 - `transform`: `position`, `rotate` (degrees about X, Y, Z) and `scale` in the root's space.
 - `anchor`: where the part sits on another part (below).
-- `join`: `separate` (default, its own object), `blend` (merged into its anchor parent with a fillet of `blend`, SDF parts on both sides), `decal` (kept hidden, baked onto the parent later). `weld` is not built yet.
+- `join`: `separate` (default, its own object), `blend` (merged into its anchor parent with a fillet of `blend`, SDF parts on both sides), `weld` (stitched into its anchor parent by an exact boolean union: one closed mesh with a crisp seam, the part's faces grouped under its name; both must be closed), `decal` (kept hidden, baked onto the parent later).
 - `edits`: ops run on the part after its shape, `[{"op": "edit.inset", "args": {...}, "label": "panel"}]`; leave out `target`. Keep manual work here: a recompile replaces hand edits to a part's mesh.
 - `landmarks`: a category (`"humanoid_head"`, or `"category"` for the spec's `category`), or named surface coordinates of your own.
 - `tags`, `material`, `importance`.

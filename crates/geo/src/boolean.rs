@@ -234,11 +234,14 @@ pub struct BooleanSpec {
     /// Vertices the cut created merge with neighbours closer than this
     /// (removes sliver edges); 0 keeps them all.
     pub weld: f32,
+    /// Carry the tools' face groups into the result too (joining parts);
+    /// otherwise tool faces only form the cut group.
+    pub keep_tool_groups: bool,
 }
 
 impl Default for BooleanSpec {
     fn default() -> Self {
-        BooleanSpec { op: BoolOp::Union, weld: 1e-4 }
+        BooleanSpec { op: BoolOp::Union, weld: 1e-4, keep_tool_groups: false }
     }
 }
 
@@ -360,6 +363,9 @@ pub fn boolean(target: &Mesh, tools: &[&Mesh], spec: &BooleanSpec, engine: &dyn 
     transfer_corners(&mut mesh, &operands, &out, &fsrc);
     let cut_edges = transfer_edges(&mut mesh, &operands, &fsrc);
     transfer_groups(&mut mesh, target, &fsrc)?;
+    if spec.keep_tool_groups {
+        transfer_tool_groups(&mut mesh, tools, &fsrc)?;
+    }
     let curved = curved_polys(target, &mesh, &fsrc, &cut_edges);
     let normals_cleared = target.corner_normal.is_some();
 
@@ -714,6 +720,26 @@ fn transfer_groups(mesh: &mut Mesh, target: &Mesh, fsrc: &[Src]) -> Result<(), B
     }
     let cut = faces.iter().copied().filter(|&f| fsrc[f as usize].operand != 0);
     mesh.set_group(CUT_GROUP, ElementKind::Face, cut).map_err(fail)?;
+    Ok(())
+}
+
+/// Adds the tools' face groups to the result (faces from tool `i` in its
+/// group `g` join group `g`, after any target faces of that name).
+///
+/// Complexity: O(F x groups of the tools).
+fn transfer_tool_groups(mesh: &mut Mesh, tools: &[&Mesh], fsrc: &[Src]) -> Result<(), BooleanError> {
+    let fail = |e: p3d_mesh::GroupError| BooleanError::Engine(e.to_string());
+    let faces: Vec<u32> = mesh.faces().collect();
+    for (i, tool) in tools.iter().enumerate() {
+        let operand = i as u32 + 1;
+        for (name, g) in tool.groups().filter(|(_, g)| g.kind() == ElementKind::Face) {
+            let mut list: Vec<u32> = mesh.group(name).map(|e| e.iter().collect()).unwrap_or_default();
+            list.extend(faces.iter().copied().filter(|&f| fsrc[f as usize].operand == operand && g.contains(fsrc[f as usize].face)));
+            list.sort_unstable();
+            list.dedup();
+            mesh.set_group(name, ElementKind::Face, list).map_err(fail)?;
+        }
+    }
     Ok(())
 }
 

@@ -203,6 +203,7 @@ impl Op for Boolean {
                 BoolOpParam::Intersect => BoolOp::Intersect,
             },
             weld: p.weld.0 as f32,
+            keep_tool_groups: false,
         };
         let refs: Vec<&Mesh> = moved.iter().collect();
         let target = tx.mesh(key, "/target")?;
