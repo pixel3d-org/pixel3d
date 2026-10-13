@@ -33,6 +33,7 @@ pub mod remote;
 pub mod results;
 pub mod schema_form;
 pub mod screenshot;
+pub mod sdf;
 pub mod snap;
 pub mod stats;
 pub mod theme;
@@ -284,6 +285,8 @@ pub struct PixelApp {
     pub result: Option<results::LastResult>,
     /// Background op batches (imports), committed when they finish.
     jobs: Vec<RunningJob>,
+    /// The SDF shape editor (the Shapes tab and the viewport proxies).
+    pub sdf: sdf::SdfEditor,
     /// The revision of an edit still being dragged: the next change of the
     /// same drag replaces it, so one drag is one undo step.
     coalesce: Option<u64>,
@@ -351,6 +354,7 @@ impl PixelApp {
             last_op: None,
             result: None,
             jobs: Vec::new(),
+            sdf: sdf::SdfEditor::default(),
             coalesce: None,
             edit_focus: None,
             services,
@@ -393,7 +397,7 @@ impl PixelApp {
 
     /// Background work still running (shown in the status bar).
     pub fn running_jobs(&self) -> usize {
-        usize::from(self.health.busy()) + self.jobs.len()
+        usize::from(self.health.busy()) + self.jobs.len() + usize::from(self.sdf.busy())
     }
 
     /// Whether the History or Console panel is open.
@@ -837,6 +841,7 @@ impl PixelApp {
         self.result = None;
         // Jobs started on the old document must not land in the new one.
         self.jobs.clear();
+        self.sdf = sdf::SdfEditor::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
         self.viewport.frame_pending = true;
@@ -951,6 +956,18 @@ impl PixelApp {
                 self.import_files(&[PathBuf::from(path)], &rest)
             }
             "file.sample" => self.sample(),
+            // A new SDF object (Add > SDF Shape): the starter shapes unless
+            // `shapes` is given; the SDF op without shapes does the same.
+            "shapes.new" => {
+                let mut p = params.as_object().cloned().unwrap_or_default();
+                if !p.contains_key("shapes") {
+                    p.extend(sdf::starter().as_object().cloned().unwrap_or_default());
+                }
+                let op = sdf::op_id(self.session.registry());
+                self.execute(&[OpCall::new(op, Value::Object(p))])
+            }
+            op if sdf::is_sdf_op(op) && params.get("shapes").is_none() => self.run_inner("shapes.new", params),
+            shapes_cmd if shapes_cmd.starts_with("shapes.") => self.sdf_command(shapes_cmd, params),
             "edit.undo" => {
                 let label = self.session.undo().map_err(|e| e.message)?;
                 self.prune_selection();
@@ -1259,7 +1276,7 @@ impl PixelApp {
     /// selects the objects it created.
     ///
     /// Complexity: O(results + warnings + created objects).
-    fn committed(&mut self, r: &p3d_engine::BatchResult) -> Value {
+    pub(crate) fn committed(&mut self, r: &p3d_engine::BatchResult) -> Value {
         let mut created = Vec::new();
         for res in &r.results {
             self.log(res.output.summary.clone());
@@ -1631,6 +1648,7 @@ impl PixelApp {
         if self.poll_jobs() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
+        self.sdf_tick(ctx);
         if let Some((_, at)) = &self.status {
             let left = STATUS_TIME.saturating_sub(at.elapsed());
             if !left.is_zero() {
@@ -1684,7 +1702,8 @@ impl PixelApp {
                     .preview
                     .clone()
                     .map(|(d, n)| (d, n | (1 << 63)))
-                    .or_else(|| self.action_preview.doc.clone().map(|(d, n)| (d, n | (1 << 62))));
+                    .or_else(|| self.action_preview.doc.clone().map(|(d, n)| (d, n | (1 << 62))))
+                    .or_else(|| self.sdf.preview_doc().map(|(d, n)| (d, n | (1 << 61))));
                 let (doc, key) = match preview {
                     Some((d, n)) => (d, n),
                     None => (std::sync::Arc::clone(self.session.doc()), self.scene_key()),
@@ -1705,6 +1724,8 @@ impl PixelApp {
                 }
                 self.viewport.edit_overlay = match (&part, element_mode) {
                     (Some((i, mesh, _)), true) => self.edit.overlay(*i, self.ui.mode, previewing.then_some(mesh)).map(|(o, k, _)| (o, k)),
+                    // Object Mode: the faces of the shape row under the pointer.
+                    (_, false) => self.sdf_highlight(),
                     _ => None,
                 };
                 self.viewport.pick_elements = element_mode && self.edit.object.is_some();
@@ -1717,6 +1738,7 @@ impl PixelApp {
                     })
                     .inner;
                 chrome::viewport_overlay(self, ui);
+                sdf::overlay(self, ui, &mut viewport_events);
                 let gizmo_rect = self.viewport.rect;
                 gizmo::show(self, ui, gizmo_rect);
                 quick::show(self, ui, gizmo_rect);

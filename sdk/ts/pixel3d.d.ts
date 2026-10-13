@@ -300,7 +300,7 @@ export type ProportionalParams = {
 /** Uniform or per-axis scale. */
 export type Scale = number | [number, number, number];
 
-/** One shape: exactly one primitive key (sphere, ellipsoid, box, capsule, cone, torus, cylinder or group) plus how it joins the shapes before it (union by default; smooth_union, subtract, smooth_subtract, intersect, smooth_intersect) and optional changes (rotate, round, shell, twist, bend, mirror, noise, name). */
+/** One shape: exactly one primitive key (sphere, ellipsoid, box, capsule, cone, torus, cylinder or group) plus how it joins the shapes before it (union by default; smooth_union, subtract, smooth_subtract, intersect, smooth_intersect) and optional changes (rotate, round, shell, twist, bend, mirror, noise, name, hidden). */
 export type SdfShape = {
   /** Groups only: the group's center for rotate. */
   at?: unknown;
@@ -313,6 +313,8 @@ export type SdfShape = {
   ellipsoid?: EllipsoidPrim;
   /** Shapes combined among themselves first, then joined as one. */
   group?: SdfShape[];
+  /** Leave the shape out of the result; it stays in the list. */
+  hidden?: boolean;
   /** Keep only what this shape and the shapes before it share. */
   intersect?: boolean;
   mirror?: MirrorParam;
@@ -1141,6 +1143,8 @@ export type SdfMeshParams = {
   position?: [Length, Length, Length] | null;
   /** The shapes in order: each joins the shapes before it. */
   shapes: SdfShape[];
+  /** Mesh object to rebuild in place from the shapes (it keeps its name, transform, parent and children) instead of making a new object. */
+  target?: string | null;
 };
 
 /** `sdf.from_mesh`: Rebuilds a closed mesh from its distance field as even quads about `detail` apart (a voxel remesh). */

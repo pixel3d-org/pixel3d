@@ -58,12 +58,16 @@ fn app_aliases(label: &str) -> &'static [&'static str] {
         "Difference" => &["boolean difference", "subtract", "cut", "carve", "bool tool", "ctrl minus", "polycbooldifference"],
         "Union" => &["boolean union", "merge meshes", "combine", "bool tool", "ctrl plus", "polycboolunion"],
         "Intersect" => &["boolean intersect", "intersection", "overlap", "bool tool", "ctrl asterisk", "polycboolintersection"],
+        "SDF shape" => &["sdf", "sculpt", "metaballs", "blob", "clay", "implicit surface", "smooth union"],
         _ => &[],
     }
 }
 
 /// What app commands do, by label, for those whose label alone may not say.
 fn app_desc(label: &str) -> &'static str {
+    if label == "SDF shape" {
+        return "Add an organic shape from blended spheres, capsules and boxes, edited in the Shapes tab";
+    }
     crate::actions::BOOLEANS.iter().find(|v| v.label == label).map_or("", |v| v.desc)
 }
 

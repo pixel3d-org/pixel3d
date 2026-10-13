@@ -149,3 +149,39 @@ fn the_result_card_grows_to_show_new_warnings() {
     assert!(view.contains_rect(fix.rect), "the button {:?} is inside the viewport {view:?}", fix.rect);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// An SDF object from Add > SDF Shape with its head selected in the
+/// Shapes tab, framed in the viewport.
+fn sdf_app(theme: ThemePref) -> Harness<'static, PixelApp> {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = theme;
+    a.run(
+        "shapes.new",
+        json!({ "name": "creature", "detail": 0.03, "shapes": [
+            { "name": "body", "ellipsoid": { "at": [0, 0.35, 0], "radii": [0.3, 0.35, 0.25] } },
+            { "name": "head", "smooth_union": 0.08, "sphere": { "at": [0, 0.82, 0], "radius": 0.18 } },
+            { "name": "ear", "smooth_union": 0.03, "mirror": "x", "capsule": { "a": [0.1, 0.95, 0], "b": [0.2, 1.1, 0], "radius": 0.04, "radius_b": 0.01 } }
+        ] }),
+    )
+    .unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("shapes.select", json!({ "name": "head" })).unwrap();
+    h.state_mut().run("view.frame", Value::Null).unwrap();
+    h.run_steps(20);
+    h
+}
+
+#[test]
+fn sdf_shapes_panel() {
+    let mut h = sdf_app(ThemePref::Dark);
+    snapshot(&mut h, "sdf_panel_dark");
+}
+
+#[test]
+fn sdf_proxies_and_gizmo() {
+    let mut h = sdf_app(ThemePref::Light);
+    h.state_mut().run("ui.tool", json!({ "tool": "move" })).unwrap();
+    h.run_steps(10);
+    snapshot(&mut h, "sdf_proxies_light");
+}

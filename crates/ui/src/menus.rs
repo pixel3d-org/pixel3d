@@ -246,6 +246,8 @@ pub fn menus() -> Vec<Menu> {
                         || json!({ "points": 16, "sections": [[[-0.2, 0, -0.2], [0.2, 0, -0.2], [0.2, 0, 0.2], [-0.2, 0, 0.2]], [[0.15, 0.5, 0], [0, 0.5, -0.15], [-0.15, 0.5, 0], [0, 0.5, 0.15]]] }),
                     ),
                 ),
+                // Blended shapes to sculpt in the Shapes tab.
+                icon(Icon::Shapes, with("SDF shape", "shapes.new", crate::sdf::starter)),
                 None,
                 header("Generate (lathe)"),
                 icon(Icon::Tube, with("Barrel", "gen.lathe", || json!({ "profile": "barrel" }))),

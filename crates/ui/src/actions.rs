@@ -144,6 +144,8 @@ fn category_icon(c: Category) -> Icon {
         Category::Deform => Icon::Smooth,
         Category::Cleanup => Icon::CleanUp,
         Category::Io => Icon::Import,
+        Category::Sdf => Icon::Shapes,
+        Category::Remesh => Icon::Grid,
         _ => Icon::Command,
     }
 }
@@ -200,6 +202,8 @@ pub fn category_label(c: Category) -> &'static str {
         Category::Deform => "Deform",
         Category::Cleanup => "Clean up",
         Category::Io => "File",
+        Category::Sdf => "Sculpt",
+        Category::Remesh => "Remesh",
         _ => "Other",
     }
 }

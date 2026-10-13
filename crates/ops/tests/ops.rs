@@ -1038,6 +1038,34 @@ fn sdf_mesh_blends_named_shapes_and_mirrors() {
 }
 
 #[test]
+fn sdf_mesh_rebuilds_in_place_and_hides_shapes() {
+    let mut tx = Tx::new(Document::new());
+    let sphere = |x: f64, r: f64| json!({ "sphere": { "at": [x, 0, 0], "radius": r } });
+    ok(&mut tx, "sdf.mesh", json!({ "name": "blob", "detail": "1cm", "shapes": [sphere(0.0, 0.1), sphere(0.12, 0.06)] }));
+    let key = tx.resolve("blob", "/t").unwrap();
+    let objects = tx.doc().object_count();
+    // Hide the first (unnamed) shape: the second keeps its group name shape_1.
+    let mut hidden = sphere(0.0, 0.1);
+    hidden["hidden"] = json!(true);
+    let s = ok(&mut tx, "sdf.mesh", json!({ "target": "blob", "detail": "1cm", "shapes": [hidden.clone(), sphere(0.12, 0.06)] }));
+    assert!(s.starts_with("rebuilt blob (o:1) sdf"), "{s}");
+    assert_eq!((tx.doc().object_count(), tx.resolve("blob", "/t").unwrap()), (objects, key), "the same object, rebuilt");
+    let m = tx.doc().object_mesh(key).unwrap();
+    assert!(m.group("shape_0").is_none() && m.group("shape_1").is_some_and(|g| g.count() > 0));
+    let (lo, hi) = m.bounds().unwrap();
+    assert!(lo.x > 0.0 && hi.x < 0.19, "only the second sphere is left: {lo} {hi}");
+    // Errors name the shape as written, hidden ones counted.
+    let mut bad = sphere(0.0, 0.1);
+    bad["sphere"]["radius"] = json!(-0.1);
+    let e = err(&mut tx, "sdf.mesh", json!({ "target": "blob", "shapes": [hidden.clone(), bad] }));
+    assert_eq!(e.path.as_deref(), Some("/shapes/1"));
+    let e = err(&mut tx, "sdf.mesh", json!({ "target": "blob", "shapes": [hidden] }));
+    assert!(e.message.contains("hidden"), "{}", e.message);
+    let e = err(&mut tx, "sdf.mesh", json!({ "target": "blob", "name": "other", "shapes": [sphere(0.0, 0.1)] }));
+    assert_eq!(e.path.as_deref(), Some("/target"));
+}
+
+#[test]
 fn sdf_mesh_errors_are_precise() {
     let mut tx = Tx::new(Document::new());
     let e = err(&mut tx, "sdf.mesh", json!({ "shapes": [{ "sphere": { "at": [0, 0, 0], "radius": 0.1 }, "smooth_unoin": 0.02 }] }));

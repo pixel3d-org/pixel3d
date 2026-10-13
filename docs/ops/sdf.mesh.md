@@ -13,6 +13,8 @@ The sculpting tool for agents: write the shapes in order, each one primitive (`s
 
 Every face joins a group named after the shape that made it (`name`, or `shape_<n>`), so perception and diagnostics can name the shapes. `detail` is the voxel size, about the edge length of the result; walls thinner than a voxel make the mesher refine on its own.
 
+A shape with `hidden: true` is left out but stays in the list (the others keep their group names). With `target`, the shapes rebuild that mesh object in place (it keeps its name, transform, parent and children): the object's history then holds the shapes to edit and run again.
+
 **Use for** heads, bodies, creatures, rocks, organic props and stylized forms: blocking out with ellipsoids and capsules, then blending detail in. Hard-surface parts are better built with primitives, extrusions and bevels.
 
 ## Parameters
@@ -24,6 +26,7 @@ Every face joins a group named after the shape that made it (`name`, or `shape_<
 | `parent` | `string \| null` | - | Parent object (name, path or id); top level when omitted. |
 | `position` | `[Length, Length, Length] \| null` | - | Origin position in the parent's space. |
 | `shapes` | `SdfShape[]` | required | The shapes in order: each joins the shapes before it. |
+| `target` | `string \| null` | - | Mesh object to rebuild in place from the shapes (it keeps its name, transform, parent and children) instead of making a new object. |
 
 ## Examples
 

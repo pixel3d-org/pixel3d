@@ -273,3 +273,6 @@ pub const SPARKLES: &[&str] =
 /// A clipboard with lines: a report.
 pub const REPORT: &[&str] =
     &["M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2", "M9 3h6v4h-6z", "M9 12h6", "M9 16h4"];
+
+/// Two blobs blending into one: shapes made from blended primitives.
+pub const BLOBS: &[&str] = &["M9 14m-5 0a5 5 0 1 0 10 0a5 5 0 1 0 -10 0", "M15.5 9.5m-4.5 0a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0"];
