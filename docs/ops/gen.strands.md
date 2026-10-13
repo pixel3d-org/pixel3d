@@ -18,10 +18,20 @@ Strands are described, not drawn. Pick a `kind` (its preset sets everything), a 
 | Name | Type | Default | Description |
 |---|---|---|---|
 | `anchor` | `PointParam \| null` | - | Where a `ponytail` gathers (a landmark or coordinates). |
+| `bead_size` | `Length \| null` | - | Bead diameter; 1.25 times the braid width when omitted. |
+| `beads` | `number \| null` | - | Beads threaded on each braid (0 to 32). |
+| `braid_at` | `PointParam[]` | - | Points braids start near (landmarks or coordinates); spread over the lowest roots when omitted. |
+| `braid_length` | `Length \| null` | - | Braid length; 1.6 times `length` when omitted. |
+| `braid_width` | `Length \| null` | - | Braid width across the plies; 1.2 times the clump width when omitted. |
+| `braids` | `number \| null` | - | Braids among the strands: three plies interleaved along a hanging guide (0 to 256). |
+| `bulge` | `number \| null` | - | Where along a strand it is widest (0 at the root to 0.9); leaf-shaped beard clumps bulge near 0.35. |
 | `cap` | `boolean \| null` | - | A scalp cap under the cards. |
+| `clump_layers` | `number \| null` | - | Clump layers, inner to outer (1 to 3); outer layers fill the gaps. |
 | `clumps` | `number \| null` | - | Guides: one card or clump each per layer (1 to 4096). |
+| `collide` | `string[]` | - | Objects (spec parts in a spec) the strands stay outside of and drape over, such as the chest under a beard. |
 | `curl` | `number \| null` | - | Waviness (0 straight to 1 tight curls). |
 | `curl_turns` | `number \| null` | - | Curl turns along the length (0 to 20). |
+| `flatness` | `number \| null` | - | Clump section thickness over width (0.1 flat ribbon to 1 round; 0.45 by default). |
 | `flow` | `[number, number, number] \| null` | - | Direction for `combed` (the flow) and `wind_blown` (the wind). |
 | `flyaways` | `number \| null` | - | Thin flyaway cards as a share of the guides (0 to 1). |
 | `gravity` | `number \| null` | - | Droop toward -Y along the length (0 to 1). |
@@ -38,11 +48,14 @@ Strands are described, not drawn. Pick a `kind` (its preset sets everything), a 
 | `outward` | `boolean \| null` | - | For `combed`: mirror the flow's x away from x = 0 on both sides. |
 | `part` | `Length \| null` | - | Where the part line is for `parted` (x; 0 is the center). |
 | `region` | `RegionParam` | - | `"all"`, `{"groups": [...]}` face groups, or a loop of points around the patch such as `["hairline_front", "temple_l", "nape", "temple_r"]` (vertex groups, `lm.<name>` landmarks by name, or coordinates in the object's space). |
+| `root_width` | `number \| null` | - | Clump width at the root as a share of the widest (0.1 to 1). |
 | `segments` | `number \| null` | - | Steps along each strand (2 to 64). |
 | `shells` | `number \| null` | - | Offset copies for `shells` (1 to 32). |
 | `sides` | `number \| null` | - | Points around a clump (3 to 16). |
 | `style` | `StyleParam \| null` | - | Which way strands run: `swept_back`, `parted`, `spiky`, `straight`, `combed`, `upright`, `wind_blown` or `ponytail`. |
+| `tie` | `TieParam \| null` | - | How a braid ends: `band` (default), `bead` or `none`; a short tuft follows a tie. |
 | `tip_width` | `number \| null` | - | Tip width as a share of the root width (0 to 1). |
+| `twist` | `number \| null` | - | Turns of each clump's section along its length (-20 to 20). |
 | `volume` | `Length \| null` | - | Extra distance off the surface toward the tips (hair volume). |
 | `width` | `Length \| null` | - | Root width of a card or clump; sized from the spacing when omitted. |
 

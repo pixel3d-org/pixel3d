@@ -28,7 +28,7 @@ pub struct Guide {
 }
 
 /// A generator of its own per guide, so guides do not depend on order.
-fn rng_for(seed: u64, layer: u32, i: usize) -> Rng {
+pub(crate) fn rng_for(seed: u64, layer: u32, i: usize) -> Rng {
     Rng::new(seed ^ u64::from(layer).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ (i as u64).wrapping_mul(0xC2B2_AE3D_27D4_EB4F))
 }
 
@@ -101,16 +101,16 @@ fn style_dir(style: Style, p: Vec3, n: Vec3, center: Vec3) -> Vec3 {
 }
 
 /// How one guide grows.
-struct Growth {
-    lift: f32,
-    noise: f32,
-    length: f32,
+pub(crate) struct Growth {
+    pub(crate) lift: f32,
+    pub(crate) noise: f32,
+    pub(crate) length: f32,
 }
 
 /// Integrates one guide from a root.
 ///
 /// Complexity: O(segments x log F).
-fn integrate(bvh: &TriBvh, root: Vec3, n: Vec3, center: Vec3, spec: &StrandSpec, rng: &mut Rng, g: &Growth) -> (Vec<Vec3>, Vec<Vec3>) {
+pub(crate) fn integrate(bvh: &TriBvh, root: Vec3, n: Vec3, center: Vec3, spec: &StrandSpec, rng: &mut Rng, g: &Growth) -> (Vec<Vec3>, Vec<Vec3>) {
     let len = spec.length * g.length * (1.0 - spec.length_variation * rng.unit());
     let m = spec.segments as usize;
     let seg = len / m as f32;
@@ -164,15 +164,24 @@ fn integrate(bvh: &TriBvh, root: Vec3, n: Vec3, center: Vec3, spec: &StrandSpec,
 }
 
 /// Grows every guide: one per root and layer, then flyaways (cards only).
+/// Outer-layer roots snap to the parent (`surface`); strands stay outside
+/// `bvh` (the parent and any obstacles).
 ///
 /// Complexity: O(roots x layers x segments x log F) after the scatter.
-pub(crate) fn grow(parent: &Mesh, faces: &[u32], bvh: &TriBvh, spec: &StrandSpec, spacing: f32) -> Result<Vec<Guide>, StrandsError> {
+pub(crate) fn grow(
+    parent: &Mesh,
+    faces: &[u32],
+    surface: &TriBvh,
+    bvh: &TriBvh,
+    spec: &StrandSpec,
+    spacing: f32,
+) -> Result<Vec<Guide>, StrandsError> {
     let roots = scatter(parent, faces, &ScatterSpec { count: spec.clumps, min_distance: spacing, seed: spec.seed })
         .map_err(|e| StrandsError::new("clumps", e.to_string()))?;
     let (lo, hi) = parent.bounds().unwrap_or((Vec3::ZERO, Vec3::ZERO));
     let center = (lo + hi) * 0.5;
     let cards = spec.output == Output::Cards;
-    let layers = if cards { spec.layers } else { 1 };
+    let layers = if cards { spec.layers } else { spec.clump_layers };
     let gap = spec.volume.max(spec.lift).max(spacing * 0.05) * 0.5;
     let mut out = Vec::with_capacity(roots.len() * (layers as usize + 1));
     for layer in 0..layers {
@@ -183,9 +192,9 @@ pub(crate) fn grow(parent: &Mesh, faces: &[u32], bvh: &TriBvh, spec: &StrandSpec
                 // Outer layers start between the inner roots to cover gaps.
                 let t = unit_vec(&mut rng);
                 let t = (t - n * t.dot(n)) * spacing * 0.5;
-                if let Some(c) = bvh.closest(root + t, f32::INFINITY) {
+                if let Some(c) = surface.closest(root + t, f32::INFINITY) {
                     root = c.point;
-                    n = bvh.normal(c.tri);
+                    n = surface.normal(c.tri);
                 }
             }
             let g = Growth { lift: spec.lift + gap * layer as f32, noise: spec.noise, length: 1.0 };

@@ -859,11 +859,27 @@ impl<'a> Compiler<'a> {
         h.json(&part.edits);
         h.json(&part.deform);
         h.u64(seed);
+        // Parts the strands stay outside of, in `on`'s space.
+        let mut obstacles: Option<Mesh> = None;
+        for (i, c) in p.collide.iter().enumerate() {
+            let cpath = format!("{ppath}/collide/{i}");
+            if c == name || *c == p.on {
+                return Err(err(&cpath, "collide names other parts: strands already stay outside the part they grow on"));
+            }
+            self.part(c, &cpath)?;
+            let b = self.mesh(c)?;
+            let rel = to_part * self.placement(c)?.to_affine();
+            h.u64(b.hash);
+            h.floats(&rel.to_cols_array());
+            let mut m = (*b.mesh).clone();
+            m.transform(rel);
+            obstacles.get_or_insert_with(Mesh::default).append(&m);
+        }
         let hash = h.0;
         if let Some(c) = self.cached(name, hash) {
             return Ok(c);
         }
-        let grown = p3d_strands::generate(&parent.mesh, &spec).map_err(|e| {
+        let grown = p3d_strands::generate_around(&parent.mesh, obstacles.as_ref(), &spec).map_err(|e| {
             let mut o = p3d_ops::strands::strands_error(e);
             o.path = Some(format!("/spec{ppath}{}", o.path.as_deref().unwrap_or("")));
             o

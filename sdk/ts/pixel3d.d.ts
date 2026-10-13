@@ -341,9 +341,15 @@ export type ProportionalParams = {
   radius: Length;
 };
 
+/** One radius, or semi-axes along x, y and z. */
+export type RadiusParam = Length | [Length, Length, Length];
+
 /** Where strands grow. */
 export type RegionParam = AllWord | {
   groups: string[];
+} | {
+  around: PointParam;
+  radius: RadiusParam;
 } | PointParam[];
 
 /** Uniform or per-axis scale. */
@@ -463,6 +469,9 @@ export type SubdAdvanced = {
   /** Treat edges marked sharp like fully creased edges. */
   sharp_as_crease?: boolean;
 };
+
+/** How a braid ends. */
+export type TieParam = "none" | "band" | "bead";
 
 /** One object or several. */
 export type ToolsParam = string | string[];
@@ -1278,14 +1287,34 @@ export type GenFeatureParams = {
 export type GenStrandsParams = {
   /** Where a `ponytail` gathers (a landmark or coordinates). */
   anchor?: PointParam | null;
+  /** Bead diameter; 1.25 times the braid width when omitted. */
+  bead_size?: Length | null;
+  /** Beads threaded on each braid (0 to 32). */
+  beads?: number | null;
+  /** Points braids start near (landmarks or coordinates); spread over the lowest roots when omitted. */
+  braid_at?: PointParam[];
+  /** Braid length; 1.6 times `length` when omitted. */
+  braid_length?: Length | null;
+  /** Braid width across the plies; 1.2 times the clump width when omitted. */
+  braid_width?: Length | null;
+  /** Braids among the strands: three plies interleaved along a hanging guide (0 to 256). */
+  braids?: number | null;
+  /** Where along a strand it is widest (0 at the root to 0.9); leaf-shaped beard clumps bulge near 0.35. */
+  bulge?: number | null;
   /** A scalp cap under the cards. */
   cap?: boolean | null;
+  /** Clump layers, inner to outer (1 to 3); outer layers fill the gaps. */
+  clump_layers?: number | null;
   /** Guides: one card or clump each per layer (1 to 4096). */
   clumps?: number | null;
+  /** Objects (spec parts in a spec) the strands stay outside of and drape over, such as the chest under a beard. */
+  collide?: string[];
   /** Waviness (0 straight to 1 tight curls). */
   curl?: number | null;
   /** Curl turns along the length (0 to 20). */
   curl_turns?: number | null;
+  /** Clump section thickness over width (0.1 flat ribbon to 1 round; 0.45 by default). */
+  flatness?: number | null;
   /** Direction for `combed` (the flow) and `wind_blown` (the wind). */
   flow?: [number, number, number] | null;
   /** Thin flyaway cards as a share of the guides (0 to 1). */
@@ -1318,6 +1347,8 @@ export type GenStrandsParams = {
   part?: Length | null;
   /** `"all"`, `{"groups": [...]}` face groups, or a loop of points around the patch such as `["hairline_front", "temple_l", "nape", "temple_r"]` (vertex groups, `lm.<name>` landmarks by name, or coordinates in the object's space). */
   region?: RegionParam;
+  /** Clump width at the root as a share of the widest (0.1 to 1). */
+  root_width?: number | null;
   /** Steps along each strand (2 to 64). */
   segments?: number | null;
   /** Offset copies for `shells` (1 to 32). */
@@ -1326,8 +1357,12 @@ export type GenStrandsParams = {
   sides?: number | null;
   /** Which way strands run: `swept_back`, `parted`, `spiky`, `straight`, `combed`, `upright`, `wind_blown` or `ponytail`. */
   style?: StyleParam | null;
+  /** How a braid ends: `band` (default), `bead` or `none`; a short tuft follows a tie. */
+  tie?: TieParam | null;
   /** Tip width as a share of the root width (0 to 1). */
   tip_width?: number | null;
+  /** Turns of each clump's section along its length (-20 to 20). */
+  twist?: number | null;
   /** Extra distance off the surface toward the tips (hair volume). */
   volume?: Length | null;
   /** Root width of a card or clump; sized from the spacing when omitted. */

@@ -3,7 +3,7 @@
 
 use glam::Vec3;
 use p3d_scene::Document;
-use p3d_strands::{Kind, Output, Region, StrandSpec, StrandsError, Style};
+use p3d_strands::{Braids, Kind, Output, Region, StrandSpec, StrandsError, Style, Tie};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -42,9 +42,38 @@ pub enum RegionParam {
     All(AllWord),
     /// `{"groups": ["cranium"]}`: these face groups.
     Groups { groups: Vec<String> },
+    /// `{"around": "brow_l", "radius": "2cm"}`: the faces within a radius
+    /// (or three semi-axes) of a point.
+    Around { around: PointParam, radius: RadiusParam },
     /// A closed loop of points around the patch, in order: landmark or
     /// group names, or coordinates.
     Loop(Vec<PointParam>),
+}
+
+/// One radius, or semi-axes along x, y and z.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum RadiusParam {
+    One(Length),
+    Axes([Length; 3]),
+}
+
+impl RadiusParam {
+    fn vec(self) -> Vec3 {
+        match self {
+            RadiusParam::One(r) => Vec3::splat(r.0 as f32),
+            RadiusParam::Axes(a) => Vec3::new(a[0].0 as f32, a[1].0 as f32, a[2].0 as f32),
+        }
+    }
+}
+
+/// How a braid ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TieParam {
+    None,
+    Band,
+    Bead,
 }
 
 impl Default for RegionParam {
@@ -169,6 +198,45 @@ pub struct StrandsParams {
     /// Points around a clump (3 to 16).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sides: Option<u32>,
+    /// Clump section thickness over width (0.1 flat ribbon to 1 round; 0.45 by default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flatness: Option<f64>,
+    /// Turns of each clump's section along its length (-20 to 20).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub twist: Option<f64>,
+    /// Clump width at the root as a share of the widest (0.1 to 1).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub root_width: Option<f64>,
+    /// Where along a strand it is widest (0 at the root to 0.9); leaf-shaped beard clumps bulge near 0.35.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bulge: Option<f64>,
+    /// Clump layers, inner to outer (1 to 3); outer layers fill the gaps.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clump_layers: Option<u32>,
+    /// Braids among the strands: three plies interleaved along a hanging guide (0 to 256).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub braids: Option<u32>,
+    /// Braid length; 1.6 times `length` when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub braid_length: Option<Length>,
+    /// Braid width across the plies; 1.2 times the clump width when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub braid_width: Option<Length>,
+    /// How a braid ends: `band` (default), `bead` or `none`; a short tuft follows a tie.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tie: Option<TieParam>,
+    /// Beads threaded on each braid (0 to 32).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beads: Option<u32>,
+    /// Bead diameter; 1.25 times the braid width when omitted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bead_size: Option<Length>,
+    /// Points braids start near (landmarks or coordinates); spread over the lowest roots when omitted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub braid_at: Vec<PointParam>,
+    /// Objects (spec parts in a spec) the strands stay outside of and drape over, such as the chest under a beard.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub collide: Vec<String>,
 }
 
 /// A strands error as an op error at its parameter, keeping suggestions.
@@ -206,6 +274,13 @@ pub fn strand_spec(p: &StrandsParams, seed: u64, point: &mut dyn FnMut(&PointPar
                 None => None,
             };
             Region::Loop { points: pts, inside }
+        }
+        RegionParam::Around { around, radius } => {
+            let radii = radius.vec();
+            if !(radii.is_finite() && radii.min_element() > 0.0) {
+                return Err(OpError::invalid("/region/radius", "the radius must be positive"));
+            }
+            Region::Around { center: point(around, "/region/around")?, radii }
         }
     };
     if p.inside.is_some() && !matches!(p.region, RegionParam::Loop(_)) {
@@ -255,6 +330,28 @@ pub fn strand_spec(p: &StrandsParams, seed: u64, point: &mut dyn FnMut(&PointPar
     s.cap = p.cap.unwrap_or(s.cap);
     s.shells = p.shells.unwrap_or(s.shells);
     s.sides = p.sides.unwrap_or(s.sides);
+    s.flatness = f(p.flatness, s.flatness);
+    s.twist = f(p.twist, s.twist);
+    s.root_width = f(p.root_width, s.root_width);
+    s.bulge = f(p.bulge, s.bulge);
+    s.clump_layers = p.clump_layers.unwrap_or(s.clump_layers);
+    let mut at = Vec::with_capacity(p.braid_at.len());
+    for (i, q) in p.braid_at.iter().enumerate() {
+        at.push(point(q, &format!("/braid_at/{i}"))?);
+    }
+    s.braids = Braids {
+        count: p.braids.unwrap_or(0),
+        length: l(p.braid_length, 0.0),
+        width: l(p.braid_width, 0.0),
+        tie: match p.tie {
+            Some(TieParam::None) => Tie::None,
+            Some(TieParam::Bead) => Tie::Bead,
+            Some(TieParam::Band) | None => Tie::Band,
+        },
+        beads: p.beads.unwrap_or(0),
+        bead_size: l(p.bead_size, 0.0),
+        at,
+    };
     Ok(s)
 }
 
@@ -281,6 +378,8 @@ pub fn report_json(kind: &str, s: &p3d_strands::Strands, spec: &StrandSpec) -> s
         "bald_spot": r.bald_spot.map(|(p, a)| serde_json::json!({ "at": [q(p.x), q(p.y), q(p.z)], "area": q(a) })),
         "overdraw": r.overdraw.map(q),
         "penetrating": r.penetrating,
+        "braids": r.braids,
+        "beads": r.beads,
     })
 }
 
@@ -293,6 +392,12 @@ pub fn strands_summary(s: &p3d_strands::Strands, spec: &StrandSpec) -> String {
         Output::Shells => format!("{} shells", spec.shells),
     };
     let mut t = format!("{what}, {} tris, region {} cm2", thousands(r.triangles), (r.region_area * 1e4).round());
+    if r.braids > 0 {
+        t.push_str(&format!(", {} braid{}", r.braids, if r.braids == 1 { "" } else { "s" }));
+        if r.beads > 0 {
+            t.push_str(&format!(" with {} bead{}", r.beads, if r.beads == 1 { "" } else { "s" }));
+        }
+    }
     if let Some(c) = r.coverage {
         t.push_str(&format!(", coverage {:.0}%", c * 100.0));
         if let Some((at, area)) = r.bald_spot.filter(|_| c < 0.95) {
@@ -303,6 +408,26 @@ pub fn strands_summary(s: &p3d_strands::Strands, spec: &StrandSpec) -> String {
         t.push_str(&format!(", {} points inside the surface", r.penetrating));
     }
     t
+}
+
+/// The `collide` objects' meshes joined in `on`'s space, or none.
+///
+/// Complexity: O(size of the named meshes).
+fn collide_mesh(tx: &Tx, on: p3d_scene::ObjectKey, names: &[String]) -> Result<Option<p3d_mesh::Mesh>, OpError> {
+    if names.is_empty() {
+        return Ok(None);
+    }
+    let doc = tx.doc();
+    let to_on = doc.world_affine(on).unwrap_or(glam::Affine3A::IDENTITY).inverse();
+    let mut all = p3d_mesh::Mesh::default();
+    for (i, n) in names.iter().enumerate() {
+        let path = format!("/collide/{i}");
+        let k = mesh_target(doc, n).map_err(|e| e.at(&path))?;
+        let mut m = doc.object_mesh(k).cloned().ok_or_else(|| OpError::invalid(&path, format!("`{n}` has no mesh")))?;
+        m.transform(to_on * doc.world_affine(k).unwrap_or(glam::Affine3A::IDENTITY));
+        all.append(&m);
+    }
+    Ok(Some(all))
 }
 
 /// `gen.strands`.
@@ -358,7 +483,8 @@ impl Op for GenStrands {
             }
         };
         let spec = strand_spec(p, ctx.seed, &mut point)?;
-        let grown = p3d_strands::generate(mesh, &spec).map_err(strands_error)?;
+        let obstacles = collide_mesh(tx, on, &p.collide)?;
+        let grown = p3d_strands::generate_around(mesh, obstacles.as_ref(), &spec).map_err(strands_error)?;
         let summary = strands_summary(&grown, &spec);
         let kind = serde_json::to_value(p.kind).ok().and_then(|v| v.as_str().map(str::to_owned)).unwrap_or_else(|| "strands".into());
         let report = report_json(&kind, &grown, &spec);
