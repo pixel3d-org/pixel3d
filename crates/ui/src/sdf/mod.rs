@@ -57,7 +57,7 @@ pub fn is_sdf_op(op: &str) -> bool {
 }
 
 /// Ops that leave a mesh as it is: a rebuild keeps what they did.
-fn keeps_mesh(op: &str) -> bool {
+pub(crate) fn keeps_mesh(op: &str) -> bool {
     matches!(
         op,
         "scene.create_empty"

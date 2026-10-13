@@ -234,3 +234,32 @@ fn landmark_overlay_while_picking() {
     h.run_steps(10);
     snapshot(&mut h, "spec_landmarks_light");
 }
+
+/// An outline starter from Add > Outline, framed, with `point` selected in
+/// the Outline tab.
+fn outline_app(theme: ThemePref, starter: &str, point: usize) -> Harness<'static, PixelApp> {
+    let mut a = PixelApp::new(Session::new(), Services::default());
+    a.stable = true;
+    a.ui.theme = theme;
+    a.run("outline.new", json!({ "starter": starter })).unwrap();
+    // Room for the canvas: no Health panel, no History and Console.
+    a.run("ui.dock", json!({ "operation": "close", "panel": "health" })).unwrap();
+    a.run("ui.bottom", json!({ "on": false })).unwrap();
+    let mut h = harness(a);
+    h.state_mut().run("view.frame", Value::Null).unwrap();
+    h.state_mut().run("outline.select_point", json!({ "index": point })).unwrap();
+    h.run_steps(20);
+    h
+}
+
+#[test]
+fn outline_tab_for_a_shell() {
+    let mut h = outline_app(ThemePref::Dark, "leaf", 0);
+    snapshot(&mut h, "outline_shell_dark");
+}
+
+#[test]
+fn outline_tab_and_blueprint_for_silhouettes() {
+    let mut h = outline_app(ThemePref::Light, "axe_head", 2);
+    snapshot(&mut h, "outline_silhouettes_light");
+}

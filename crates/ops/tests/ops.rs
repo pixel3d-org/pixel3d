@@ -1192,3 +1192,30 @@ fn sdf_silhouettes_needs_two_views() {
     let m = tx.doc().object_mesh(tx.resolve("s", "/t").unwrap()).unwrap();
     assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "closed");
 }
+
+#[test]
+fn outline_ops_rebuild_a_target_in_place() {
+    let mut tx = Tx::new(Document::new());
+    ok(&mut tx, "gen.shell", json!({ "name": "leaf", "outline": [[0, 0], [0.05, 0], [0.05, 0.08], [0, 0.08]], "position": [0.1, 0, 0] }));
+    let k = tx.resolve("leaf", "/t").unwrap();
+    let height = |tx: &Tx| tx.doc().object_mesh(tx.resolve("leaf", "/t").unwrap()).and_then(|m| m.bounds()).map_or(0.0, |(lo, hi)| hi.y - lo.y);
+    let before = height(&tx);
+    let s = ok(&mut tx, "gen.shell", json!({ "target": "leaf", "outline": [[0, 0], [0.1, 0], [0.1, 0.16], [0, 0.16]], "cup": 0.3 }));
+    assert!(s.starts_with("rebuilt leaf (o:1) shell"), "{s}");
+    assert_eq!(tx.resolve("leaf", "/t").unwrap(), k, "the same object");
+    assert_eq!(tx.doc().object_count(), 1);
+    assert!((tx.doc().object(k).unwrap().transform.translation.x - 0.1).abs() < 1e-6, "keeps its place");
+    assert!((height(&tx) - 2.0 * before).abs() < 1e-3, "{before} -> {}", height(&tx));
+    let e = err(&mut tx, "gen.shell", json!({ "target": "leaf", "name": "other", "outline": [[0, 0], [0.1, 0], [0, 0.1]] }));
+    assert_eq!(e.path.as_deref(), Some("/target"));
+    let views = json!({ "front": [[0, 0], [0.1, 0], [0.05, 0.1]], "side": [[-0.02, 0], [0.02, 0], [0.02, 0.1], [-0.02, 0.1]], "detail": "5mm" });
+    let mut args = views.clone();
+    args["name"] = json!("s");
+    ok(&mut tx, "sdf.silhouettes", args);
+    let mut again = views;
+    again["target"] = json!("s");
+    again["front"] = json!([[0, 0], [0.2, 0], [0.1, 0.1]]);
+    let s = ok(&mut tx, "sdf.silhouettes", again);
+    assert!(s.starts_with("rebuilt s (o:2) silhouettes"), "{s}");
+    assert_eq!(tx.doc().object_count(), 2);
+}

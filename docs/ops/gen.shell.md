@@ -9,7 +9,7 @@ Builds a curved sheet from one outline (cup, bend, twist), as a card or a closed
 - Flags: undoable, creates_groups, creates_objects
 - Also known as: leaf, card, ear, wing, fin, petal, membrane, sheet, cloth flap, solidify outline
 
-The outline lies in the XY plane: x across, y along the length, base at the lowest y (where the shell attaches). It is filled with an even, mostly quad sheet, then `cup` curls its edges (a share of the half width), `bend` lifts its tip (a share of the length) and `twist` turns it toward the tip. With `thickness` it becomes a closed solid with groups `front`, `back` and `rim`; without, a one-sided card facing +Z (group `front`) for alpha-textured foliage, feathers and hair. Outlines are SVG path data in meters (curves welcome) or point lists; `holes` cut it.
+The outline lies in the XY plane: x across, y along the length, base at the lowest y (where the shell attaches). It is filled with an even, mostly quad sheet, then `cup` curls its edges (a share of the half width), `bend` lifts its tip (a share of the length) and `twist` turns it toward the tip. With `thickness` it becomes a closed solid with groups `front`, `back` and `rim`; without, a one-sided card facing +Z (group `front`) for alpha-textured foliage, feathers and hair. Outlines are SVG path data in meters (curves welcome) or point lists; `holes` cut it. With `target` the outline rebuilds that mesh object in place (it keeps its name, transform, parent and children), so its history holds the outline to edit and run again.
 
 **Use for** thin organic parts an agent can describe with an outline and three numbers: an elf ear with `cup` 0.4 and a little `bend`, leaf cards, membrane wings, fins, cloth flaps.
 
@@ -25,6 +25,7 @@ The outline lies in the XY plane: x across, y along the length, base at the lowe
 | `outline` | `OutlineParam` | required | The outline in the shell's plane: x across, y along its length with the base at the lowest y. |
 | `parent` | `string \| null` | - | Parent object (name, path or id); top level when omitted. |
 | `position` | `[Length, Length, Length]` | `[0.0,0.0,0.0]` | Origin position in the parent's space (the outline's origin). |
+| `target` | `string \| null` | - | Mesh object to rebuild in place from the outline (it keeps its name, transform, parent and children) instead of making a new object. |
 | `thickness` | `Length` | `0.0` | Thickness; 0 (the default) makes a one-sided card facing +Z. |
 | `twist` | `Angle` | `0.0` | Turn about the length axis at the tip. |
 

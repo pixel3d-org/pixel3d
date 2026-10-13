@@ -26,6 +26,7 @@ pub mod inspector;
 pub mod jobcard;
 pub mod menus;
 pub mod navgizmo;
+pub mod outline;
 pub mod outliner;
 pub mod palette;
 pub mod panels;
@@ -292,6 +293,8 @@ pub struct PixelApp {
     pub sdf: sdf::SdfEditor,
     /// The Model Spec editor (the Spec tab, landmarks and provenance).
     pub spec: spec::SpecEditor,
+    /// The outline editor (the Outline tab: shells and silhouettes).
+    pub outline: outline::OutlineEditor,
     /// The run card of a long op (remesh) and its background run.
     pub job_card: jobcard::JobCard,
     /// Poles of the shown meshes, for the pole overlay.
@@ -365,6 +368,7 @@ impl PixelApp {
             jobs: Vec::new(),
             sdf: sdf::SdfEditor::default(),
             spec: spec::SpecEditor::default(),
+            outline: outline::OutlineEditor::default(),
             job_card: jobcard::JobCard::default(),
             poles: poles::PoleCache::default(),
             coalesce: None,
@@ -413,6 +417,7 @@ impl PixelApp {
             + self.jobs.len()
             + usize::from(self.sdf.busy())
             + usize::from(self.spec.busy())
+            + usize::from(self.outline.busy())
             + usize::from(self.job_card.busy())
     }
 
@@ -859,6 +864,7 @@ impl PixelApp {
         self.jobs.clear();
         self.sdf = sdf::SdfEditor::default();
         self.spec = spec::SpecEditor::default();
+        self.outline = outline::OutlineEditor::default();
         self.job_card = jobcard::JobCard::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
@@ -1010,6 +1016,8 @@ impl PixelApp {
             }
             "mesh.poles" => self.pole_counts(params.get("target").and_then(Value::as_str)),
             shapes_cmd if shapes_cmd.starts_with("shapes.") => self.sdf_command(shapes_cmd, params),
+            // The outline editor: points, views, holes and fields; Add > Shell and Silhouettes.
+            outline_cmd if outline_cmd.starts_with("outline.") => self.outline_command(outline_cmd, params),
             // The Spec tab: starters, parts, the raw source, landmarks.
             "spec.starter" | "spec.select_part" | "spec.json" | "spec.pick_landmark" | "spec.set_landmark" | "landmarks.toggle"
             | "view.landmarks" => self.spec_command(id, params),
@@ -1709,6 +1717,7 @@ impl PixelApp {
         }
         self.spec_tick(ctx);
         self.sdf_tick(ctx);
+        self.outline_tick(ctx);
         self.job_card_tick(ctx);
         if let Some((_, at)) = &self.status {
             let left = STATUS_TIME.saturating_sub(at.elapsed());
@@ -1764,7 +1773,8 @@ impl PixelApp {
                     .clone()
                     .map(|(d, n)| (d, n | (1 << 63)))
                     .or_else(|| self.action_preview.doc.clone().map(|(d, n)| (d, n | (1 << 62))))
-                    .or_else(|| self.sdf.preview_doc().map(|(d, n)| (d, n | (1 << 61))));
+                    .or_else(|| self.sdf.preview_doc().map(|(d, n)| (d, n | (1 << 61))))
+                    .or_else(|| self.outline.preview_doc().map(|(d, n)| (d, n | (1 << 60))));
                 let (doc, key) = match preview {
                     Some((d, n)) => (d, n),
                     None => (std::sync::Arc::clone(self.session.doc()), self.scene_key()),
@@ -1802,6 +1812,7 @@ impl PixelApp {
                 sdf::overlay(self, ui, &mut viewport_events);
                 spec::overlay(self, ui, &mut viewport_events);
                 spec::provenance_tip(self, ui);
+                outline::overlay(self, ui);
                 poles::overlay(self, ui);
                 let gizmo_rect = self.viewport.rect;
                 gizmo::show(self, ui, gizmo_rect);

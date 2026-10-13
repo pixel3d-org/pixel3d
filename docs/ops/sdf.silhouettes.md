@@ -9,7 +9,7 @@ Builds a solid from two or three orthographic outlines (front, side, top), like 
 - Flags: undoable, long_running, creates_objects
 - Also known as: blueprint, visual hull, front and side view, outline extrude, boolean of extrusions
 
-Each outline is extruded straight through the part and the extrusions are intersected (the visual hull), then every edge is rounded by `round`. Draw what the part looks like from the front and from the side (and the top when needed) as SVG path data in meters or point lists: an axe head, a helmet, a sword guard, a creature's body plan. The result is an even closed quad mesh; refine it with `remesh.quad`, details with other parts.
+Each outline is extruded straight through the part and the extrusions are intersected (the visual hull), then every edge is rounded by `round`. Draw what the part looks like from the front and from the side (and the top when needed) as SVG path data in meters or point lists: an axe head, a helmet, a sword guard, a creature's body plan. The result is an even closed quad mesh; refine it with `remesh.quad`, details with other parts. With `target` the outlines rebuild that mesh object in place (it keeps its name, transform, parent and children), so its history holds the outlines to edit and run again.
 
 **Use for** turning concept outlines into a blockout without guessing depth.
 
@@ -24,6 +24,7 @@ Each outline is extruded straight through the part and the extrusions are inters
 | `position` | `[Length, Length, Length]` | `[0.0,0.0,0.0]` | Origin position in the parent's space. |
 | `round` | `Length` | `0.0` | Rounds every edge by this radius. |
 | `side` | `OutlineParam \| null` | - | Outline seen from the side (+X): z right (front), y up; give side, top or both. |
+| `target` | `string \| null` | - | Mesh object to rebuild in place from the outlines (it keeps its name, transform, parent and children) instead of making a new object. |
 | `top` | `OutlineParam \| null` | - | Outline seen from the top (+Y): x right, z up (front). |
 
 ## Examples

@@ -52,6 +52,8 @@ fn part_icon(p: &PartInfo) -> Icon {
         "loft" => Icon::Loft,
         "extrude" => Icon::Extrude,
         "pipe" => Icon::Pipe,
+        "shell" => Icon::Leaf,
+        "silhouettes" => Icon::Blueprint,
         _ => Icon::Empty,
     }
 }
@@ -178,6 +180,8 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
             part_fields(app, ui, p, &parts, &src, &mut out);
             if p.key == "sdf" {
                 crate::sdf::panel::show(app, ui);
+            } else if matches!(p.key, "shell" | "silhouettes") {
+                crate::outline::panel::show(app, ui);
             }
         }
         None => whole_fields(app, ui, root),
