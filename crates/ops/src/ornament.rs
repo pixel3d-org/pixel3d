@@ -86,7 +86,7 @@ pub struct OrnamentParams {
     /// A ring around an axis instead of a path: `{"radius": "2cm", "axis": "y", "at": [0, 0.3, 0]}`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub band: Option<BandParam>,
-    /// Out of the surface along a path (made perpendicular to it); +Y when omitted. Bands face away from their axis.
+    /// Out of the surface along a path (made perpendicular to it); +Y when omitted, and away from the middle for a closed path. Bands face away from their axis.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub normal: Option<[f64; 3]>,
     /// Motifs along the path; fills it at `spacing` when omitted.
@@ -162,11 +162,29 @@ pub fn ornament_spec(p: &OrnamentParams, seed: u64) -> Result<OrnamentSpec, OpEr
             if pts.len() < 2 {
                 return Err(OpError::invalid("/path", "a path needs at least two points"));
             }
-            let n = p.normal.map_or(Vec3::Y, |n| Vec3::new(n[0] as f32, n[1] as f32, n[2] as f32));
-            if !n.is_finite() || n.length() < 1e-6 {
-                return Err(OpError::invalid("/normal", "the normal must be a nonzero direction"));
-            }
-            (pts.iter().map(v3).collect(), p.closed, Outward::Along(n))
+            let path: Vec<Vec3> = pts.iter().map(v3).collect();
+            let outward = match p.normal {
+                Some(n) => {
+                    let n = Vec3::new(n[0] as f32, n[1] as f32, n[2] as f32);
+                    if !n.is_finite() || n.length() < 1e-6 {
+                        return Err(OpError::invalid("/normal", "the normal must be a nonzero direction"));
+                    }
+                    Outward::Along(n)
+                }
+                // A closed path faces away from its middle, around the normal
+                // of its plane (Newell's method): a belt, a rim.
+                None if p.closed && path.len() >= 3 => {
+                    let center = path.iter().copied().sum::<Vec3>() / path.len() as f32;
+                    let mut axis = Vec3::ZERO;
+                    for (i, a) in path.iter().enumerate() {
+                        let b = path[(i + 1) % path.len()];
+                        axis += Vec3::new((a.y - b.y) * (a.z + b.z), (a.z - b.z) * (a.x + b.x), (a.x - b.x) * (a.y + b.y));
+                    }
+                    Outward::FromAxis { point: center, axis: axis.try_normalize().unwrap_or(Vec3::Y) }
+                }
+                None => Outward::Along(Vec3::Y),
+            };
+            (path, p.closed, outward)
         }
         (None, b) => {
             let (radius, axis, at) = match b {
@@ -261,5 +279,29 @@ impl Op for GenOrnament {
         let m = ornament(&spec).map_err(|e| OpError::invalid("/size", e.message))?;
         let key = create_mesh_object(tx, Some(p.name.as_deref().unwrap_or("ornament")), "ornament", p.parent.as_deref(), &p.position, m)?;
         Ok(created_summary(tx, key, &format!("{} ornament", spec.motif.as_str())))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+    use super::*;
+
+    #[test]
+    fn closed_paths_face_away_from_their_middle() {
+        let ring: Vec<[Length; 3]> = (0..12)
+            .map(|i| {
+                let a = i as f64 / 12.0 * std::f64::consts::TAU;
+                [Length(0.3 * a.sin()), Length(0.6), Length(0.2 * a.cos())]
+            })
+            .collect();
+        let p = OrnamentParams { path: Some(ring.clone()), closed: true, ..OrnamentParams::default() };
+        match ornament_spec(&p, 0).unwrap().outward {
+            Outward::FromAxis { point, axis } => assert!(point.y > 0.59 && axis.y.abs() > 0.99, "{point} {axis}"),
+            other => panic!("{other:?}"),
+        }
+        // An open path, or a given normal, keeps a fixed direction.
+        let open = OrnamentParams { path: Some(ring), ..OrnamentParams::default() };
+        assert_eq!(ornament_spec(&open, 0).unwrap().outward, Outward::Along(Vec3::Y));
     }
 }

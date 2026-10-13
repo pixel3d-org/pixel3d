@@ -1440,7 +1440,7 @@ export type GenOrnamentParams = {
   motif?: MotifParam;
   /** Object name; `ornament` when omitted. */
   name?: string | null;
-  /** Out of the surface along a path (made perpendicular to it); +Y when omitted. Bands face away from their axis. */
+  /** Out of the surface along a path (made perpendicular to it); +Y when omitted, and away from the middle for a closed path. Bands face away from their axis. */
   normal?: [number, number, number] | null;
   /** Parent object (name, path or id); top level when omitted. */
   parent?: string | null;

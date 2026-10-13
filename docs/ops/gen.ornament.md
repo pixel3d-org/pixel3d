@@ -22,7 +22,7 @@ Ornament is described, not drawn: a `motif`, where it runs (`path` points with t
 | `count` | `number \| null` | - | Motifs along the path; fills it at `spacing` when omitted. |
 | `motif` | `MotifParam` | `"stud"` | What repeats: `stud`, `pyramid`, `bead`, `rune`, `rope` or `scroll`. |
 | `name` | `string \| null` | - | Object name; `ornament` when omitted. |
-| `normal` | `[number, number, number] \| null` | - | Out of the surface along a path (made perpendicular to it); +Y when omitted. Bands face away from their axis. |
+| `normal` | `[number, number, number] \| null` | - | Out of the surface along a path (made perpendicular to it); +Y when omitted, and away from the middle for a closed path. Bands face away from their axis. |
 | `parent` | `string \| null` | - | Parent object (name, path or id); top level when omitted. |
 | `path` | `[Length, Length, Length][] \| null` | - | The curve to follow, as points; a 5 cm band around Y when neither `path` nor `band` is given. |
 | `plies` | `number \| null` | - | Rope plies (2 to 5); 3 when omitted. |
