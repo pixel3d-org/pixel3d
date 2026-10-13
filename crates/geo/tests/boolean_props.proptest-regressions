@@ -7,3 +7,4 @@
 cc 0cdd24d6582a7e3b50916a0db4d65da1a3ffe8edea38bb16a04e7a0256408ec2 # shrinks to ka = 2, kb = 0, sa = 0.5, sb = 0.5, segments = 9, turn = [0.0, 0.0, 0.0], shift = [0.0, 0.0, 0.0]
 cc 8ec30925c0a652410f762055e0f42da32cf05833c9eab16a7b1a8c6bee6047f6 # shrinks to ka = 2, kb = 2, sa = 0.5, sb = 0.5, segments = 6, turn = [0.0, 0.0, 0.0], shift = [0.0, 0.0, 0.0]
 cc ac1ce06a2aab357b2f15eb73d415007e62761d878a379a4a5fa10fc929aaaaa1 # shrinks to ka = 2, kb = 0, sa = 0.5064476203499031, sb = 1.0607901014516319, segments = 6, turn = [-0.05611179, 1.3542101, 1.3464062], shift = [-0.17597659, 0.110006824, 0.04718544]
+cc b88577dc1015dd5d91652e11cf6966e1bfa080cec34d0dc773e26802ea03d90a # shrinks to ka = 4, kb = 0, sa = 1.1677915907773053, sb = 1.3145211279904119, segments = 16, turn = [-0.48527583, -2.8306227, -2.3053482], shift = [-0.12103629, 0.8646398, 0.021259306]

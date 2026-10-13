@@ -285,6 +285,7 @@ pub fn boolean(target: &Mesh, tools: &[&Mesh], spec: &BooleanSpec, engine: &dyn 
         // A weld that would break the surface is skipped; the slivers stay.
         let _ = merge_by_distance(&mut mesh, Some(&near), spec.weld);
     }
+    drop_flat_pieces(&mut mesh, spec.weld)?;
     // A sliver thinner than the weld distance collapses completely.
     if mesh.face_count() == 0 {
         return Err(BooleanError::Empty);
@@ -295,6 +296,31 @@ pub fn boolean(target: &Mesh, tools: &[&Mesh], spec: &BooleanSpec, engine: &dyn 
     let in_cut = |f: Option<u32>| f.is_some_and(|f| cut.binary_search(&f).is_ok());
     let edges = mesh.edges().filter(|&e| in_cut(mesh.face(2 * e)) != in_cut(mesh.face(2 * e + 1))).collect();
     Ok(BooleanResult { mesh, cut, edges, touched: true, curved, normals_cleared })
+}
+
+/// Removes pieces thinner on average than half the weld distance (volume
+/// over area), such as the zero-volume pair of faces the engine can leave
+/// where two operands share a face exactly.
+///
+/// Complexity: O(F + C).
+fn drop_flat_pieces(mesh: &mut Mesh, weld: f32) -> Result<(), BooleanError> {
+    let (label, count) = mesh.face_components();
+    let mut volume = vec![0.0f64; count as usize];
+    let mut area = vec![0.0f64; count as usize];
+    for f in mesh.faces() {
+        let c = label[f as usize] as usize;
+        for t in mesh.face_triangles(f) {
+            let [a, b, d] = t.map(|h| mesh.positions[mesh.origin(h) as usize].as_dvec3());
+            volume[c] += a.dot(b.cross(d)) / 6.0;
+            area[c] += (b - a).cross(d - a).length() / 2.0;
+        }
+    }
+    let limit = f64::from(weld.max(1e-7)) * 0.5;
+    let flat: Vec<u32> = mesh.faces().filter(|&f| volume[label[f as usize] as usize].abs() <= limit * area[label[f as usize] as usize]).collect();
+    if !flat.is_empty() {
+        mesh.delete_faces(&flat).map_err(|e| BooleanError::Engine(e.to_string()))?;
+    }
+    Ok(())
 }
 
 /// How one region (the connected faces of one source polygon) is rebuilt:

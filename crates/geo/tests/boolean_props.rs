@@ -70,6 +70,19 @@ proptest! {
             if let Ok(Some(m)) = r {
                 prop_assert_eq!(m.validate(), Ok(()), "{:?}", op);
                 prop_assert!(m.edges().all(|e| !m.is_boundary_edge(e)), "{op:?} left open edges");
+                // No flat leftovers: every piece is thicker on average (volume
+                // over area) than a quarter of the weld distance.
+                let (label, count) = m.face_components();
+                let mut pieces = vec![(0.0f64, 0.0f64); count as usize];
+                for f in m.faces() {
+                    for t in m.face_triangles(f) {
+                        let [a, b, c] = t.map(|h| m.positions[m.origin(h) as usize].as_dvec3());
+                        let p = &mut pieces[label[f as usize] as usize];
+                        p.0 += a.dot(b.cross(c)) / 6.0;
+                        p.1 += (b - a).cross(c - a).length() / 2.0;
+                    }
+                }
+                prop_assert!(pieces.iter().all(|(v, a)| v.abs() > 0.25e-4 * a), "{op:?} left a flat piece: {pieces:?}");
                 // What is left of the target keeps its group (a union or an
                 // intersection may consist of tool faces only).
                 let all = m.group("all").map_or(0, |g| g.count());
