@@ -968,6 +968,29 @@ pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
     p.text(rect.left_top() + vec2(10.0, 8.0), Align2::LEFT_TOP, label, theme::small(), tk.text_dim);
 }
 
+/// While files are dragged over the window: what dropping them does.
+pub fn drop_overlay(ui: &egui::Ui) {
+    let hovering = ui.ctx().input(|i| i.raw.hovered_files.len());
+    if hovering == 0 {
+        return;
+    }
+    let tk = Tokens::get();
+    let screen = ui.ctx().content_rect();
+    let p = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("p3d_drop_overlay")));
+    p.rect_filled(screen, 0.0, tk.border.gamma_multiply(0.7));
+    let card = Rect::from_center_size(screen.center(), vec2(420.0, 96.0));
+    p.rect(card, 12.0, tk.popup, Stroke::new(1.5, tk.accent), egui::StrokeKind::Inside);
+    icons::paint_colored(&p, Rect::from_center_size(pos2(card.left() + 44.0, card.center().y), vec2(30.0, 30.0)), Icon::Import, tk.icon, tk.accent);
+    p.text(pos2(card.left() + 78.0, card.center().y - 11.0), Align2::LEFT_CENTER, t("Drop to import"), egui::FontId::proportional(16.0), tk.text);
+    p.text(
+        pos2(card.left() + 78.0, card.center().y + 13.0),
+        Align2::LEFT_CENTER,
+        t(".glb, .gltf, .obj and .fbx join the scene; a .p3d opens"),
+        theme::small(),
+        tk.text_dim,
+    );
+}
+
 /// A shortcut, its command and the command parameters.
 type Binding = (KeyboardShortcut, &'static str, fn() -> Value);
 

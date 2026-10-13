@@ -30,6 +30,7 @@ pub mod palette;
 pub mod panels;
 pub mod quick;
 pub mod remote;
+pub mod results;
 pub mod schema_form;
 pub mod screenshot;
 pub mod snap;
@@ -235,6 +236,22 @@ pub type PickSave = Box<dyn Fn(&str) -> Option<PathBuf>>;
 pub struct Services {
     pub pick_open: Option<PickOpen>,
     pub pick_save: Option<PickSave>,
+    /// Asks for a model file to import (glTF, GLB, OBJ, FBX).
+    pub pick_import: Option<PickOpen>,
+}
+
+/// Extensions `io.import` reads.
+pub const MODEL_EXTENSIONS: [&str; 4] = ["glb", "gltf", "obj", "fbx"];
+
+/// Whether `path` names a model file `io.import` reads.
+pub fn is_model_file(path: &std::path::Path) -> bool {
+    path.extension().and_then(|e| e.to_str()).is_some_and(|e| MODEL_EXTENSIONS.iter().any(|m| e.eq_ignore_ascii_case(m)))
+}
+
+/// An op batch running in the background (imports) and its undo label.
+struct RunningJob {
+    job: p3d_engine::Job,
+    label: String,
 }
 
 /// The last single-op transaction: Properties shows its parameters and
@@ -263,6 +280,10 @@ pub struct PixelApp {
     pub hidden: BTreeSet<ObjectKey>,
     /// The last single-op transaction, adjustable in Properties.
     pub last_op: Option<LastOp>,
+    /// What the last transaction reported (summaries, warnings and fixes).
+    pub result: Option<results::LastResult>,
+    /// Background op batches (imports), committed when they finish.
+    jobs: Vec<RunningJob>,
     /// The revision of an edit still being dragged: the next change of the
     /// same drag replaces it, so one drag is one undo step.
     coalesce: Option<u64>,
@@ -325,6 +346,8 @@ impl PixelApp {
             active: None,
             hidden: BTreeSet::new(),
             last_op: None,
+            result: None,
+            jobs: Vec::new(),
             coalesce: None,
             services,
             path: None,
@@ -366,7 +389,7 @@ impl PixelApp {
 
     /// Background work still running (shown in the status bar).
     pub fn running_jobs(&self) -> usize {
-        usize::from(self.health.busy())
+        usize::from(self.health.busy()) + self.jobs.len()
     }
 
     /// Whether the History or Console panel is open.
@@ -714,6 +737,9 @@ impl PixelApp {
         self.hidden.clear();
         self.viewport.hidden_changed();
         self.last_op = None;
+        self.result = None;
+        // Jobs started on the old document must not land in the new one.
+        self.jobs.clear();
         self.coalesce = None;
         self.health = health::HealthState::default();
         self.viewport.frame_pending = true;
@@ -810,6 +836,22 @@ impl PixelApp {
                     }
                 }
                 self.save_to(path)
+            }
+            "file.import" | "io.import" if params.get("path").is_none() => {
+                // Without a path, ask in a dialog; the chosen folder is
+                // allowed from then on.
+                let Some(path) = self.pick(|s| s.pick_import.as_ref().and_then(|f| f())) else {
+                    return Ok(json!({ "cancelled": true }));
+                };
+                self.import_files(&[path], params)
+            }
+            "file.import" => {
+                let path = str_param("path").ok_or("path must be a string")?;
+                let mut rest = params.clone();
+                if let Some(m) = rest.as_object_mut() {
+                    m.remove("path");
+                }
+                self.import_files(&[PathBuf::from(path)], &rest)
             }
             "file.sample" => self.sample(),
             "edit.undo" => {
@@ -1090,30 +1132,140 @@ impl PixelApp {
     }
 
     /// [`PixelApp::execute`] with an undo label (the op labels when `None`).
+    ///
+    /// Reports (ops that are not undoable, such as `cleanup.report`) change
+    /// nothing, so they run without adding an undo step.
     pub fn execute_labeled(&mut self, calls: &[OpCall], label: Option<&str>) -> Result<Value, String> {
-        let opts = BatchOptions { label: label.map(str::to_owned), ..BatchOptions::default() };
+        let registry = std::sync::Arc::clone(self.session.registry());
+        let read_only =
+            !calls.is_empty() && calls.iter().all(|c| registry.get(&c.op).is_ok_and(|o| !o.meta().flags.contains(p3d_ops::OpFlags::UNDOABLE)));
+        let opts = BatchOptions { label: label.map(str::to_owned), dry_run: read_only, ..BatchOptions::default() };
         match self.session.execute(calls, &opts) {
-            Ok(r) => {
-                let mut created = Vec::new();
-                for res in &r.results {
-                    self.log(res.output.summary.clone());
-                    created.extend(res.output.created.iter().copied());
-                }
-                if let Some(last) = r.results.last() {
-                    self.status = Some((last.output.summary.clone(), Instant::now()));
-                }
-                self.last_op = match r.results.as_slice() {
-                    [one] => Some(LastOp { op: one.op.clone(), params: one.params.clone(), revision: r.revision, error: None }),
-                    _ => None,
-                };
-                if !created.is_empty() {
-                    self.active = created.first().copied();
-                    self.selection = created.into_iter().collect();
-                }
-                self.ui.start_page = false;
-                Ok(json!({ "revision": r.revision, "summaries": r.results.iter().map(|x| x.output.summary.clone()).collect::<Vec<_>>() }))
-            }
+            Ok(r) => Ok(self.committed(&r)),
             Err(e) => Err(e.error.to_string()),
+        }
+    }
+
+    /// Takes in a finished batch: logs the summaries and warnings, keeps
+    /// the report for the result card, makes a single op adjustable, and
+    /// selects the objects it created.
+    ///
+    /// Complexity: O(results + warnings + created objects).
+    fn committed(&mut self, r: &p3d_engine::BatchResult) -> Value {
+        let mut created = Vec::new();
+        for res in &r.results {
+            self.log(res.output.summary.clone());
+            for w in &res.output.warnings {
+                self.log(format!("  {}: {}", t("warning"), w.message));
+                if let Some(f) = &w.fix {
+                    self.log(format!("    {}: {} {}", t("fix"), f.op, f.args));
+                }
+            }
+            created.extend(res.output.created.iter().copied());
+        }
+        let result = results::LastResult::from_batch(r, self.session.registry());
+        let warnings = result.warning_count();
+        if let Some(last) = r.results.last() {
+            let status = match warnings {
+                0 => last.output.summary.clone(),
+                1 => format!("{} ({})", last.output.summary, t("1 warning")),
+                n => format!("{} ({n} {})", last.output.summary, t("warnings")),
+            };
+            self.status = Some((status, Instant::now()));
+        }
+        if !r.dry_run {
+            self.last_op = match r.results.as_slice() {
+                [one] => Some(LastOp { op: one.op.clone(), params: one.params.clone(), revision: r.revision, error: None }),
+                _ => None,
+            };
+            if !created.is_empty() {
+                self.active = created.first().copied();
+                self.selection = created.into_iter().collect();
+            }
+        }
+        self.result = Some(result);
+        self.ui.start_page = false;
+        let mut out = json!({ "revision": r.revision, "summaries": r.results.iter().map(|x| x.output.summary.clone()).collect::<Vec<_>>() });
+        let all: Vec<&p3d_ops::Warning> = r.results.iter().flat_map(|x| &x.output.warnings).collect();
+        if !all.is_empty() {
+            out["warnings"] = json!(all);
+        }
+        out
+    }
+
+    /// Starts op calls in the background as one transaction (imports, which
+    /// may take a while); [`PixelApp::poll_jobs`] commits the result.
+    pub fn start_job(&mut self, calls: Vec<OpCall>, label: &str) {
+        let job = self.session.spawn_job(calls, label);
+        self.jobs.push(RunningJob { job, label: label.to_owned() });
+        self.set_status(format!("{label}..."));
+    }
+
+    /// Commits the background jobs that finished; returns whether any are
+    /// still running. Call once per frame.
+    ///
+    /// Complexity: O(jobs) plus the work of committing finished ones.
+    pub fn poll_jobs(&mut self) -> bool {
+        let mut i = 0;
+        while i < self.jobs.len() {
+            match self.session.poll_job(&mut self.jobs[i].job) {
+                p3d_engine::JobStatus::Pending(_) => i += 1,
+                p3d_engine::JobStatus::Done(r) => {
+                    self.jobs.remove(i);
+                    self.committed(&r);
+                    self.prune_selection();
+                }
+                p3d_engine::JobStatus::Failed(e) => {
+                    let job = self.jobs.remove(i);
+                    self.set_status(format!("{}: {}", job.label, e.error));
+                }
+            }
+        }
+        !self.jobs.is_empty()
+    }
+
+    /// Imports model files (glTF, GLB, OBJ, FBX) as one undoable step in
+    /// the background. `args` holds the `io.import` parameters other than
+    /// the path (name, parent, weld).
+    pub fn import_files(&mut self, files: &[PathBuf], args: &Value) -> Result<Value, String> {
+        if files.is_empty() {
+            return Err(t("no file to import").to_owned());
+        }
+        let calls: Vec<OpCall> = files
+            .iter()
+            .map(|f| {
+                let mut a = args.as_object().cloned().unwrap_or_default();
+                a.insert("path".into(), json!(f.display().to_string()));
+                OpCall::new("io.import", Value::Object(a))
+            })
+            .collect();
+        let name = |f: &PathBuf| f.file_name().map_or_else(|| f.display().to_string(), |n| n.to_string_lossy().into_owned());
+        let label = match files {
+            [one] => format!("{} {}", t("Import"), name(one)),
+            many => format!("{} {} {}", t("Import"), many.len(), t("files")),
+        };
+        self.start_job(calls, &label);
+        Ok(json!({ "importing": files.iter().map(|f| f.display().to_string()).collect::<Vec<_>>() }))
+    }
+
+    /// Files dropped on the window: a `.p3d` scene opens, model files are
+    /// imported into the scene (their folders become allowed, as when picked
+    /// in a dialog), anything else is refused with a message.
+    pub fn drop_files(&mut self, files: &[PathBuf]) {
+        let scene = files.iter().find(|f| f.extension().is_some_and(|e| e.eq_ignore_ascii_case("p3d")));
+        let models: Vec<PathBuf> = files.iter().filter(|f| is_model_file(f)).cloned().collect();
+        let other = files.iter().find(|f| Some(*f) != scene && !is_model_file(f));
+        if let Some(s) = scene {
+            let _ = self.open_path(s);
+        }
+        for m in &models {
+            self.allow_picked(m);
+        }
+        if !models.is_empty() {
+            let _ = self.import_files(&models, &Value::Null);
+        }
+        if let Some(f) = other {
+            self.set_status(format!("{} {}: {}", t("Cannot use"), f.display(), t("drop a .p3d scene, or .glb, .gltf, .obj or .fbx models")));
         }
     }
 
@@ -1137,6 +1289,7 @@ impl PixelApp {
                     }
                     self.last_op = Some(LastOp { op: last.op, params: one.params.clone(), revision: r.revision, error: None });
                 }
+                self.result = Some(results::LastResult::from_batch(&r, self.session.registry()));
                 self.prune_selection();
                 Ok(())
             }
@@ -1351,11 +1504,13 @@ impl PixelApp {
             }
             self.quit_requested = true;
         }
-        for f in ctx.input(|i| i.raw.dropped_files.clone()) {
-            let p = f.path().to_path_buf();
-            if !p.as_os_str().is_empty() {
-                let _ = self.open_path(&p);
-            }
+        let dropped: Vec<PathBuf> =
+            ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
+        if !dropped.is_empty() {
+            self.drop_files(&dropped);
+        }
+        if self.poll_jobs() {
+            ctx.request_repaint_after(Duration::from_millis(50));
         }
         if let Some((_, at)) = &self.status {
             let left = STATUS_TIME.saturating_sub(at.elapsed());
@@ -1393,6 +1548,7 @@ impl PixelApp {
             }
         });
         palette::show(self, ui);
+        chrome::drop_overlay(ui);
         self.frame_ms = t0.elapsed().as_secs_f32() * 1000.0;
     }
 
@@ -1629,6 +1785,60 @@ mod tests {
         assert!(b.title().starts_with("scene.p3d"));
         assert_ne!(a.scene_key() >> 40, b.scene_key() >> 40, "a load starts a new cache generation");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Commits background jobs until none run (a few seconds at most).
+    fn finish_jobs(a: &mut PixelApp) {
+        for _ in 0..2000 {
+            if !a.poll_jobs() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("a job did not finish");
+    }
+
+    #[test]
+    fn imports_run_in_the_background_and_offer_their_fixes() {
+        let dir = files::tests::temp_dir("import");
+        // A box without its top: cleanup.auto would fill the hole.
+        let bin = dir.join("bin.obj");
+        let obj = "v -1 -1 -1\nv 1 -1 -1\nv 1 1 -1\nv -1 1 -1\nv -1 -1 1\nv 1 -1 1\nv 1 1 1\nv -1 1 1\n\
+                   f 1 4 3 2\nf 1 2 6 5\nf 3 4 8 7\nf 1 5 8 4\nf 2 3 7 6\n";
+        std::fs::write(&bin, obj).unwrap();
+        let picked = bin.clone();
+        let services = Services { pick_import: Some(Box::new(move || Some(picked.clone()))), ..Services::default() };
+        let mut a = PixelApp::new(Session::new(), services);
+        // File > Import...: the dialog's folder is allowed, the import runs as a job.
+        assert!(a.run("file.import", Value::Null).unwrap()["importing"].is_array());
+        assert_eq!(a.running_jobs(), 1);
+        finish_jobs(&mut a);
+        assert_eq!((a.doc().object_count(), a.selection.len(), a.session.history().len()), (1, 1, 1), "one undoable step, selected");
+        assert_eq!(a.last_op.as_ref().map(|l| l.op.as_str()), Some("io.import"), "adjustable like any op");
+        let result = a.result.clone().unwrap();
+        let fix = result.entries[0].warnings.iter().find_map(|w| w.fix.clone()).expect("a warning with a fix");
+        assert_eq!(fix.op, "cleanup.auto");
+        let k = *a.selection.first().unwrap();
+        let faces = a.doc().object_mesh(k).unwrap().face_count();
+        results::run_fix(&mut a, OpCall::new(&fix.op, fix.args)).unwrap();
+        assert_eq!(a.doc().object_mesh(k).unwrap().face_count(), faces + 1, "the fix closed the hole");
+        // Dropping files: models import, other files are refused.
+        std::fs::write(dir.join("notes.txt"), "hello").unwrap();
+        a.drop_files(&[dir.join("notes.txt")]);
+        assert!(a.status.as_ref().is_some_and(|(s, _)| s.contains("Cannot use")));
+        a.drop_files(std::slice::from_ref(&bin));
+        finish_jobs(&mut a);
+        assert_eq!(a.doc().object_count(), 2);
+        // A folder nobody picked stays closed, through the dialog-free path too.
+        let other = files::tests::temp_dir("import-other");
+        std::fs::write(other.join("bin.obj"), obj).unwrap();
+        a.run("file.import", json!({ "path": other.join("bin.obj").display().to_string() })).unwrap();
+        finish_jobs(&mut a);
+        assert!(a.status.as_ref().is_some_and(|(s, _)| s.contains("outside the allowed folders")), "{:?}", a.status);
+        assert_eq!(a.doc().object_count(), 2);
+        for d in [dir, other] {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 
     #[test]

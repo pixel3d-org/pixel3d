@@ -1,6 +1,6 @@
 //! pixel3d desktop application.
 //!
-//! Usage: `pixel3d [--sample] [file.p3d]`. The window is an eframe app
+//! Usage: `pixel3d [--sample] [file.p3d] [models...]`. The window is an eframe app
 //! around `p3d_ui::PixelApp` (project spec 20.2): integrated title bar on
 //! macOS, the viewport on eframe's wgpu device, preferences in eframe's
 //! storage.
@@ -15,7 +15,7 @@ mod native_menu;
 use p3d_ui::{PixelApp, Services};
 
 const USAGE: &str = "\
-usage: pixel3d [options] [file.p3d]
+usage: pixel3d [options] [file.p3d] [model.glb|.gltf|.obj|.fbx]...
 
 options:
       --sample             open the sample scene
@@ -127,6 +127,9 @@ fn services() -> Services {
     Services {
         pick_open: Some(Box::new(|| rfd::FileDialog::new().add_filter("pixel3d scene", &["p3d"]).pick_file())),
         pick_save: Some(Box::new(|name: &str| rfd::FileDialog::new().add_filter("pixel3d scene", &["p3d"]).set_file_name(name).save_file())),
+        pick_import: Some(Box::new(|| {
+            rfd::FileDialog::new().set_title("Import").add_filter("3D models (glTF, GLB, OBJ, FBX)", &p3d_ui::MODEL_EXTENSIONS).pick_file()
+        })),
     }
 }
 
@@ -264,9 +267,8 @@ fn run(args: Args) -> anyhow::Result<()> {
             if let Some(rs) = &cc.wgpu_render_state {
                 app.set_wgpu(rs);
             }
-            for f in &args.files {
-                let _ = app.open_path(f);
-            }
+            // As if dropped on the window: a scene opens, models are imported.
+            app.drop_files(&args.files);
             if args.sample {
                 let _ = app.run("file.sample", serde_json::Value::Null);
             }

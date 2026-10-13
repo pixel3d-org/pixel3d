@@ -35,7 +35,8 @@ fn null() -> Value {
 fn app_aliases(label: &str) -> &'static [&'static str] {
     match label {
         "New" => &["new scene", "new file", "reset"],
-        "Open..." => &["open file", "load", "import p3d"],
+        "Open..." => &["open file", "load", "open p3d"],
+        "Import..." => &["import", "import file", "load gltf", "load glb", "load fbx", "load obj", "append", "file import"],
         "Save" => &["save file", "write"],
         "Save As..." => &["save copy", "export p3d"],
         "Undo" => &["ctrl z", "step back"],

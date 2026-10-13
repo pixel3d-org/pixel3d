@@ -8,6 +8,7 @@ use egui::{Align2, Rect, vec2};
 
 use crate::PixelApp;
 use crate::i18n::t;
+use crate::results;
 use crate::schema_form;
 use crate::theme::Tokens;
 use crate::widgets;
@@ -15,19 +16,37 @@ use crate::widgets;
 /// Ops whose panel would only repeat what the gizmo or Properties show.
 const SKIP: &[&str] = &["scene.set_transform", "scene.rename", "edit.transform"];
 
-/// Draws the panel over the viewport `rect` when the last op can be adjusted.
+/// Parameters the panel leaves out: what the op works on comes from the
+/// selection (the target, the picked elements, a boolean's tool objects).
+const HIDDEN: &[&str] = &["target", "select", "tool"];
+
+/// Draws the panel over the viewport `rect` when the last op can be
+/// adjusted, with its warnings and their fixes. A report (an op that
+/// changed nothing) or a batch with warnings gets the same card without
+/// the form; a report's card can be closed.
 pub fn show(app: &mut PixelApp, ui: &egui::Ui, rect: Rect) {
-    let Some(last) = app.last_op.clone() else { return };
-    if app.session.revision() != last.revision || SKIP.contains(&last.op.as_str()) || !rect.is_positive() || app.gizmo.dragging() {
+    if !rect.is_positive() || app.gizmo.dragging() {
+        return;
+    }
+    let revision = app.session.revision();
+    let result = app.result.clone().filter(|r| r.revision == revision && r.worth_showing());
+    // A report is newer than the op before it, so it takes the card.
+    let last =
+        app.last_op.clone().filter(|l| l.revision == revision && !SKIP.contains(&l.op.as_str()) && !result.as_ref().is_some_and(|r| r.read_only));
+    if last.is_none() && result.is_none() {
         return;
     }
     let registry = std::sync::Arc::clone(app.session.registry());
-    let Ok(op) = registry.get(&last.op) else { return };
-    let schema = op.params_schema();
+    let op = last.as_ref().and_then(|l| registry.get(&l.op).ok());
     let tk = Tokens::get();
-    let mut params = last.params.clone();
+    let mut params = last.as_ref().map(|l| l.params.clone()).unwrap_or_default();
     let mut out = schema_form::FormOutput::default();
-    let title = format!("{}: {}", t("Adjust"), op.meta().label);
+    let (mut fix, mut close) = (None, false);
+    let title = match (op, &result) {
+        (Some(op), _) => format!("{}: {}", t("Adjust"), op.meta().label),
+        (None, Some(r)) => r.title(&registry),
+        (None, None) => return,
+    };
     egui::Area::new(egui::Id::new("p3d_quick_properties"))
         .order(egui::Order::Foreground)
         .pivot(Align2::LEFT_BOTTOM)
@@ -36,10 +55,23 @@ pub fn show(app: &mut PixelApp, ui: &egui::Ui, rect: Rect) {
             egui::Frame::NONE.show(ui, |ui| {
                 ui.set_width(280.0);
                 egui::ScrollArea::vertical().max_height((rect.height() * 0.6).max(120.0)).show(ui, |ui| {
-                    widgets::section(ui, "quick-properties", &title, false, |ui| {
-                        out = schema_form::form(ui, egui::Id::new(("quick", last.op.as_str())), &schema, &schema, &mut params, &["target", "select"]);
-                        if let Some(e) = &last.error {
-                            ui.label(egui::RichText::new(e).font(crate::theme::small()).color(tk.health_error));
+                    // Results with warnings open by themselves.
+                    let open = result.is_some();
+                    widgets::section(ui, if open { "quick-result" } else { "quick-properties" }, &title, open, |ui| {
+                        if let (Some(l), Some(op)) = (&last, op) {
+                            let schema = op.params_schema();
+                            out = schema_form::form(ui, egui::Id::new(("quick", l.op.as_str())), &schema, &schema, &mut params, HIDDEN);
+                            if let Some(e) = &l.error {
+                                ui.label(egui::RichText::new(e).font(crate::theme::small()).color(tk.health_error));
+                            }
+                        }
+                        if let Some(r) = &result {
+                            fix = if r.read_only { results::report_ui(ui, r, &registry, true) } else { results::warnings_ui(ui, r, &registry, true) };
+                            if r.read_only {
+                                let b = ui.button(egui::RichText::new(t("Close")).font(crate::theme::small()));
+                                crate::control::record_widget(ui, &b, t("Close report"), "button", None);
+                                close = b.clicked();
+                            }
                         }
                     });
                 });
@@ -48,6 +80,12 @@ pub fn show(app: &mut PixelApp, ui: &egui::Ui, rect: Rect) {
     if out.changed {
         // Errors stay on the last op and show in the panel.
         let _ = adjust(app, params);
+    }
+    if let Some(f) = fix {
+        let _ = results::run_fix(app, f);
+    }
+    if close {
+        app.result = None;
     }
 }
 

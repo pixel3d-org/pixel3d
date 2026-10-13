@@ -82,6 +82,8 @@ pub fn menus() -> Vec<Menu> {
                 icon(Icon::Open, keyed("Open...", "file.open", key(cmd, Key::O))),
                 icon(Icon::Box, item("Open the sample scene", "file.sample")),
                 None,
+                icon(Icon::Import, item("Import...", "file.import")),
+                None,
                 icon(Icon::Save, keyed("Save", "file.save", key(cmd, Key::S))),
                 keyed("Save As...", "file.save_as", key(shift_cmd, Key::S)),
                 None,
@@ -257,7 +259,7 @@ mod tests {
             for it in menu.entries.into_iter().flatten() {
                 // Headers, commands that need a dialog and quit are skipped;
                 // the rest must run.
-                if it.is_header() || matches!(it.command, "file.open" | "file.save" | "file.save_as" | "app.quit") {
+                if it.is_header() || matches!(it.command, "file.open" | "file.import" | "file.save" | "file.save_as" | "app.quit") {
                     continue;
                 }
                 // Ops may refuse the scene (nothing selected, no holes); the
