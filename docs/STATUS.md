@@ -2,7 +2,7 @@
 
 Progress checklist for the roadmap. Tick a box in the commit that completes it; acceptance items record their evidence (test names, numbers, report links). Each completed phase gets a local tag `phase-N`.
 
-**Current phase: 3a (Modelling ops). Phases 0 to 2 are met locally; their tags wait for CI on all three OSes (no remote yet).**
+**Current phase: 4 (UV). Phases 0 to 3 are met locally; their tags wait for CI to pass on all three OSes (origin is `pixel3d-org/pixel3d`; Linux and Windows CI fail on cross-platform remesh determinism and a Windows golden image).**
 
 ## Phase 0: Bootstrap
 
