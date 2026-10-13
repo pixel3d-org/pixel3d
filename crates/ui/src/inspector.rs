@@ -153,10 +153,11 @@ fn scene_tab(app: &mut PixelApp, ui: &mut egui::Ui) {
         info(ui, t("File"), app.path.as_ref().map_or_else(|| t("not saved yet").to_owned(), |p| p.display().to_string()));
     });
     let n = app.selection.len();
+    // Counted once per document state and selection, not per frame.
+    let tris = app.stats().selected.tris;
     if n > 1 {
         panel(ui, "selection", t("Selection"), true, |ui| {
             info(ui, t("Objects"), n.to_string());
-            let tris: usize = app.selection.iter().filter_map(|k| doc.object_mesh(*k)).map(|m| m.triangle_count()).sum();
             info(ui, t("Triangles"), chrome::thousands(tris));
         });
     }
@@ -251,11 +252,13 @@ fn mesh_tab(app: &mut PixelApp, ui: &mut egui::Ui, key: ObjectKey) {
     let tk = Tokens::get();
     let doc = std::sync::Arc::clone(app.session.doc());
     let Some(m) = doc.object_mesh(key) else { return };
+    app.stats();
+    let tris = app.stats.tris_of(key).unwrap_or_else(|| m.triangle_count());
     panel(ui, "mesh", t("Mesh"), true, |ui| {
         info(ui, t("Vertices"), chrome::thousands(m.vert_count()));
         info(ui, t("Edges"), chrome::thousands(m.edge_count()));
         info(ui, t("Faces"), chrome::thousands(m.face_count()));
-        info(ui, t("Triangles"), chrome::thousands(m.triangle_count()));
+        info(ui, t("Triangles"), chrome::thousands(tris));
         if let Some((lo, hi)) = m.bounds() {
             let d = hi - lo;
             info(ui, t("Size"), format!("{} x {} x {} m", fmt(d.x), fmt(d.y), fmt(d.z)));

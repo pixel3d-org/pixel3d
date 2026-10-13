@@ -857,7 +857,7 @@ pub fn viewport_overlay(app: &mut PixelApp, ui: &mut egui::Ui) {
                     (t("Vertices"), both(f.verts.len(), m.vert_count())),
                     (t("Edges"), both(f.edges.len(), m.edge_count())),
                     (t("Faces"), both(f.faces.len(), m.face_count())),
-                    (t("Triangles"), both(tris, m.triangle_count())),
+                    (t("Triangles"), both(tris, app.edit.object.and_then(|k| app.stats.tris_of(k)).unwrap_or(0))),
                 ]
             }
             None => [

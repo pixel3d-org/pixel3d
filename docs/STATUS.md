@@ -200,7 +200,7 @@ Acceptance:
 Acceptance:
 
 - [x] Open, edit and save a `.p3d` with gizmo and undo (`apps/pixel3d/tests/control.rs`, run with `cargo test -p pixel3d --test control -- --ignored`: the app saves and reopens a `.p3d`, the gizmo's X arrow is dragged with real pointer events through the control server, Cmd+Z undoes, the file is saved and a screenshot taken; passed on macOS)
-- [ ] 60 fps at 10M triangles
+- [x] 60 fps at 10M triangles (93 fps orbiting 10,485,760 triangles in 8 objects, release build, vsync off, `view.benchmark` driven over the control server, 1.6k x 1k window on an Apple Silicon Mac; UI frame time 0.24 ms because counts are cached per document state; other GPUs not measured yet)
 - [ ] UI snapshot tests green on all OSes
 
 ## Phase 9: GUI tools

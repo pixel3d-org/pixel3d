@@ -4,7 +4,7 @@
 //! Counting walks every face for triangles, so results are cached per
 //! document state, hidden set and selection, never recounted per frame.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 
 use p3d_scene::{Document, ObjectKey};
@@ -45,15 +45,26 @@ pub struct Stats {
 ///
 /// Complexity: O(objects + faces of the visible meshes).
 pub fn count(doc: &Document, selected: &BTreeSet<ObjectKey>, hidden: &BTreeSet<ObjectKey>) -> Stats {
+    count_with_objects(doc, selected, hidden).0
+}
+
+/// [`count`], plus the triangles of every object (hidden ones too).
+///
+/// Complexity: O(objects log objects + faces of all meshes).
+pub fn count_with_objects(doc: &Document, selected: &BTreeSet<ObjectKey>, hidden: &BTreeSet<ObjectKey>) -> (Stats, BTreeMap<ObjectKey, usize>) {
     let mut s = Stats::default();
+    let mut per_object = BTreeMap::new();
     for (key, _) in doc.objects() {
         if hidden.contains(&key) {
-            s.budget_tris += doc.object_mesh(key).map_or(0, |m| m.triangle_count());
+            let tris = doc.object_mesh(key).map_or(0, |m| m.triangle_count());
+            s.budget_tris += tris;
+            per_object.insert(key, tris);
             continue;
         }
         let before = s.total;
         s.total.add(doc, key);
         s.budget_tris += s.total.tris - before.tris;
+        per_object.insert(key, s.total.tris - before.tris);
         if selected.contains(&key) {
             // Reuse the object's counts instead of walking it twice.
             let d = |a: usize, b: usize| a - b;
@@ -64,7 +75,7 @@ pub fn count(doc: &Document, selected: &BTreeSet<ObjectKey>, hidden: &BTreeSet<O
             s.selected.tris += d(s.total.tris, before.tris);
         }
     }
-    s
+    (s, per_object)
 }
 
 /// Statistics for the last document state and selection seen.
@@ -72,6 +83,8 @@ pub fn count(doc: &Document, selected: &BTreeSet<ObjectKey>, hidden: &BTreeSet<O
 pub struct StatsCache {
     key: Option<u64>,
     stats: Stats,
+    /// Triangles per object, counted with the stats.
+    tris: BTreeMap<ObjectKey, usize>,
 }
 
 impl StatsCache {
@@ -86,10 +99,16 @@ impl StatsCache {
         hidden.hash(&mut h);
         let key = h.finish();
         if self.key != Some(key) {
-            self.stats = count(doc, selected, hidden);
+            (self.stats, self.tris) = count_with_objects(doc, selected, hidden);
             self.key = Some(key);
         }
         self.stats
+    }
+
+    /// The triangles of `key` as last counted (call [`StatsCache::get`]
+    /// first in the frame).
+    pub fn tris_of(&self, key: ObjectKey) -> Option<usize> {
+        self.tris.get(&key).copied()
     }
 }
 

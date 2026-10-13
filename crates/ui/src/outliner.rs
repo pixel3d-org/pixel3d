@@ -260,6 +260,8 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
 
     let doc = std::sync::Arc::clone(app.session.doc());
     let list = rows(&doc, &toggled, &filter);
+    // Triangle counts come from the stats cache (counted once per edit).
+    app.stats();
     if (list.len() <= 1 && doc.object_count() == 0) || list.is_empty() {
         ui.add_space(8.0);
         let msg = if filter.trim().is_empty() {
@@ -344,7 +346,7 @@ pub fn show(app: &mut PixelApp, ui: &mut egui::Ui) {
             }
             // Right column: triangles, vertices or contents.
             let detail = match (row.kind, key) {
-                (Kind::Mesh, Some(k)) => doc.object_mesh(k).map(|m| crate::chrome::thousands(m.triangle_count())),
+                (Kind::Mesh, Some(k)) => app.stats.tris_of(k).map(crate::chrome::thousands),
                 (Kind::MeshData, Some(k)) => doc.object_mesh(k).map(|m| format!("{} {}", crate::chrome::thousands(m.vert_count()), t("verts"))),
                 (Kind::Collection | Kind::LodGroup, _) => obj.map(|o| o.children().len().to_string()),
                 (Kind::Scene, _) => Some(doc.object_count().to_string()),
