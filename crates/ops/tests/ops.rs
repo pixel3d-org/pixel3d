@@ -1125,6 +1125,20 @@ fn remesh_quad_leaves_no_high_poles_on_a_sculpted_head() {
 }
 
 #[test]
+fn remesh_defaults_are_valid_and_runs_report_progress() {
+    let r = Registry::builtin();
+    let quad = r.get("remesh.quad").unwrap().default_params();
+    assert_eq!((quad["iterations"].clone(), quad["relax"].clone()), (json!(12), json!(4)), "the documented defaults");
+    let mut tx = Tx::new(Document::new());
+    ok(&mut tx, "prim.torus", json!({ "name": "ring", "major_radius": 0.3, "minor_radius": 0.1 }));
+    for (op, args) in [("remesh.quad", json!({ "target": "ring", "edge": "4cm" })), ("sdf.from_mesh", json!({ "target": "ring", "detail": "3cm" }))] {
+        let progress = std::sync::atomic::AtomicU32::new(0);
+        r.get(op).unwrap().run(&mut tx, &args, &OpCtx { progress: Some(&progress), ..OpCtx::default() }).unwrap();
+        assert!(progress.load(std::sync::atomic::Ordering::Relaxed) >= 900_000, "{op} reports how far it got");
+    }
+}
+
+#[test]
 fn remesh_quad_refuses_open_meshes() {
     let mut tx = Tx::new(Document::new());
     ok(&mut tx, "prim.plane", json!({ "name": "floor" }));

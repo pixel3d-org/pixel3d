@@ -1052,6 +1052,15 @@ pub fn shortcuts(app: &mut PixelApp, ctx: &egui::Context) {
         (KeyboardShortcut::new(cmd, Key::Plus), "selection.boolean", || json!({ "operation": "union" })),
         (KeyboardShortcut::new(cmd, Key::Equals), "selection.boolean", || json!({ "operation": "union" })),
     ];
+    // Over the Shapes tab with a shape selected, Delete deletes the shape
+    // (the key acts where the pointer is, as in Blender).
+    if app.sdf.panel_hovered && app.sdf.selected.is_some() && !app.ui.mode.is_edit() {
+        for key in [Key::Delete, Key::Backspace] {
+            if ctx.input_mut(|i| i.consume_key(Modifiers::NONE, key)) {
+                let _ = app.run("shapes.delete", Value::Null);
+            }
+        }
+    }
     // Edit Mode keys come first (E extrudes there, as in Blender).
     if app.ui.mode.is_edit() {
         let edit: &[(KeyboardShortcut, &str)] = &[

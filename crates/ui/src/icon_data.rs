@@ -276,3 +276,7 @@ pub const REPORT: &[&str] =
 
 /// Two blobs blending into one: shapes made from blended primitives.
 pub const BLOBS: &[&str] = &["M9 14m-5 0a5 5 0 1 0 10 0a5 5 0 1 0 -10 0", "M15.5 9.5m-4.5 0a4.5 4.5 0 1 0 9 0a4.5 4.5 0 1 0 -9 0"];
+
+/// A vertex where five edges meet: a pole.
+pub const POLES: &[&str] =
+    &["M12 12l0 -8", "M12 12l7.6 -2.5", "M12 12l4.7 6.5", "M12 12l-4.7 6.5", "M12 12l-7.6 -2.5", "M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0"];

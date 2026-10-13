@@ -23,11 +23,13 @@ pub mod i18n;
 mod icon_data;
 pub mod icons;
 pub mod inspector;
+pub mod jobcard;
 pub mod menus;
 pub mod navgizmo;
 pub mod outliner;
 pub mod palette;
 pub mod panels;
+pub mod poles;
 pub mod quick;
 pub mod remote;
 pub mod results;
@@ -287,6 +289,10 @@ pub struct PixelApp {
     jobs: Vec<RunningJob>,
     /// The SDF shape editor (the Shapes tab and the viewport proxies).
     pub sdf: sdf::SdfEditor,
+    /// The run card of a long op (remesh) and its background run.
+    pub job_card: jobcard::JobCard,
+    /// Poles of the shown meshes, for the pole overlay.
+    pub poles: poles::PoleCache,
     /// The revision of an edit still being dragged: the next change of the
     /// same drag replaces it, so one drag is one undo step.
     coalesce: Option<u64>,
@@ -355,6 +361,8 @@ impl PixelApp {
             result: None,
             jobs: Vec::new(),
             sdf: sdf::SdfEditor::default(),
+            job_card: jobcard::JobCard::default(),
+            poles: poles::PoleCache::default(),
             coalesce: None,
             edit_focus: None,
             services,
@@ -397,7 +405,7 @@ impl PixelApp {
 
     /// Background work still running (shown in the status bar).
     pub fn running_jobs(&self) -> usize {
-        usize::from(self.health.busy()) + self.jobs.len() + usize::from(self.sdf.busy())
+        usize::from(self.health.busy()) + self.jobs.len() + usize::from(self.sdf.busy()) + usize::from(self.job_card.busy())
     }
 
     /// Whether the History or Console panel is open.
@@ -842,6 +850,7 @@ impl PixelApp {
         // Jobs started on the old document must not land in the new one.
         self.jobs.clear();
         self.sdf = sdf::SdfEditor::default();
+        self.job_card = jobcard::JobCard::default();
         self.coalesce = None;
         self.health = health::HealthState::default();
         self.viewport.frame_pending = true;
@@ -967,6 +976,30 @@ impl PixelApp {
                 self.execute(&[OpCall::new(op, Value::Object(p))])
             }
             op if sdf::is_sdf_op(op) && params.get("shapes").is_none() => self.run_inner("shapes.new", params),
+            // Long ops on a mesh (remesh): the run card, then a background run.
+            "job.open" => {
+                let op = str_param("op").ok_or("op is required: remesh.quad or sdf.from_mesh")?;
+                self.open_job_card(&op)
+            }
+            "job.run" => {
+                jobcard::merge(&mut self.job_card.params, params);
+                self.run_job_card()
+            }
+            "job.cancel" => {
+                self.cancel_job_card();
+                Ok(json!({ "cancelling": self.job_card.busy() }))
+            }
+            "job.close" => {
+                self.cancel_job_card();
+                self.job_card.op = None;
+                Ok(json!({}))
+            }
+            op if params.get("target").is_none() && jobcard::runs_in_card(self.session.registry(), op) => self.open_job_card(op),
+            "view.poles" => {
+                self.ui.view.poles = params.get("on").and_then(Value::as_bool).unwrap_or(!self.ui.view.poles);
+                Ok(json!({ "poles": self.ui.view.poles }))
+            }
+            "mesh.poles" => self.pole_counts(params.get("target").and_then(Value::as_str)),
             shapes_cmd if shapes_cmd.starts_with("shapes.") => self.sdf_command(shapes_cmd, params),
             "edit.undo" => {
                 let label = self.session.undo().map_err(|e| e.message)?;
@@ -1649,6 +1682,7 @@ impl PixelApp {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
         self.sdf_tick(ctx);
+        self.job_card_tick(ctx);
         if let Some((_, at)) = &self.status {
             let left = STATUS_TIME.saturating_sub(at.elapsed());
             if !left.is_zero() {
@@ -1739,9 +1773,11 @@ impl PixelApp {
                     .inner;
                 chrome::viewport_overlay(self, ui);
                 sdf::overlay(self, ui, &mut viewport_events);
+                poles::overlay(self, ui);
                 let gizmo_rect = self.viewport.rect;
                 gizmo::show(self, ui, gizmo_rect);
                 quick::show(self, ui, gizmo_rect);
+                jobcard::show(self, ui, gizmo_rect);
                 health::badges(self, ui);
                 nav = navgizmo::show(ui, view_rect, &mut self.viewport, self.ui.view.ortho);
             }

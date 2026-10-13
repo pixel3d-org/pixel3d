@@ -135,6 +135,7 @@ icons! {
     CleanUp => d::SPARKLES, false;
     Report => d::REPORT, false;
     Shapes => d::BLOBS, false;
+    Poles => d::POLES, false;
 }
 
 /// The flattened outlines of an icon, parsed on first use.
