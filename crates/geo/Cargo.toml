@@ -23,6 +23,9 @@ thiserror = { workspace = true }
 proptest = { workspace = true }
 criterion = { workspace = true }
 p3d-testdata = { workspace = true }
+# Boolean engine candidates, compared by benches/boolean_eval.rs (ADR 0008).
+manifold-rust = { workspace = true }
+boolmesh = { workspace = true }
 
 [[bench]]
 name = "prim"
@@ -34,4 +37,8 @@ harness = false
 
 [[bench]]
 name = "edit"
+harness = false
+
+[[bench]]
+name = "boolean_eval"
 harness = false
