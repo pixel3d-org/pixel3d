@@ -3160,12 +3160,14 @@ dependencies = [
 name = "p3d-features"
 version = "0.1.0"
 dependencies = [
+ "criterion 0.8.2",
  "glam",
  "p3d-geo",
  "p3d-math",
  "p3d-mesh",
  "p3d-scene",
  "p3d-sdf",
+ "p3d-testdata",
  "proptest",
  "serde_json",
  "thiserror 2.0.21",

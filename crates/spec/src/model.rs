@@ -79,6 +79,10 @@ pub struct Part {
     /// A solid from front, side and top outlines (`sdf.silhouettes`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub silhouettes: Option<Value>,
+    /// A motif repeated along a path or around a band (`gen.ornament`):
+    /// rune bands, studs along an edge, rope trim, filigree.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ornament: Option<Value>,
     /// A feature template by id (`ear`, `horn`, `nose`, `bolt`, ...) built
     /// from `params`; SDF features (`nose`) blend like `sdf` parts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -413,7 +417,7 @@ const NO_PARAMS: &Value = &Value::Null;
 const PRIMITIVES: [&str; 11] = ["box", "cylinder", "cone", "quad_sphere", "uv_sphere", "ico_sphere", "torus", "tube", "capsule", "wedge", "plane"];
 
 /// Shape kind keys and the op each runs.
-pub const GENERATORS: [(&str, &str); 7] = [
+pub const GENERATORS: [(&str, &str); 8] = [
     ("lathe", "gen.lathe"),
     ("sweep", "gen.sweep"),
     ("loft", "gen.loft"),
@@ -421,6 +425,7 @@ pub const GENERATORS: [(&str, &str); 7] = [
     ("pipe", "gen.pipe"),
     ("shell", "gen.shell"),
     ("silhouettes", "sdf.silhouettes"),
+    ("ornament", "gen.ornament"),
 ];
 
 impl Part {
@@ -428,7 +433,7 @@ impl Part {
     ///
     /// Complexity: O(1).
     pub fn kind(&self, path: &str) -> Result<Kind<'_>, SpecError> {
-        let gens = [&self.lathe, &self.sweep, &self.loft, &self.extrude, &self.pipe, &self.shell, &self.silhouettes];
+        let gens = [&self.lathe, &self.sweep, &self.loft, &self.extrude, &self.pipe, &self.shell, &self.silhouettes, &self.ornament];
         let mut kinds: Vec<(&str, Kind<'_>)> = Vec::new();
         if let Some(s) = &self.sdf {
             kinds.push(("sdf", Kind::Sdf(s)));
@@ -471,7 +476,7 @@ impl Part {
             [(_, k)] => Ok(*k),
             [] => Err(SpecError::new(
                 path,
-                "the part has no shape: give one of sdf, primitive, lathe, sweep, loft, extrude, pipe, shell, silhouettes, feature, strands, mirror or instance",
+                "the part has no shape: give one of sdf, primitive, lathe, sweep, loft, extrude, pipe, shell, silhouettes, ornament, feature, strands, mirror or instance",
             )),
             [(a, _), (b, _), ..] => Err(SpecError::new(path, format!("the part has two shapes (`{a}` and `{b}`); give one"))),
         }

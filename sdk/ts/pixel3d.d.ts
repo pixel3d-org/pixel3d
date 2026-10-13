@@ -16,6 +16,19 @@ export type AxisName = "x" | "y" | "z";
 /** An axis of object space. */
 export type AxisParam = "x" | "y" | "z";
 
+/** An axis. */
+export type BandAxis = "x" | "y" | "z";
+
+/** A ring around an axis. */
+export type BandParam = {
+  /** The ring's center. */
+  at?: [Length, Length, Length];
+  /** The axis the ring goes around. */
+  axis?: BandAxis;
+  /** Ring radius: the surface's radius there (a haft, a helmet rim). */
+  radius: Length;
+};
+
 /** Advanced settings of `edit.bevel`. */
 export type BevelAdvanced = {
   /** Shrink the width where it would overlap neighbouring edges instead of failing. */
@@ -256,6 +269,9 @@ export type MirrorAxis = "x" | "y" | "z";
 
 /** Axes to mirror across: `"x"` or a list such as `["x", "z"]`. */
 export type MirrorParam = AxisName | AxisName[];
+
+/** What repeats along the path. */
+export type MotifParam = "stud" | "pyramid" | "bead" | "rune" | "rope" | "scroll";
 
 /** Seeded bumps on the surface. */
 export type NoiseParam = {
@@ -1369,6 +1385,40 @@ export type GenStrandsParams = {
   width?: Length | null;
 };
 
+/** `gen.ornament`: Repeats a motif (studs, pyramids, beads, runes, rope, scroll filigree) along a path or around a band, raised off the surface as geometry. */
+export type GenOrnamentParams = {
+  /** A ring around an axis instead of a path: `{"radius": "2cm", "axis": "y", "at": [0, 0.3, 0]}`. */
+  band?: BandParam | null;
+  /** Join the path's last point back to the first. */
+  closed?: boolean;
+  /** Motifs along the path; fills it at `spacing` when omitted. */
+  count?: number | null;
+  /** What repeats: `stud`, `pyramid`, `bead`, `rune`, `rope` or `scroll`. */
+  motif?: MotifParam;
+  /** Object name; `ornament` when omitted. */
+  name?: string | null;
+  /** Out of the surface along a path (made perpendicular to it); +Y when omitted. Bands face away from their axis. */
+  normal?: [number, number, number] | null;
+  /** Parent object (name, path or id); top level when omitted. */
+  parent?: string | null;
+  /** The curve to follow, as points; a 5 cm band around Y when neither `path` nor `band` is given. */
+  path?: [Length, Length, Length][] | null;
+  /** Rope plies (2 to 5); 3 when omitted. */
+  plies?: number | null;
+  /** Origin position in the parent's space. */
+  position?: [Length, Length, Length];
+  /** Height above the surface; 0.4 sizes when omitted. */
+  relief?: Length | null;
+  /** Depth sunk into the surface; 0.15 sizes when omitted. */
+  sink?: Length | null;
+  /** Motif width (rope and scroll: the band width). */
+  size?: Length;
+  /** Distance between motif centers (scroll: the wave length); 1.5 sizes when omitted. */
+  spacing?: Length | null;
+  /** Random change of spacing, size and turn: 0 even (regular rhythm) to 1 loose. */
+  variation?: number;
+};
+
 /** `remesh.quad`: Rebuilds a closed mesh as all quads with even edges that follow a smooth direction field. */
 export type RemeshQuadParams = {
   /** Flow along an object axis (limbs, blades, tails). */
@@ -2060,6 +2110,7 @@ export interface OpParams {
   "gen.shell": GenShellParams;
   "gen.feature": GenFeatureParams;
   "gen.strands": GenStrandsParams;
+  "gen.ornament": GenOrnamentParams;
   "remesh.quad": RemeshQuadParams;
   "remesh.isotropic": RemeshIsotropicParams;
   "prim.plane": PrimPlaneParams;

@@ -22,6 +22,7 @@ mod hard;
 mod head;
 mod horn;
 mod nose;
+pub mod ornament;
 mod outline;
 mod tube;
 pub mod wing;
