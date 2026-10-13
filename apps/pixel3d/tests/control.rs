@@ -403,3 +403,39 @@ fn pull_a_surface_with_the_handles_tool() {
     wait_for(30, || Some(inspect(&mut c)).filter(|s| s["handles"]["mesh"]["bounds"] == before));
     let _ = c.call("ui.command", json!({ "id": "app.quit" }));
 }
+
+#[test]
+#[ignore = "needs a display and a GPU"]
+fn insert_a_feature_template_from_the_panel() {
+    let dir = temp_dir("features");
+    let (_app, mut c) = start(&["--command".to_owned(), "ui.start on=false".to_owned()]);
+    // View > Features panel, then pick the bolt and press Insert.
+    c.call("ui.command", json!({ "id": "ui.dock", "params": { "operation": "close", "panel": "properties" } })).unwrap();
+    c.call("ui.command", json!({ "id": "features.open", "params": { "on": true } })).unwrap();
+    let click = |c: &mut Client, label: &str| {
+        let found = wait_for(30, || {
+            let r = c.call("ui.elements", json!({ "label": label })).ok()?;
+            r["elements"].as_array().and_then(|e| e.first().cloned())
+        });
+        c.call("ui.click", json!({ "target": { "id": found["id"] } })).unwrap();
+    };
+    click(&mut c, "Bolt");
+    wait_for(30, || Some(inspect(&mut c)).filter(|s| s["features"]["selected"] == json!("bolt")));
+    let objects = inspect(&mut c)["scene"]["objects"].as_u64().unwrap();
+    click(&mut c, "Insert feature");
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["scene"]["objects"].as_u64() == Some(objects + 1)));
+    assert_eq!(s["features"]["live"], json!(true));
+    // A parameter edit updates it in place; the landmarks show as dots.
+    c.call("ui.command", json!({ "id": "features.set", "params": { "params": { "head": 1.0 } } })).unwrap();
+    c.call("ui.command", json!({ "id": "view.feature_landmarks", "params": { "on": true } })).unwrap();
+    c.call("ui.command", json!({ "id": "view.frame" })).unwrap();
+    let s = wait_for(30, || Some(inspect(&mut c)).filter(|s| s["features"]["landmarks"].as_array().is_some_and(|l| !l.is_empty())));
+    assert_eq!(s["scene"]["objects"].as_u64(), Some(objects + 1), "still one bolt");
+    let shot = dir.join("features.png");
+    c.call("ui.screenshot", json!({ "path": shot.display().to_string() })).unwrap();
+    assert!(std::fs::metadata(&shot).unwrap().len() > 1000);
+    // One undo step removes it.
+    c.call("ui.command", json!({ "id": "edit.undo" })).unwrap();
+    wait_for(30, || Some(inspect(&mut c)).filter(|s| s["scene"]["objects"].as_u64() == Some(objects)));
+    let _ = c.call("ui.command", json!({ "id": "app.quit" }));
+}
