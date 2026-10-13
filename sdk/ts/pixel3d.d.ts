@@ -1389,6 +1389,8 @@ export type GenTreeParams = {
   card_size?: Length | null;
   /** Clumps `faceted` (low poly) or `smooth`. */
   clump_shading?: ClumpShading | null;
+  /** Foliage gathered into clumps with gaps between them (0 even to 1 distinct clumps). */
+  clumping?: number | null;
   /** Silhouette coverage target of the crown (0.05 to 1); cards are added until it is reached. */
   coverage?: number | null;
   /** Crown hull: `dome`, `sphere`, `ellipsoid`, `cone`, `umbrella`, `column`, or an outline `[[radius share, height share], ...]` from the crown base up. */

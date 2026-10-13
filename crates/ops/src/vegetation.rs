@@ -161,6 +161,9 @@ pub struct TreeParams {
     /// Lumps of the crown's outline as a share of its radius (0 smooth to 0.5).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub crown_lumps: Option<f64>,
+    /// Foliage gathered into clumps with gaps between them (0 even to 1 distinct clumps).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clumping: Option<f64>,
     /// What the leaves become: `cards`, `clumps`, `shell` or `none`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub foliage: Option<TreeFoliage>,
@@ -355,7 +358,7 @@ impl Op for GenTree {
                    `flower` and `grass_cards` features.",
             examples: &[OpExample {
                 args: r#"{"species": "broadleaf", "height": "12m"}"#,
-                result: "created tree (o:4) tree 12.5214 x 12.6158 x 13.3685 m: 4,560 faces (9,052 tris; budget 6,000); broadleaf 12.5 m: crown 12.5 x 13.4 m, 9.4 m tall from 3.1 m; fork at 4.44 m (36%), 4 limbs; 1,576 cards, coverage 90% (target 90%), overdraw 2.1; wood 3,000 tris, foliage 6,052 tris",
+                result: "created tree (o:4) tree 12.6097 x 12.4058 x 13.0091 m: 4,538 faces (9,020 tris; budget 6,000); broadleaf 12.3 m: crown 12.6 x 13.0 m, 9.1 m tall from 3.2 m; fork at 4.44 m (36%), 4 limbs; 1,560 cards, coverage 90% (target 90%), overdraw 2.1; wood 2,998 tris, foliage 6,022 tris",
             }],
             aliases: &["tree", "oak", "pine", "fir", "conifer", "palm", "birch", "foliage", "vegetation", "speedtree", "leaf cards"],
             complexity: "O(attractors x rounds) for space colonization through a hash grid, plus O(wood faces + cards x pixels)",

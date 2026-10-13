@@ -58,7 +58,7 @@ Change only what differs from the species:
   - `roots` and `root_spread` (buttress width at the ground over the trunk diameter).
 - **Crown:**
   - `crown`: `dome`, `sphere`, `ellipsoid`, `cone`, `umbrella`, `column`, or an outline `[[radius share, height share], ...]` from the crown base up;
-  - `crown_width`, `crown_base`, `crown_lumps` (an irregular outline).
+  - `crown_width`, `crown_base`, `crown_lumps` (an irregular outline), `clumping` (foliage in masses with gaps between them, as on a real broadleaf: 0 even to 1 distinct clumps; broadleaf 0.5).
 - **Foliage:**
   - `foliage`: `cards`, `clumps`, `shell` or `none`; `style`: `realistic`, `painted` or `low_poly` sets the card layout and shading;
   - `card_size` (0.4 to 0.8 m clusters for broadleaf), `coverage` (the silhouette target that sets the card count), `leaf_cards` (single leaves at the silhouette);

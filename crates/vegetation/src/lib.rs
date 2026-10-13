@@ -196,6 +196,9 @@ pub struct TreeSpec {
     pub crown_width: f32,
     /// Lumps of the crown's outline as a share of its radius (0 smooth).
     pub crown_lumps: f32,
+    /// Foliage gathered into clumps with gaps between them, as on a real
+    /// broadleaf (0 even, 1 distinct clumps).
+    pub clumping: f32,
     /// Height share of the crown's lowest point; 0 derives it from the
     /// fork.
     pub crown_base: f32,
@@ -259,6 +262,7 @@ impl TreeSpec {
             crown: CrownShape::Dome,
             crown_width: 12.0,
             crown_lumps: 0.16,
+            clumping: 0.5,
             crown_base: 0.0,
             foliage: Foliage::Cards,
             card_size: 0.6,
@@ -296,6 +300,7 @@ impl TreeSpec {
                 crown: CrownShape::Cone,
                 crown_width: 5.8,
                 crown_lumps: 0.06,
+                clumping: 0.15,
                 card_size: 0.5,
                 coverage: 0.85,
                 leaf_cards: 0.0,
@@ -320,6 +325,7 @@ impl TreeSpec {
                 crown: CrownShape::Umbrella,
                 crown_width: 9.5,
                 crown_lumps: 0.0,
+                clumping: 0.0,
                 card_size: 0.9,
                 coverage: 0.3,
                 leaf_cards: 0.0,
@@ -342,6 +348,7 @@ impl TreeSpec {
                 crown: CrownShape::Ellipsoid,
                 crown_width: 6.3,
                 crown_lumps: 0.12,
+                clumping: 0.35,
                 card_size: 0.42,
                 coverage: 0.76,
                 droop: 0.75,
@@ -363,6 +370,7 @@ impl TreeSpec {
                 crown: CrownShape::Sphere,
                 crown_width: 4.8,
                 crown_lumps: 0.1,
+                clumping: 0.0,
                 foliage: Foliage::Clumps,
                 card_size: 1.6,
                 coverage: 0.9,
@@ -486,6 +494,7 @@ pub fn validate(s: &TreeSpec) -> Result<(), VegError> {
     check("crown_width", s.crown_width, 0.05, s.height * 5.0)?;
     check("crown_base", s.crown_base, 0.0, 0.95)?;
     check("crown_lumps", s.crown_lumps, 0.0, 0.5)?;
+    check("clumping", s.clumping, 0.0, 1.0)?;
     check("card_size", s.card_size, 0.005, s.height.max(s.crown_width))?;
     check("coverage", s.coverage, 0.05, 1.0)?;
     check("leaf_cards", s.leaf_cards, 0.0, 1.0)?;
