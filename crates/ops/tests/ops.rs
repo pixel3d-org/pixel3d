@@ -794,6 +794,150 @@ fn shapes_extrude_from_points_and_joined_curves() {
 }
 
 #[test]
+fn sweeps_and_pipes_follow_paths() {
+    let mut tx = curve_fixture();
+    // A pipe along a moved curve lands where the curve is.
+    ok(&mut tx, "scene.set_transform", json!({ "target": "path", "position": [0, 2, 0] }));
+    ok(&mut tx, "gen.pipe", json!({ "name": "hose", "path": { "curve": "path" }, "radius": "3cm", "segments": 12 }));
+    assert!(topo(&tx, "hose").is_watertight());
+    let hose = tx.doc().resolve("hose").unwrap();
+    assert_eq!(tx.doc().object(hose).unwrap().transform.translation, Vec3::new(0.0, 2.0, 0.0));
+    // An explicit position wins over the curve's place.
+    ok(&mut tx, "gen.pipe", json!({ "name": "hose2", "path": { "curve": "path" }, "position": [5, 0, 0] }));
+    let hose2 = tx.doc().resolve("hose2").unwrap();
+    assert_eq!(tx.doc().object(hose2).unwrap().transform.translation, Vec3::new(5.0, 0.0, 0.0));
+    // A ring: closed path, no caps, torus topology.
+    ok(
+        &mut tx,
+        "gen.pipe",
+        json!({ "name": "ring", "path": [[1, 0, 0], [0, 0, -1], [-1, 0, 0], [0, 0, 1]], "path_closed": true, "smooth_path": true }),
+    );
+    let t = topo(&tx, "ring");
+    assert!(t.is_watertight());
+    let ring = tx.doc().object_mesh(tx.doc().resolve("ring").unwrap()).unwrap();
+    assert_eq!(ring.vert_count() as i64 - ring.edge_count() as i64 + ring.face_count() as i64, 0);
+    // A sweep of a curve cross section (a circle drawn on the ground) along a smooth path.
+    ok(&mut tx, "curve.circle", json!({ "name": "section", "radius": "5cm", "segments": 10 }));
+    ok(
+        &mut tx,
+        "gen.sweep",
+        json!({ "name": "tusk", "profile": { "curve": "section" }, "path": [[0, 0, 0], [0, 0.5, 0.2], [0, 0.8, 0.6]], "smooth_path": true, "scale": [1, 0.2], "twist": 90 }),
+    );
+    assert!(topo(&tx, "tusk").is_watertight());
+    // An open trim profile along a closed rectangle: a picture frame molding with two profile groups.
+    let s = ok(
+        &mut tx,
+        "gen.sweep",
+        json!({ "name": "molding", "profile": [[0, 0], [0.04, 0], [0.04, 0.02]], "profile_closed": false, "path": { "curve": "outline" } }),
+    );
+    assert!(s.contains("molding"), "{s}");
+    let m = tx.doc().object_mesh(tx.doc().resolve("molding").unwrap()).unwrap();
+    assert_eq!((m.group("profile_0").unwrap().count(), m.group("profile_1").unwrap().count()), (4, 4));
+
+    let e = err(&mut tx, "gen.sweep", json!({ "profile": { "circle": 0.1 }, "path": { "curve": "outline" }, "twist": 45 }));
+    assert_eq!((e.code, e.path.as_deref()), (ErrorCode::OutOfRange, Some("/twist")));
+    let e = err(&mut tx, "gen.sweep", json!({ "profile": { "hexagon": 1 }, "path": [[0, 0, 0], [0, 1, 0]] }));
+    assert!(e.message.contains("cross section"), "{}", e.message);
+    let e = err(&mut tx, "gen.sweep", json!({ "profile": { "circle": 0.1 }, "path": [[0, 0, 0], [0, 1, 0]], "up": [0, 0, 0] }));
+    assert_eq!(e.path.as_deref(), Some("/up"));
+    let e = err(&mut tx, "gen.pipe", json!({ "path": [[0, 0, 0], [1, 0, 0], [0, 0, 0]] }));
+    assert_eq!(e.code, ErrorCode::OutOfRange);
+    let e = err(&mut tx, "gen.pipe", json!({ "path": { "curve": "crate" } }));
+    assert!(e.message.contains("not a curve"), "{}", e.message);
+}
+
+#[test]
+fn lofts_between_placed_curves() {
+    let mut tx = curve_fixture();
+    // A rounded square base blending into a smaller circle 40 cm above it.
+    ok(&mut tx, "curve.rectangle", json!({ "name": "base", "size": [0.4, 0.4], "corner_radius": "2cm", "position": [1, 0, 0] }));
+    ok(&mut tx, "curve.circle", json!({ "name": "top", "radius": "10cm", "segments": 12, "position": [1, 0.4, 0] }));
+    ok(&mut tx, "gen.loft", json!({ "name": "vase", "sections": [{ "curve": "base" }, { "curve": "top" }], "points": 24, "steps": 3 }));
+    assert!(topo(&tx, "vase").is_watertight());
+    let key = tx.doc().resolve("vase").unwrap();
+    assert_eq!(tx.doc().object(key).unwrap().transform.translation, Vec3::new(1.0, 0.0, 0.0), "the base curve's place");
+    let (lo, hi) = tx.doc().object_mesh(key).unwrap().bounds().unwrap();
+    assert!(lo.y.abs() < 1e-5 && (hi.y - 0.4).abs() < 1e-5, "the top curve keeps its world height: {lo} {hi}");
+    let e = err(&mut tx, "gen.loft", json!({ "sections": [{ "curve": "base" }, { "curve": "path" }] }));
+    assert!(e.message.contains("all be closed"), "{}", e.message);
+    let e = err(&mut tx, "gen.loft", json!({ "sections": [{ "curve": "base" }] }));
+    assert_eq!(e.path.as_deref(), Some("/sections"));
+}
+
+#[test]
+fn arrays_and_mirrors_repeat_meshes() {
+    let mut tx = curve_fixture();
+    // Fence posts along the path curve (moved away from the posts' origin).
+    ok(&mut tx, "scene.set_transform", json!({ "target": "path", "position": [0, 0, 2] }));
+    ok(&mut tx, "prim.box", json!({ "name": "post", "width": 0.1, "height": 1, "depth": 0.1 }));
+    let s = ok(&mut tx, "gen.array", json!({ "target": "post", "mode": "curve", "curve": "path", "count": 5 }));
+    assert!(s.contains("5 copies along path (o:2)"), "{s}");
+    let m = tx.doc().object_mesh(tx.doc().resolve("post").unwrap()).unwrap();
+    let (lo, hi) = m.bounds().unwrap();
+    assert!(lo.z > 0.9 && hi.z < 2.1 && hi.x > 1.0, "posts follow the curve in world space: {lo} {hi}");
+    // Open tiles side by side weld into one sheet.
+    ok(&mut tx, "prim.plane", json!({ "name": "tile", "width": 0.5, "depth": 0.5 }));
+    let s = ok(&mut tx, "gen.array", json!({ "target": "tile", "count": 4, "relative_offset": [1, 0, 0] }));
+    assert!(s.contains("welded 6 vertices"), "{s}");
+    assert_eq!(topo(&tx, "tile").boundary_loops, 1);
+    // Half a spindle (both profile ends on the axis) mirrored back into a whole one, with and without bisecting.
+    ok(&mut tx, "gen.lathe", json!({ "name": "bowl", "profile": [[0, 0], [0.3, 0.1], [0, 0.3]], "smooth": true, "angle": 180, "segments": 12 }));
+    let s = ok(&mut tx, "gen.mirror", json!({ "target": "bowl", "axis": "x" }));
+    assert!(!s.contains("welded 0"), "{s}");
+    assert!(topo(&tx, "bowl").is_watertight());
+    ok(&mut tx, "prim.quad_sphere", json!({ "name": "ball" }));
+    ok(&mut tx, "gen.mirror", json!({ "target": "ball", "axis": "z", "bisect": true, "keep_positive": false }));
+    assert!(topo(&tx, "ball").is_watertight());
+
+    let e = err(&mut tx, "gen.array", json!({ "target": "post", "mode": "curve" }));
+    assert_eq!(e.path.as_deref(), Some("/curve"));
+    let e = err(&mut tx, "gen.array", json!({ "target": "post", "offset": [1, 0, 0], "relative_offset": [1, 0, 0] }));
+    assert_eq!(e.path.as_deref(), Some("/relative_offset"));
+    let e = err(&mut tx, "gen.array", json!({ "target": "path" }));
+    assert_eq!(e.path.as_deref(), Some("/target"));
+    let e = err(&mut tx, "gen.array", json!({ "target": "post", "count": 20000 }));
+    assert_eq!(e.code, ErrorCode::OutOfRange);
+}
+
+#[test]
+fn scatter_places_seeded_instances_on_surfaces() {
+    let layout = |seed: u64| {
+        let mut tx = curve_fixture();
+        ok(&mut tx, "prim.plane", json!({ "name": "ground", "width": 4, "depth": 4, "advanced": { "segments": [4, 4] } }));
+        ok(&mut tx, "prim.ico_sphere", json!({ "name": "rock", "radius": 0.1, "subdivisions": 1 }));
+        let s = ok(
+            &mut tx,
+            "gen.scatter",
+            json!({ "name": "rocks", "target": "ground", "source": "rock", "count": 30, "seed": seed, "scale": [0.5, 1.5] }),
+        );
+        assert!(s.starts_with("scattered 30 instances of rock"), "{s}");
+        let doc = tx.doc();
+        let holder = doc.resolve("ground/rocks").unwrap();
+        let kids = doc.object(holder).unwrap().children().to_vec();
+        assert_eq!(kids.len(), 30);
+        let rock_mesh = doc.object(doc.resolve("rock").unwrap()).unwrap().mesh_key();
+        kids.iter()
+            .map(|&k| {
+                let o = doc.object(k).unwrap();
+                assert_eq!(o.mesh_key(), rock_mesh, "instances share the source mesh");
+                assert!(o.transform.translation.y.abs() < 1e-6, "on the ground");
+                o.transform
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(layout(4), layout(4), "same seed, same layout");
+    assert_ne!(layout(4), layout(5));
+
+    let mut tx = curve_fixture();
+    let e = err(&mut tx, "gen.scatter", json!({ "target": "crate", "source": "path" }));
+    assert_eq!(e.path.as_deref(), Some("/source"));
+    let e = err(&mut tx, "gen.scatter", json!({ "target": "crate", "source": "crate", "scale": [2, 1] }));
+    assert_eq!(e.path.as_deref(), Some("/scale"));
+    let e = err(&mut tx, "gen.scatter", json!({ "target": "crate", "source": "crate", "select": { "faces": { "group": "nope" } } }));
+    assert!(e.path.as_deref().is_some_and(|p| p.starts_with("/select")), "{e}");
+}
+
+#[test]
 fn expectations_are_added_checked_and_removed() {
     let mut tx = fixture();
     let s = ok(&mut tx, "expect.add", json!({ "expect": { "budget": {} } }));

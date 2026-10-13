@@ -10,21 +10,13 @@ use p3d_scene::{Document, ObjectKey};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{group_label, label, thousands};
+use crate::common::{group_label, label, mesh_target, thousands};
 use crate::error::{ErrorCode, OpError};
 use crate::op::{Category, GroupInfo, Op, OpCtx, OpExample, OpFlags, OpMeta, OpOutput, Warning};
 use crate::params::{Angle, Length};
 use crate::tx::Tx;
 
 const EDIT: OpFlags = OpFlags::UNDOABLE;
-
-fn mesh_target(doc: &Document, target: &str) -> Result<ObjectKey, OpError> {
-    let key = doc.resolve(target).map_err(|e| OpError::from_scene(e, "/target"))?;
-    if doc.object_mesh(key).is_none() {
-        return Err(OpError::invalid("/target", format!("{} is not a mesh", label(doc, key))));
-    }
-    Ok(key)
-}
 
 fn empty_selection(what: &str, hint: &str) -> OpError {
     OpError::new(ErrorCode::EmptySelection, what.to_owned()).at("/select").with_hint(hint.to_owned())
@@ -53,7 +45,7 @@ fn boundary_starts(mesh: &Mesh, select: Option<&Selector>) -> Result<Vec<u32>, O
 }
 
 /// Maps an edit kernel refusal to an op error.
-fn kernel_error(e: KernelError) -> OpError {
+pub(crate) fn kernel_error(e: KernelError) -> OpError {
     match e {
         KernelError::Topology(t) => OpError::new(ErrorCode::Topology, t.to_string())
             .with_hint("the result would not be a clean manifold mesh; select fewer or different faces"),

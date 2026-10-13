@@ -27,7 +27,7 @@ Give the outline as `outline` points (plus `holes`) in a `plane`, or as a `curve
 | `outline` | `[Length, Length][] \| null` | `[[-0.5,-0.5],[0.5,-0.5],[0.5,0.5],[-0.5,0.5]]` | Outline points `[x, y]` in the shape plane (closed automatically, either winding). |
 | `parent` | `string \| null` | - | Parent object (name, path or id); top level when omitted. |
 | `plane` | `PlaneParam` | `"xy"` | Plane of `outline` points; the shape extrudes along its normal (+Z, +Y, +X). |
-| `position` | `[Length, Length, Length]` | `[0.0,0.0,0.0]` | Origin position in the parent's space. |
+| `position` | `[Length, Length, Length] \| null` | - | Origin position in the parent's space. Built from a curve object, the result takes the curve's place (parent and transform) unless `parent` or `position` is given. |
 | `resolution` | `number` | `6` | Segments per curved span of Bezier splines. |
 
 ## Examples

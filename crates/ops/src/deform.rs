@@ -8,7 +8,7 @@ use p3d_scene::{Document, ObjectKey};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{degrees, label, thousands};
+use crate::common::{degrees, label, mesh_target, thousands};
 use crate::edit::AxisParam;
 use crate::error::{ErrorCode, OpError};
 use crate::op::{Category, Op, OpCtx, OpExample, OpFlags, OpMeta, OpOutput};
@@ -16,14 +16,6 @@ use crate::params::{Angle, Length};
 use crate::tx::Tx;
 
 const DEFORM: OpFlags = OpFlags::UNDOABLE;
-
-fn mesh_target(doc: &Document, target: &str) -> Result<ObjectKey, OpError> {
-    let key = doc.resolve(target).map_err(|e| OpError::from_scene(e, "/target"))?;
-    if doc.object_mesh(key).is_none() {
-        return Err(OpError::invalid("/target", format!("{} is not a mesh", label(doc, key))));
-    }
-    Ok(key)
-}
 
 fn axis(a: AxisParam) -> DeformAxis {
     match a {

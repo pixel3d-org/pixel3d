@@ -5,25 +5,17 @@ use glam::{EulerRot, Mat3, Quat, Vec3};
 use p3d_geo::edit::{Falloff, KernelError, Pivot, Proportional, TransformSpec, edge_slide, shrink_fatten, transform_verts};
 use p3d_mesh::{ElementKind, Mesh};
 use p3d_query::{Filter, Selector, select as evaluate};
-use p3d_scene::{Document, ObjectKey};
+use p3d_scene::Document;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{label, thousands};
+use crate::common::{label, mesh_target, thousands};
 use crate::error::{ErrorCode, OpError};
 use crate::op::{Category, Op, OpCtx, OpExample, OpFlags, OpMeta, OpOutput};
 use crate::params::{Angle, Length, vec3};
 use crate::tx::Tx;
 
 const EDIT: OpFlags = OpFlags::UNDOABLE.union(OpFlags::PREVIEWABLE);
-
-fn mesh_target(doc: &Document, target: &str) -> Result<ObjectKey, OpError> {
-    let key = doc.resolve(target).map_err(|e| OpError::from_scene(e, "/target"))?;
-    if doc.object_mesh(key).is_none() {
-        return Err(OpError::invalid("/target", format!("{} is not a mesh", label(doc, key))));
-    }
-    Ok(key)
-}
 
 fn kernel(e: KernelError) -> OpError {
     match e {

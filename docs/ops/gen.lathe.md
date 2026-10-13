@@ -28,7 +28,7 @@ The best tool for round objects: barrels, vases, bottles, bowls, columns, wheels
 | `height` | `Length \| null` | - | Height of a preset profile (presets only). |
 | `name` | `string \| null` | - | Object name; a free name such as `lathe_1` is picked when omitted. |
 | `parent` | `string \| null` | - | Parent object (name, path or id); top level when omitted. |
-| `position` | `[Length, Length, Length]` | `[0.0,0.0,0.0]` | Origin position in the parent's space. |
+| `position` | `[Length, Length, Length] \| null` | - | Origin position in the parent's space. Built from a curve object, the result takes the curve's place (parent and transform) unless `parent` or `position` is given. |
 | `profile` | `Profile` | required | The profile to revolve. |
 | `radius` | `Length \| null` | - | Largest radius of a preset profile (presets only). |
 | `resolution` | `number` | `6` | Segments per curved span of a smooth profile. |

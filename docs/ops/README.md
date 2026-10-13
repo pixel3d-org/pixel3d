@@ -55,6 +55,12 @@ Every operation in pixel3d. The GUI, CLI, MCP server, scripts, addons and the no
 |---|---|
 | [`gen.lathe`](gen.lathe.md) | Revolves a profile around an axis into a round object with groups side, cap_top, cap_bottom and profile_<i>. |
 | [`gen.extrude_shape`](gen.extrude_shape.md) | Turns a flat outline with holes into a solid of a given depth, with optional round or chamfered rims. |
+| [`gen.sweep`](gen.sweep.md) | Carries a cross section along a path into rails, trims, frames, handles and cables, with twist and taper. |
+| [`gen.pipe`](gen.pipe.md) | Builds a round pipe along a path with smooth bends at the corners and quad caps. |
+| [`gen.loft`](gen.loft.md) | Builds a surface through a sequence of cross sections, resampling them so their point counts match. |
+| [`gen.array`](gen.array.md) | Repeats a mesh in a line, around an axis or along a curve, welding copies that touch. |
+| [`gen.mirror`](gen.mirror.md) | Adds the mirror image of a mesh across an axis plane, welding the seam; optionally bisects first. |
+| [`gen.scatter`](gen.scatter.md) | Places seeded, evenly spaced instances of an object over a surface, standing on it with random turns and scales. |
 
 ## select
 

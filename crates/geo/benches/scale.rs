@@ -130,8 +130,11 @@ fn scale(c: &mut Criterion) {
 
     // Element transform with proportional editing: a tenth of the vertices
     // selected, the rest within reach follow (straight distances, k-d tree).
+    // Like the tree queries below it starts at 16k triangles: smaller trees
+    // sit in cache and the first step measures the cache, not the algorithm.
+    let tree_spheres: Vec<(usize, p3d_mesh::Mesh)> = scale_sizes(16_000, 100_000).iter().map(|&t| (t, sphere(t))).collect();
     let mut g = c.benchmark_group("scale_edit_transform_proportional");
-    for (t, m) in &spheres {
+    for (t, m) in &tree_spheres {
         let sel: Vec<u32> = m.verts().step_by(10).collect();
         let spec = p3d_geo::edit::TransformSpec {
             translate: Vec3::Y * 0.01,
@@ -204,6 +207,90 @@ fn scale(c: &mut Criterion) {
                 axis: p3d_geo::edit::Axis::Z,
             };
             b.iter(|| p3d_geo::generate::extrude_shape(black_box(&spec)))
+        });
+    }
+    g.finish();
+
+    // A 16-sided tube along a helix with quad-grid caps.
+    let mut g = c.benchmark_group("scale_gen_sweep");
+    for &t in &sizes {
+        let n = (t / 32).max(2);
+        let path: Vec<glam::DVec3> = (0..n).map(|i| glam::DVec3::new((i as f64 * 0.05).cos(), i as f64 * 0.01, (i as f64 * 0.05).sin())).collect();
+        let profile = p3d_geo::generate::round_profile(0.02, 16);
+        g.bench_with_input(BenchmarkId::from_parameter(t), &path, |b, path| {
+            let spec = p3d_geo::generate::SweepSpec {
+                profile: &profile,
+                profile_closed: true,
+                profile_spans: &[],
+                path,
+                path_closed: false,
+                twist: 0.0,
+                scale: [1.0, 1.0],
+                caps: p3d_geo::generate::SweepCaps::QuadGrid,
+                up: glam::DVec3::Y,
+            };
+            b.iter(|| p3d_geo::generate::sweep(black_box(&spec)))
+        });
+    }
+    g.finish();
+
+    // Rings of 64 points stacked up, 4 smooth rows between sections, capped.
+    let mut g = c.benchmark_group("scale_gen_loft");
+    for &t in &sizes {
+        let n = (t / 512).max(2);
+        let sections: Vec<Vec<glam::DVec3>> = (0..n)
+            .map(|i| {
+                let r = 0.5 + 0.1 * (i as f64 * 0.7).sin();
+                (0..64)
+                    .map(|k| {
+                        let a = std::f64::consts::TAU * k as f64 / 64.0;
+                        glam::DVec3::new(a.cos() * r, i as f64 * 0.1, -a.sin() * r)
+                    })
+                    .collect()
+            })
+            .collect();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &sections, |b, sections| {
+            let spec = p3d_geo::generate::LoftSpec { sections, sections_closed: true, points: 0, steps: 4, smooth: true, closed: false, caps: true };
+            b.iter(|| p3d_geo::generate::loft(black_box(&spec)))
+        });
+    }
+    g.finish();
+
+    // 16 welded copies of a plane tile of t / 16 triangles.
+    let mut g = c.benchmark_group("scale_gen_array");
+    for &t in &sizes {
+        let n = ((t as f64 / 32.0).sqrt().round()) as u32;
+        let tile = plane(&PlaneSpec { size_x: 1.0, size_z: 1.0, segments_x: n, segments_z: n }).unwrap_or_default();
+        let copies = p3d_geo::generate::linear_copies(16, Vec3::X);
+        g.bench_with_input(BenchmarkId::from_parameter(t), &tile, |b, tile| {
+            b.iter(|| p3d_geo::generate::array(black_box(tile), &copies, Some(1e-4)))
+        });
+    }
+    g.finish();
+    let mut g = c.benchmark_group("scale_gen_mirror");
+    for &t in &sizes {
+        let n = ((t as f64 / 4.0).sqrt().round()) as u32;
+        let half = plane(&PlaneSpec { size_x: 1.0, size_z: 1.0, segments_x: n, segments_z: n }).unwrap_or_default();
+        g.bench_with_input(BenchmarkId::from_parameter(t), &half, |b, half| {
+            b.iter_batched(
+                || half.clone(),
+                |mut m| p3d_geo::generate::mirror_copy(&mut m, p3d_geo::edit::Axis::X, 0.5, Some(1e-4)),
+                BatchSize::LargeInput,
+            )
+        });
+    }
+    g.finish();
+
+    // Poisson-disk points on a sphere of t triangles: t / 8 points at the default spacing.
+    let mut g = c.benchmark_group("scale_gen_scatter");
+    for &t in &sizes {
+        let m = sphere(t);
+        let faces: Vec<u32> = m.faces().collect();
+        let count = (t / 8) as u32;
+        let area = p3d_geo::generate::surface_area(&m, &faces);
+        let spec = p3d_geo::generate::ScatterSpec { count, min_distance: 0.6 * (area / count as f32).sqrt(), seed: 3 };
+        g.bench_with_input(BenchmarkId::from_parameter(t), &(m, faces), |b, (m, faces)| {
+            b.iter(|| p3d_geo::generate::scatter(black_box(m), faces, &spec))
         });
     }
     g.finish();
