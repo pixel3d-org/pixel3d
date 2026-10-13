@@ -107,6 +107,7 @@ Acceptance:
 - [ ] Expectations from briefs and categories
 - [ ] `history bisect`
 - [ ] MCP tools `brief`, `spec`, `perceive`, `expect`, `deform`
+- [ ] Visual DNA v0 (ADR 0011): `dna` block in the spec schema, style and culture presets (`dwarven`, `elven`, `stylized_painterly`, ...) as defaults, `perceive dna` for proportions, silhouette, curve share, taper, form hierarchy and bevel uniformity, first art-direction codes (`tangent`, `twinning`, `uniform_bevel`, `weak_silhouette`)
 
 Acceptance:
 
@@ -121,6 +122,7 @@ Acceptance:
 - [ ] `strands`: hair, fur, eyebrows, grass, cables as cards, clumps and shells
 - [ ] Vegetation (ADR 0009): `tree` feature and `gen.tree` (species presets, crown hull, branch levels, roots), styles realistic, stylized painted and solid low poly; foliage as `clumps`, `cards` (cluster and single-leaf cards with leaf angle, repetition and coverage parameters) or `shell`, crown normal transfer, wind data per engine, `flower` and `grass_cards`, `vegetation` perception aspect and expectations
 - [ ] Full diagnostics: intent, edge flow, shading, detail scale, with predicted fixes
+- [ ] Visual DNA archetypes (ADR 0011): skeletons for weapon centerlines, humanoid races with anatomy kits, wings (feathered, membrane), vegetation; grooming genes on strands (braids, beads, clumps); ornament along paths; the full art-direction critique set
 - [ ] MCP tool `features`
 
 Acceptance:
@@ -171,6 +173,7 @@ Acceptance:
 - [ ] `decal` joins baked into normal maps
 - [ ] Generated hair atlas textures for strands
 - [ ] Generated foliage atlases (leaf and cluster alpha, normal, albedo variation), bark and grass textures, crown normal transfer bake (ADR 0009)
+- [ ] Visual DNA surface layer (ADR 0011): wear and damage from curvature, AO and thickness masks, micro detail along the form, ornament and tattoo decals from SVG at surface coordinates
 - [ ] Dilation; PNG, EXR and KTX2 output
 - [ ] `bake` tool and full `make_game_ready`
 
