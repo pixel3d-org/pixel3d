@@ -83,7 +83,7 @@ pub const TREE_PARAMS: &[ParamInfo] = &[
     p("crown_lumps", "Lumps of the crown's outline as a share of its radius (0 smooth).", ParamKind::Ratio, 0.16, 0.0, 0.5),
     p("foliage", "What the leaves become: cards, clumps, shell or none.", ParamKind::Choice(FOLIAGE), 0.0, 0.0, 3.0),
     p("card_size", "Cluster card (or clump) size (broadleaf 0.4 to 0.8 m).", ParamKind::Length, 0.6, 0.005, 5.0),
-    p("coverage", "Silhouette coverage target of the crown; cards are added until it is reached.", ParamKind::Ratio, 0.87, 0.05, 1.0),
+    p("coverage", "Silhouette coverage target of the crown; cards are added until it is reached.", ParamKind::Ratio, 0.9, 0.05, 1.0),
     p("leaf_cards", "Share of single-leaf cards at the silhouette.", ParamKind::Ratio, 0.15, 0.0, 1.0),
     p("phyllotaxis", "Turn between successive cards around a twig.", ParamKind::Angle, 137.5, 0.0, 360.0),
     p("spread", "Angle of the cards from their twig.", ParamKind::Angle, 55.0, 0.0, 90.0),

@@ -262,7 +262,7 @@ impl TreeSpec {
             crown_base: 0.0,
             foliage: Foliage::Cards,
             card_size: 0.6,
-            coverage: 0.87,
+            coverage: 0.9,
             leaf_cards: 0.15,
             phyllotaxis: deg(137.5),
             spread: deg(55.0),

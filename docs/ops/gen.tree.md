@@ -64,4 +64,4 @@ Trees are described, not drawn. Pick a `species` (its preset sets everything) an
 {"height":"12m","species":"broadleaf"}
 ```
 
-Result: `created tree (o:4) tree 12.2992 x 12.6158 x 13.3685 m: 4,340 faces (8,608 tris; budget 6,000); broadleaf 12.5 m: crown 12.3 x 13.4 m, 9.4 m tall from 3.1 m; fork at 4.44 m (36%), 4 limbs; 1,464 cards, coverage 87% (target 87%), overdraw 2.0; wood 2,996 tris, foliage 5,612 tris`
+Result: `created tree (o:4) tree 12.5214 x 12.6158 x 13.3685 m: 4,560 faces (9,052 tris; budget 6,000); broadleaf 12.5 m: crown 12.5 x 13.4 m, 9.4 m tall from 3.1 m; fork at 4.44 m (36%), 4 limbs; 1,576 cards, coverage 90% (target 90%), overdraw 2.1; wood 3,000 tris, foliage 6,052 tris`

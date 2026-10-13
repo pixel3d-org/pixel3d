@@ -220,6 +220,13 @@ fn rings_of(spec: &TreeSpec, sk: &Skeleton, c: usize) -> Vec<Ring> {
             r.turn = spec.twist * (p.y / top).min(1.0);
             out.push(r);
         }
+        // A rounded top hidden among the limbs of a decurrent fork.
+        if let (Some(&last), true) = (out.last(), sk.top == sk.fork && sk.chains.len() > 1) {
+            let dir = if out.len() >= 2 { (last.center - out[out.len() - 2].center).normalize_or(Vec3::Y) } else { Vec3::Y };
+            for (up, k) in [(0.3f32, 0.92f32), (0.55, 0.7)] {
+                out.push(Ring { center: last.center + dir * last.radius * up, radius: last.radius * k, ..last });
+            }
+        }
         for r in &mut out {
             r.radius = r.radius.max(1e-4);
             if r.turn == 0.0 {
@@ -307,7 +314,7 @@ fn tip_of(sk: &Skeleton, c: usize, rings: &[Ring]) -> Vec3 {
     let n = rings.len();
     let last = rings[n - 1];
     let dir = if n >= 2 { (last.center - rings[n - 2].center).normalize_or(Vec3::Y) } else { Vec3::Y };
-    let k = if c == 0 { 0.9 } else { 1.6 };
+    let k = if c == 0 { 0.5 } else { 1.6 };
     let _ = sk;
     last.center + dir * last.radius * k
 }
